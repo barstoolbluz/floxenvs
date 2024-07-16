@@ -1,0 +1,529 @@
+{
+  "lockfile-version": 1,
+  "manifest": {
+    "version": 1,
+    "install": {
+      "_1password": {
+        "pkg-path": "_1password",
+        "version": "1password-cli-2.29.0"
+      },
+      "awscli2": {
+        "pkg-path": "awscli2",
+        "version": "2.17.0"
+      },
+      "github-cli": {
+        "pkg-path": "github-cli",
+        "version": "gh-2.52.0"
+      },
+      "gum": {
+        "pkg-path": "gum",
+        "version": "0.14.1"
+      }
+    },
+    "vars": {},
+    "hook": {
+      "on-activate": "# Function that bootstraps authentication for the 1Password CLI\nsetup_1password_cli() {\n    # Here we check to see if the config file exists and contains required strings\n    check_config() {\n        local config_file=\"$HOME/.config/op/config\"\n        if [[ -f \"$config_file\" ]]; then\n            if grep -q \"url\" \"$config_file\" && grep -q \"email\" \"$config_file\" && grep -q \"accountKey\" \"$config_file\"; then\n                return 0\n            fi\n        fi\n        return 1\n    }\n\n    # Exit the shell if the user opts not to continue/maxes out 1Password authentication attempts\n    exit_shell() {\n        echo \"Exiting the shell. Please run 'flox activate' to restart the wizard.\"\n        exit 1\n    }\n\n    # Check to see if the 1Password config (a) exists and (b) is valid\n    if check_config; then\n        return 0\n    fi\n\n    # Flox 1Password CLI Setup Wizard\n    clear\n    gum style \\\n        --border normal \\\n        --margin \"1\" \\\n        --padding \"1\" \\\n        --border-foreground 141 \\\n        \"\n    Welcome to the Flox 1Password CLI Setup Wizard!\n\n    We didn't find an existing 1Password configuration on your system. So let's set one up now.\n\n    You will need to provide the following information:\n\n    1. Your 1Password account URL (e.g., https://your-team.1password.com)\n    2. Your email address associated with the 1Password account\n    3. Your 1Password Secret Key (a 34-character code)\n    4. The specific field names for the AWS credentials in your 1Password vault (optional)\n\n    We'll use this information to authenticate with 1Password and bootstrap your local environment.\n\"\n\n    # Prompt you Yes/No to continue with the 1Password CLI Bootstrapping / Setup Wizard\n    if ! gum confirm \"Do you want to continue?\" --default=true; then\n        exit_shell\n    fi\n\n    echo \"Type 'exit' or 'quit' at any prompt to exit the wizard.\"\n\n    term_width=$(tput cols)\n\n    # You can type 'exit' at any time to quit the wizard\n    check_exit() {\n        if [[ \"$1\" == \"exit\" || \"$1\" == \"quit\" ]]; then\n            echo \"Exiting the wizard. You can run 'flox activate' again to restart.\"\n            exit 0\n        fi\n    }\n\n    # Let's collect the infos we need to bootstrap the 1Password CLI\n    address=$(gum input --prompt \"Enter your 1Password account URL (or type 'exit' to quit): \" --placeholder \"https://\" --width \"$term_width\")\n    check_exit \"$address\"\n\n    email=$(gum input --prompt \"Enter your email address (or type 'exit' to quit): \" --width \"$term_width\")\n    check_exit \"$email\"\n\n    secret_key=$(gum input --prompt \"Enter your Secret Key (or type 'exit' to quit): \" --width \"$term_width\")\n    check_exit \"$secret_key\"\n\n    # Input the field names associated with the object (i.e., item) you use to store AWS creds in your 1Password vault\n    gum style \\\n        --border normal \\\n        --margin \"1\" \\\n        --padding \"1\" \\\n        --border-foreground 141 \\\n        \"\n    In your 1Password vault, you have an \"item\" (i.e. object) that stores your AWS credentials. This\n    item typically has fields for your AWS access key ID and secret access key.\n    \n    We need to know what you've named these fields in your 1Password item.\n\n    By default, we assume:\n    - 'username' for the field containing your AWS access key ID\n    - 'credentials' for the field containing your AWS secret access key\n\n    If you've used different field names, please specify them below.\n    If you've used the default names, just press Enter to accept them.\n    \"\n\n    username_field=$(gum input --prompt \"Enter field name for AWS access key ID (default: username): \" --placeholder \"username\" --width \"$term_width\")\n    check_exit \"$username_field\"\n    username_field=${username_field:-username}\n\n    credentials_field=$(gum input --prompt \"Enter field name for AWS secret access key (default: credentials): \" --placeholder \"credentials\" --width \"$term_width\")\n    check_exit \"$credentials_field\"\n    credentials_field=${credentials_field:-credentials}\n\n    # Attempt to sign in (max 5 retries)\n    for attempt in {1..5}; do\n        echo \"Signing in to 1Password (Attempt $attempt of 5)...\"\n        if output=$(op account add --address \"$address\" --email \"$email\" --secret-key \"$secret_key\" 2>/dev/null); then\n            echo \"Successfully signed in to 1Password!\"\n            break\n        else\n            if [[ $attempt -eq 5 ]]; then\n                echo \"Maximum number of attempts reached. Authentication failed.\"\n                exit_shell\n            fi\n            echo \"Authentication failed. Please try again.\"\n        fi\n    done\n\n    # Write field names (if not defaults) to 1password.session file\n    session_file=\"$HOME/.config/1password.session\"\n    mkdir -p \"$(dirname \"$session_file\")\"\n    \n    {\n        echo \"# BEGIN 1PASSWORD AWSCLI2 BOOTSTRAP CONFIGURATION\"\n        echo \"export OP_AWS_USERNAME_FIELD=\\\"$username_field\\\"\"\n        echo \"export OP_AWS_CREDENTIALS_FIELD=\\\"$credentials_field\\\"\"\n        echo \"# END 1PASSWORD AWSCLI2 BOOTSTRAP CONFIGURATION\"\n    } >> \"$session_file\"\n\n    echo \"1Password CLI setup completed successfully.\"\n    echo \"Custom field names have been saved to $session_file\"\n}\n\n\n# Enable (=true) or Disable (=false) 1Password session persistence\nconfigure_1password_persistence() {\n    local config_file=\"$HOME/.config/1password.session\"\n    \n    # Check if session persistence is already configured\n    if grep -q \"BEGIN 1PASSWORD SESSION PERSISTENCE CONFIGURATION\" \"$config_file\" 2>/dev/null; then\n#        echo \"1Password session persistence is already configured.\"\n        return 0\n    fi\n\n    # Wizard to enable (=true) or disable (=false) 1Password session persistence\n    gum style --border double --padding \"1 1\" --margin \"1 1\" --border-foreground 141 --foreground 255 \"\n    Would you like to enable 1Password session persistence? This will enable you to remain logged in to\n    1Password between terminal sessions for a limited period of time.\n\n    About 1Password Session Persistence:\n    - We store a short-term session token for automatic logins;\n    - If you exit and re-enter your Flox env, you needn't log in again;\n    - There's no need to re-authenticate when you create new sessions;\n\n    Security Considerations:\n    - Your session token is stored locally, IN PLAIN TEXT, in '~/.config/1password.session';\n    - Your session token expires after 30 minutes of inactivity.\n    \"\n\n    gum style --foreground 255 \"Do you want to enable 1Password session persistence?\"\n    local user_choice=$(gum choose \"Yes\" \"No\")\n\n    if [[ \"$user_choice\" == \"Yes\" ]]; then\n        ENABLE_1PASSWORD_PERSISTENCE=\"true\"\n    else\n        ENABLE_1PASSWORD_PERSISTENCE=\"false\"\n    fi\n\n    # Here we append a session persistence flag to 1password.session in ~/config/\n    {\n        echo\n        echo \"# BEGIN 1PASSWORD SESSION PERSISTENCE CONFIGURATION\"\n        echo \"ENABLE_1PASSWORD_PERSISTENCE=\\\"${ENABLE_1PASSWORD_PERSISTENCE}\\\"\"\n        echo \"# END 1PASSWORD SESSION PERSISTENCE CONFIGURATION\"\n    } >> \"$config_file\"\n\n    # Set the correct file permissions\n    chmod 600 \"$config_file\"\n\n    echo \"1Password session persistence configuration has been appended to $config_file\"\n}\n\n\n# Function that configures 1Password/AWSCLI2 integration\nconfigure_1password_aws_cli() {\n    local config_file=\"$HOME/.config/1password.session\"\n\n    # Check if configuration already exists\n    if grep -q \"BEGIN 1PASSWORD AWSCLI2 CONFIGURATION\" \"$config_file\" 2>/dev/null; then\n#        echo \"AWS CLI configuration for 1Password is already set up.\"\n        return 0\n    fi\n\n    clear\n    gum style \\\n        --foreground 141 \\\n        --border \"rounded\" \\\n        --border-foreground 255 \\\n        --margin \"1\" \\\n        --padding \"1 2\" \\\n        \"Use this wizard to configure your 1Password environment for seamless integration with AWSCLI2.\nIt will guide you through the process of specifying the names of your 1Password vault and\nAWS credentials, and (if required) providing your AWS region, too.\n\n- We DO NOT store AWS credentials anywhere on your local system;\n\n- We obtain long-term secrets from your 1Password Vault and use these to obtain\n  short-term secrets from the AWS Secure Token Service;\n\n- We use \\`op run\\` to run AWSCLI2 commands inside an ephemeral environment;\n\n- Your AWS secrets live as variables in this ephemeral environment for the duration of\n  your AWSCLI2 commands. This lets us securely pass secrets to AWS.\n\nYou can type 'exit' at any prompt to quit the wizard.\n\"\n\n    # You can exit this wizard at any time\n    check_exit() {\n        if [[ \"$1\" == \"exit\" ]]; then\n            echo \"Exiting the wizard. You can run 'flox activate' again to restart.\"\n            exit 0\n        fi\n    }\n\n    while [[ -z \"${OP_VAULT}\" ]]; do\n        gum style --foreground 255 \"Please enter the name of the 1Password vault containing your AWS credentials.\"\n        OP_VAULT=$(gum input --placeholder \"Vault name\")\n        check_exit \"$OP_VAULT\"\n    done\n\n    while [[ -z \"${OP_AWS_CREDENTIALS}\" ]]; do\n        gum style --foreground 255 \"Please enter the item name you gave to the AWS credentials stored in the 1Password vault.\"\n        OP_AWS_CREDENTIALS=$(gum input --placeholder \"Credentials name\")\n        check_exit \"$OP_AWS_CREDENTIALS\"\n    done\n\n    if [[ ! -f ~/.aws/config ]] || ! grep -q \"^[[:space:]]*region[[:space:]]*=\" ~/.aws/config; then\n        while true; do\n            gum style --foreground 255 \"Please enter your AWS region (e.g., us-east-1).\"\n            AWS_REGION=$(gum input --placeholder \"AWS region\")\n            check_exit \"$AWS_REGION\"\n            if [[ $AWS_REGION =~ ^[a-z]{2}-[a-z]+-[0-9]+$ ]]; then\n                break\n            else\n                gum style --foreground 9 \"Invalid region format. Please try again.\"\n            fi\n        done\n        mkdir -p ~/.aws\n        if [[ -f ~/.aws/config ]]; then\n            sed -i '/^\\[default\\]/,/^$/d' ~/.aws/config\n        fi\n        echo -e \"[default]\\nregion = ${AWS_REGION}\" >> ~/.aws/config\n        chmod 600 ~/.aws/config\n    fi\n\n    # Write configuration data to the file\n    {\n        echo\n        echo \"# BEGIN 1PASSWORD AWSCLI2 CONFIGURATION\"\n        echo \"OP_VAULT=${OP_VAULT}\"\n        echo \"OP_AWS_CREDENTIALS=${OP_AWS_CREDENTIALS}\"\n        echo \"# END 1PASSWORD AWSCLI2 CONFIGURATION\"\n    } >> \"$config_file\"\n\n    gum style --foreground 141 \"AWS CLI configuration for 1Password completed successfully.\"\n}\n\n# Function to authenticate with 1Password; this is called by the 'aws' alias in [profile]\nauthenticate_1password() {\n    local config_file=\"$HOME/.config/1password.session\"\n\n    [[ -f \"$config_file\" ]] && source \"$config_file\"\n\n    if [[ \"${ENABLE_1PASSWORD_PERSISTENCE}\" != \"true\" ]]; then\n        echo \"1Password session persistence is not enabled. Skipping authentication.\"\n        return 0\n    fi\n\n    # Check if the token exists and is valid\n    if [[ -n \"${OP_SESSION_TOKEN}\" ]]; then\n        if op whoami --session \"${OP_SESSION_TOKEN}\" >/dev/null 2>&1; then\n            echo \"Existing 1Password session is valid.\"\n            return 0\n        else\n            echo \"Existing 1Password session is invalid. Re-authenticating...\"\n            unset OP_SESSION_TOKEN\n        fi\n    else\n        echo \"No existing 1Password session found. Authenticating...\"\n    fi\n\n    max_retries=5\n    retry_count=0\n    while true; do\n        OP_SESSION_TOKEN=$(op signin --raw 2>&1)\n        if [[ $? -eq 0 ]]; then\n            # Remove the old session token and insert the new one in its place\n            sed -i '/# BEGIN 1PASSWORD SESSION TOKEN/,/# END 1PASSWORD SESSION TOKEN/c\\\n# BEGIN 1PASSWORD SESSION TOKEN\\\nOP_SESSION_TOKEN='\"${OP_SESSION_TOKEN}\"'\\\n# END 1PASSWORD SESSION TOKEN' \"$config_file\"\n\n            # If the session token section doesn't exist, append it\n            if ! grep -q \"# BEGIN 1PASSWORD SESSION TOKEN\" \"$config_file\"; then\n                echo >> \"$config_file\"\n                echo \"# BEGIN 1PASSWORD SESSION TOKEN\" >> \"$config_file\"\n                echo \"OP_SESSION_TOKEN=${OP_SESSION_TOKEN}\" >> \"$config_file\"\n                echo \"# END 1PASSWORD SESSION TOKEN\" >> \"$config_file\"\n            fi\n            \n            echo \"Authentication successful.\"\n            break\n        else\n            retry_count=$((retry_count + 1))\n            if [[ ${retry_count} -ge ${max_retries} ]]; then\n                echo \"Maximum number of retries exceeded. Please check your 1Password credentials and try again.\"\n                return 1\n            else\n                echo \"Invalid password. Please try again.\"\n            fi\n        fi\n    done\n\n    # Here we export the OP_SESSION_TOKEN for use in the current session\n    export OP_SESSION_TOKEN\n}\n\n# Call the 1Password bootstrapping function\nsetup_1password_cli\n\n# Call the 1Password session persistence function\nconfigure_1password_persistence\n\n# Call the configure_1password_aws_cli function\nconfigure_1password_aws_cli\n\n# Call the 1Password authentication function\nauthenticate_1password\n\n# Export the OP_SESSION_TOKEN for use in the profile scripts\nexport OP_SESSION_TOKEN\n\n"
+    },
+    "profile": {
+      "common": "# Source the 1password.session file\n[[ -f ~/.config/1password.session ]] && source ~/.config/1password.session\n\n# AWS alias\nalias aws='op run --session \"${OP_SESSION_TOKEN}\" --env-file <(printf \"%s\\n\" AWS_ACCESS_KEY_ID=op://${OP_VAULT}/${OP_AWS_CREDENTIALS}/${OP_AWS_USERNAME_FIELD} AWS_SECRET_ACCESS_KEY=op://${OP_VAULT}/${OP_AWS_CREDENTIALS}/${OP_AWS_CREDENTIALS_FIELD}) -- aws'\n"
+    },
+    "options": {
+      "systems": [
+        "aarch64-darwin",
+        "aarch64-linux",
+        "x86_64-darwin",
+        "x86_64-linux"
+      ],
+      "allow": {
+        "licenses": []
+      },
+      "semver": {}
+    }
+  },
+  "packages": [
+    {
+      "attr_path": "_1password",
+      "broken": false,
+      "derivation": "/nix/store/dzcg1rbz8k95446f52j3asjr5rhdvh4c-1password-cli-2.29.0.drv",
+      "description": "1Password command-line tool",
+      "install_id": "_1password",
+      "license": "Unfree",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=9f4128e00b0ae8ec65918efeba59db998750ead6",
+      "name": "1password-cli-2.29.0",
+      "pname": "_1password",
+      "rev": "9f4128e00b0ae8ec65918efeba59db998750ead6",
+      "rev_count": 647193,
+      "rev_date": "2024-07-03T18:27:49Z",
+      "scrape_date": "2024-07-05T00:14:29Z",
+      "stabilities": [
+        "staging",
+        "unstable"
+      ],
+      "unfree": true,
+      "version": "1password-cli-2.29.0",
+      "outputs_to_install": [
+        "out"
+      ],
+      "outputs": {
+        "out": "/nix/store/1cx7302mdpb9zplgsl06in4z635q3xf4-1password-cli-2.29.0"
+      },
+      "system": "aarch64-darwin",
+      "group": "toplevel",
+      "priority": 5
+    },
+    {
+      "attr_path": "_1password",
+      "broken": false,
+      "derivation": "/nix/store/50x5d33f5r9pyzcbqkkagj8yl4sbqf40-1password-cli-2.29.0.drv",
+      "description": "1Password command-line tool",
+      "install_id": "_1password",
+      "license": "Unfree",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=9f4128e00b0ae8ec65918efeba59db998750ead6",
+      "name": "1password-cli-2.29.0",
+      "pname": "_1password",
+      "rev": "9f4128e00b0ae8ec65918efeba59db998750ead6",
+      "rev_count": 647193,
+      "rev_date": "2024-07-03T18:27:49Z",
+      "scrape_date": "2024-07-05T00:14:29Z",
+      "stabilities": [
+        "staging",
+        "unstable"
+      ],
+      "unfree": true,
+      "version": "1password-cli-2.29.0",
+      "outputs_to_install": [
+        "out"
+      ],
+      "outputs": {
+        "out": "/nix/store/jzhgf08ll9dyqwch85vidvww6fscjjvg-1password-cli-2.29.0"
+      },
+      "system": "aarch64-linux",
+      "group": "toplevel",
+      "priority": 5
+    },
+    {
+      "attr_path": "_1password",
+      "broken": false,
+      "derivation": "/nix/store/wvk20bqrzzck9r5jh1dcndrf9nz303k7-1password-cli-2.29.0.drv",
+      "description": "1Password command-line tool",
+      "install_id": "_1password",
+      "license": "Unfree",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=9f4128e00b0ae8ec65918efeba59db998750ead6",
+      "name": "1password-cli-2.29.0",
+      "pname": "_1password",
+      "rev": "9f4128e00b0ae8ec65918efeba59db998750ead6",
+      "rev_count": 647193,
+      "rev_date": "2024-07-03T18:27:49Z",
+      "scrape_date": "2024-07-05T00:14:29Z",
+      "stabilities": [
+        "staging",
+        "unstable"
+      ],
+      "unfree": true,
+      "version": "1password-cli-2.29.0",
+      "outputs_to_install": [
+        "out"
+      ],
+      "outputs": {
+        "out": "/nix/store/ghjpjjdnyz31788f05kx2jzw17s87d77-1password-cli-2.29.0"
+      },
+      "system": "x86_64-darwin",
+      "group": "toplevel",
+      "priority": 5
+    },
+    {
+      "attr_path": "_1password",
+      "broken": false,
+      "derivation": "/nix/store/l3s89kskr77kjbj69dp92w5mkgj60rg1-1password-cli-2.29.0.drv",
+      "description": "1Password command-line tool",
+      "install_id": "_1password",
+      "license": "Unfree",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=9f4128e00b0ae8ec65918efeba59db998750ead6",
+      "name": "1password-cli-2.29.0",
+      "pname": "_1password",
+      "rev": "9f4128e00b0ae8ec65918efeba59db998750ead6",
+      "rev_count": 647193,
+      "rev_date": "2024-07-03T18:27:49Z",
+      "scrape_date": "2024-07-05T00:14:29Z",
+      "stabilities": [
+        "staging",
+        "unstable"
+      ],
+      "unfree": true,
+      "version": "1password-cli-2.29.0",
+      "outputs_to_install": [
+        "out"
+      ],
+      "outputs": {
+        "out": "/nix/store/lkk9apsa47lz9aag2qk2qknbdysh6fk0-1password-cli-2.29.0"
+      },
+      "system": "x86_64-linux",
+      "group": "toplevel",
+      "priority": 5
+    },
+    {
+      "attr_path": "awscli2",
+      "broken": false,
+      "derivation": "/nix/store/qqz4h0cfv81hhxcs0lcdwhmh4l6m66mb-awscli2-2.17.0.drv",
+      "description": "Unified tool to manage your AWS services",
+      "install_id": "awscli2",
+      "license": "Apache-2.0",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=9f4128e00b0ae8ec65918efeba59db998750ead6",
+      "name": "awscli2-2.17.0",
+      "pname": "awscli2",
+      "rev": "9f4128e00b0ae8ec65918efeba59db998750ead6",
+      "rev_count": 647193,
+      "rev_date": "2024-07-03T18:27:49Z",
+      "scrape_date": "2024-07-05T00:14:29Z",
+      "stabilities": [
+        "staging",
+        "unstable"
+      ],
+      "unfree": false,
+      "version": "2.17.0",
+      "outputs_to_install": [
+        "out"
+      ],
+      "outputs": {
+        "dist": "/nix/store/a03zc0zxmf8xx02pc7j4dsycbz6vf4yq-awscli2-2.17.0-dist",
+        "out": "/nix/store/v9xss3bwpvw6ld5h2nsr08zsy1lvj3sd-awscli2-2.17.0"
+      },
+      "system": "aarch64-darwin",
+      "group": "toplevel",
+      "priority": 5
+    },
+    {
+      "attr_path": "awscli2",
+      "broken": false,
+      "derivation": "/nix/store/hsfwchxmhkjy4my07kq0bafp246cgaxp-awscli2-2.17.0.drv",
+      "description": "Unified tool to manage your AWS services",
+      "install_id": "awscli2",
+      "license": "Apache-2.0",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=9f4128e00b0ae8ec65918efeba59db998750ead6",
+      "name": "awscli2-2.17.0",
+      "pname": "awscli2",
+      "rev": "9f4128e00b0ae8ec65918efeba59db998750ead6",
+      "rev_count": 647193,
+      "rev_date": "2024-07-03T18:27:49Z",
+      "scrape_date": "2024-07-05T00:14:29Z",
+      "stabilities": [
+        "staging",
+        "unstable"
+      ],
+      "unfree": false,
+      "version": "2.17.0",
+      "outputs_to_install": [
+        "out"
+      ],
+      "outputs": {
+        "dist": "/nix/store/wcbxlldpa9dp6si7864sg0pbnk3dndlw-awscli2-2.17.0-dist",
+        "out": "/nix/store/lbcq024pyardrsxrq909zynk7cpxm404-awscli2-2.17.0"
+      },
+      "system": "aarch64-linux",
+      "group": "toplevel",
+      "priority": 5
+    },
+    {
+      "attr_path": "awscli2",
+      "broken": false,
+      "derivation": "/nix/store/az1xad9nhnj297lrhahnamfja477mh1n-awscli2-2.17.0.drv",
+      "description": "Unified tool to manage your AWS services",
+      "install_id": "awscli2",
+      "license": "Apache-2.0",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=9f4128e00b0ae8ec65918efeba59db998750ead6",
+      "name": "awscli2-2.17.0",
+      "pname": "awscli2",
+      "rev": "9f4128e00b0ae8ec65918efeba59db998750ead6",
+      "rev_count": 647193,
+      "rev_date": "2024-07-03T18:27:49Z",
+      "scrape_date": "2024-07-05T00:14:29Z",
+      "stabilities": [
+        "staging",
+        "unstable"
+      ],
+      "unfree": false,
+      "version": "2.17.0",
+      "outputs_to_install": [
+        "out"
+      ],
+      "outputs": {
+        "dist": "/nix/store/a9vzz0z6rbji3fcrnylhv5xv9vqprv19-awscli2-2.17.0-dist",
+        "out": "/nix/store/xjbi0mnsd5gm1nlphidg9x1wkk83rf9l-awscli2-2.17.0"
+      },
+      "system": "x86_64-darwin",
+      "group": "toplevel",
+      "priority": 5
+    },
+    {
+      "attr_path": "awscli2",
+      "broken": false,
+      "derivation": "/nix/store/bqas05f0bdy61i2dzqbsajhd9nfjyri7-awscli2-2.17.0.drv",
+      "description": "Unified tool to manage your AWS services",
+      "install_id": "awscli2",
+      "license": "Apache-2.0",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=9f4128e00b0ae8ec65918efeba59db998750ead6",
+      "name": "awscli2-2.17.0",
+      "pname": "awscli2",
+      "rev": "9f4128e00b0ae8ec65918efeba59db998750ead6",
+      "rev_count": 647193,
+      "rev_date": "2024-07-03T18:27:49Z",
+      "scrape_date": "2024-07-05T00:14:29Z",
+      "stabilities": [
+        "staging",
+        "unstable"
+      ],
+      "unfree": false,
+      "version": "2.17.0",
+      "outputs_to_install": [
+        "out"
+      ],
+      "outputs": {
+        "dist": "/nix/store/hscm41qlj2snmpylpm9y90glvp1bqg0k-awscli2-2.17.0-dist",
+        "out": "/nix/store/lphj51m7iy36g0fvdjvrn2zqg77hwg8k-awscli2-2.17.0"
+      },
+      "system": "x86_64-linux",
+      "group": "toplevel",
+      "priority": 5
+    },
+    {
+      "attr_path": "github-cli",
+      "broken": false,
+      "derivation": "/nix/store/1vdflmzajw8g2wppwhyjr3rjjpv4pdyn-gh-2.52.0.drv",
+      "description": "GitHub CLI tool",
+      "install_id": "github-cli",
+      "license": "MIT",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=9f4128e00b0ae8ec65918efeba59db998750ead6",
+      "name": "gh-2.52.0",
+      "pname": "github-cli",
+      "rev": "9f4128e00b0ae8ec65918efeba59db998750ead6",
+      "rev_count": 647193,
+      "rev_date": "2024-07-03T18:27:49Z",
+      "scrape_date": "2024-07-05T00:14:29Z",
+      "stabilities": [
+        "staging",
+        "unstable"
+      ],
+      "unfree": false,
+      "version": "gh-2.52.0",
+      "outputs_to_install": [
+        "out"
+      ],
+      "outputs": {
+        "out": "/nix/store/mad7r7xcw0wbhvg9czrw5hwc6906i7h4-gh-2.52.0"
+      },
+      "system": "aarch64-darwin",
+      "group": "toplevel",
+      "priority": 5
+    },
+    {
+      "attr_path": "github-cli",
+      "broken": false,
+      "derivation": "/nix/store/p48lkf1cdr9rvx5dvq4d1mc6jraz1983-gh-2.52.0.drv",
+      "description": "GitHub CLI tool",
+      "install_id": "github-cli",
+      "license": "MIT",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=9f4128e00b0ae8ec65918efeba59db998750ead6",
+      "name": "gh-2.52.0",
+      "pname": "github-cli",
+      "rev": "9f4128e00b0ae8ec65918efeba59db998750ead6",
+      "rev_count": 647193,
+      "rev_date": "2024-07-03T18:27:49Z",
+      "scrape_date": "2024-07-05T00:14:29Z",
+      "stabilities": [
+        "staging",
+        "unstable"
+      ],
+      "unfree": false,
+      "version": "gh-2.52.0",
+      "outputs_to_install": [
+        "out"
+      ],
+      "outputs": {
+        "out": "/nix/store/9v5zpk6pfizpi64smrapw28lfn4lp9zd-gh-2.52.0"
+      },
+      "system": "aarch64-linux",
+      "group": "toplevel",
+      "priority": 5
+    },
+    {
+      "attr_path": "github-cli",
+      "broken": false,
+      "derivation": "/nix/store/apik5w663ac6rrrqsyivsqrizlxxbs2n-gh-2.52.0.drv",
+      "description": "GitHub CLI tool",
+      "install_id": "github-cli",
+      "license": "MIT",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=9f4128e00b0ae8ec65918efeba59db998750ead6",
+      "name": "gh-2.52.0",
+      "pname": "github-cli",
+      "rev": "9f4128e00b0ae8ec65918efeba59db998750ead6",
+      "rev_count": 647193,
+      "rev_date": "2024-07-03T18:27:49Z",
+      "scrape_date": "2024-07-05T00:14:29Z",
+      "stabilities": [
+        "staging",
+        "unstable"
+      ],
+      "unfree": false,
+      "version": "gh-2.52.0",
+      "outputs_to_install": [
+        "out"
+      ],
+      "outputs": {
+        "out": "/nix/store/xya7si2ss204p0xl89whmdqr840r1r2q-gh-2.52.0"
+      },
+      "system": "x86_64-darwin",
+      "group": "toplevel",
+      "priority": 5
+    },
+    {
+      "attr_path": "github-cli",
+      "broken": false,
+      "derivation": "/nix/store/dbszaq0ilwb69ng0hsc2naxjb3mx6nax-gh-2.52.0.drv",
+      "description": "GitHub CLI tool",
+      "install_id": "github-cli",
+      "license": "MIT",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=9f4128e00b0ae8ec65918efeba59db998750ead6",
+      "name": "gh-2.52.0",
+      "pname": "github-cli",
+      "rev": "9f4128e00b0ae8ec65918efeba59db998750ead6",
+      "rev_count": 647193,
+      "rev_date": "2024-07-03T18:27:49Z",
+      "scrape_date": "2024-07-05T00:14:29Z",
+      "stabilities": [
+        "staging",
+        "unstable"
+      ],
+      "unfree": false,
+      "version": "gh-2.52.0",
+      "outputs_to_install": [
+        "out"
+      ],
+      "outputs": {
+        "out": "/nix/store/vff2gc5q5hx3xygq40aad6vbnij2l3cv-gh-2.52.0"
+      },
+      "system": "x86_64-linux",
+      "group": "toplevel",
+      "priority": 5
+    },
+    {
+      "attr_path": "gum",
+      "broken": false,
+      "derivation": "/nix/store/52i3x5mmp7dfm6p8zvk5virx2fw18ylr-gum-0.14.1.drv",
+      "description": "Tasty Bubble Gum for your shell",
+      "install_id": "gum",
+      "license": "MIT",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=9f4128e00b0ae8ec65918efeba59db998750ead6",
+      "name": "gum-0.14.1",
+      "pname": "gum",
+      "rev": "9f4128e00b0ae8ec65918efeba59db998750ead6",
+      "rev_count": 647193,
+      "rev_date": "2024-07-03T18:27:49Z",
+      "scrape_date": "2024-07-05T00:14:29Z",
+      "stabilities": [
+        "staging",
+        "unstable"
+      ],
+      "unfree": false,
+      "version": "0.14.1",
+      "outputs_to_install": [
+        "out"
+      ],
+      "outputs": {
+        "out": "/nix/store/wrwq2wp1b37aab7g84mwfjrck5qmbdwq-gum-0.14.1"
+      },
+      "system": "aarch64-darwin",
+      "group": "toplevel",
+      "priority": 5
+    },
+    {
+      "attr_path": "gum",
+      "broken": false,
+      "derivation": "/nix/store/qrvxw8s7rgd5xs8npmdjksm5m1mv9jw6-gum-0.14.1.drv",
+      "description": "Tasty Bubble Gum for your shell",
+      "install_id": "gum",
+      "license": "MIT",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=9f4128e00b0ae8ec65918efeba59db998750ead6",
+      "name": "gum-0.14.1",
+      "pname": "gum",
+      "rev": "9f4128e00b0ae8ec65918efeba59db998750ead6",
+      "rev_count": 647193,
+      "rev_date": "2024-07-03T18:27:49Z",
+      "scrape_date": "2024-07-05T00:14:29Z",
+      "stabilities": [
+        "staging",
+        "unstable"
+      ],
+      "unfree": false,
+      "version": "0.14.1",
+      "outputs_to_install": [
+        "out"
+      ],
+      "outputs": {
+        "out": "/nix/store/p5zr5kx07s1q2q2b4x3w7829d90lri3v-gum-0.14.1"
+      },
+      "system": "aarch64-linux",
+      "group": "toplevel",
+      "priority": 5
+    },
+    {
+      "attr_path": "gum",
+      "broken": false,
+      "derivation": "/nix/store/jdjqq2y83dn5hzwq4wn93pfx7whmsp7k-gum-0.14.1.drv",
+      "description": "Tasty Bubble Gum for your shell",
+      "install_id": "gum",
+      "license": "MIT",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=9f4128e00b0ae8ec65918efeba59db998750ead6",
+      "name": "gum-0.14.1",
+      "pname": "gum",
+      "rev": "9f4128e00b0ae8ec65918efeba59db998750ead6",
+      "rev_count": 647193,
+      "rev_date": "2024-07-03T18:27:49Z",
+      "scrape_date": "2024-07-05T00:14:29Z",
+      "stabilities": [
+        "staging",
+        "unstable"
+      ],
+      "unfree": false,
+      "version": "0.14.1",
+      "outputs_to_install": [
+        "out"
+      ],
+      "outputs": {
+        "out": "/nix/store/y8jq0g1248psylchrp6w4kl2w5aj5b70-gum-0.14.1"
+      },
+      "system": "x86_64-darwin",
+      "group": "toplevel",
+      "priority": 5
+    },
+    {
+      "attr_path": "gum",
+      "broken": false,
+      "derivation": "/nix/store/f4mi68wxfg1mkg0kdzlm89zjmv1km4hp-gum-0.14.1.drv",
+      "description": "Tasty Bubble Gum for your shell",
+      "install_id": "gum",
+      "license": "MIT",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=9f4128e00b0ae8ec65918efeba59db998750ead6",
+      "name": "gum-0.14.1",
+      "pname": "gum",
+      "rev": "9f4128e00b0ae8ec65918efeba59db998750ead6",
+      "rev_count": 647193,
+      "rev_date": "2024-07-03T18:27:49Z",
+      "scrape_date": "2024-07-05T00:14:29Z",
+      "stabilities": [
+        "staging",
+        "unstable"
+      ],
+      "unfree": false,
+      "version": "0.14.1",
+      "outputs_to_install": [
+        "out"
+      ],
+      "outputs": {
+        "out": "/nix/store/kdlpj359v1bzjya79j8iwapg0swzm8mh-gum-0.14.1"
+      },
+      "system": "x86_64-linux",
+      "group": "toplevel",
+      "priority": 5
+    }
+  ]
+}
