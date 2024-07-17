@@ -1,0 +1,529 @@
+{
+  "lockfile-version": 1,
+  "manifest": {
+    "version": 1,
+    "install": {
+      "_1password": {
+        "pkg-path": "_1password",
+        "version": "1password-cli-2.29.0"
+      },
+      "awscli2": {
+        "pkg-path": "awscli2",
+        "version": "2.17.0"
+      },
+      "github-cli": {
+        "pkg-path": "github-cli",
+        "version": "gh-2.52.0"
+      },
+      "gum": {
+        "pkg-path": "gum",
+        "version": "0.14.1"
+      }
+    },
+    "vars": {},
+    "hook": {
+      "on-activate": "# Function to authenticate with 1Password; this is called by the 'aws' alias in [profile]\nauthenticate_1password() {\n    local config_file=\"$HOME/.config/flox/1password.session\"\n\n    [[ -f \"$config_file\" ]] && source \"$config_file\"\n\n    if [[ \"${ENABLE_1PASSWORD_PERSISTENCE}\" != \"true\" ]]; then\n        echo \"1Password session persistence is not enabled. Skipping authentication.\"\n        return 0\n    fi\n\n    # Check if the token exists and is valid\n    if [[ -n \"${OP_SESSION_TOKEN}\" ]]; then\n        if op whoami --session \"${OP_SESSION_TOKEN}\" >/dev/null 2>&1; then\n            echo \"Existing 1Password session is valid.\"\n            return 0\n        else\n            echo \"Existing 1Password session is invalid. Re-authenticating...\"\n            unset OP_SESSION_TOKEN\n        fi\n    else\n        echo \"No existing 1Password session found. Authenticating...\"\n    fi\n\n    max_retries=5\n    retry_count=0\n    while true; do\n        OP_SESSION_TOKEN=$(op signin --raw 2>&1)\n        if [[ $? -eq 0 ]]; then\n            # Remove the old session token and insert the new one in its place\n            sed -i '/# BEGIN 1PASSWORD SESSION TOKEN/,/# END 1PASSWORD SESSION TOKEN/c\\\n# BEGIN 1PASSWORD SESSION TOKEN\\\nOP_SESSION_TOKEN='\"${OP_SESSION_TOKEN}\"'\\\n# END 1PASSWORD SESSION TOKEN' \"$config_file\"\n\n            # If the session token section doesn't exist, append it\n            if ! grep -q \"# BEGIN 1PASSWORD SESSION TOKEN\" \"$config_file\"; then\n                echo >> \"$config_file\"\n                echo \"# BEGIN 1PASSWORD SESSION TOKEN\" >> \"$config_file\"\n                echo \"OP_SESSION_TOKEN=${OP_SESSION_TOKEN}\" >> \"$config_file\"\n                echo \"# END 1PASSWORD SESSION TOKEN\" >> \"$config_file\"\n            fi\n            \n            echo \"Authentication successful.\"\n            break\n        else\n            retry_count=$((retry_count + 1))\n            if [[ ${retry_count} -ge ${max_retries} ]]; then\n                echo \"Maximum number of retries exceeded. Please check your 1Password credentials and try again.\"\n                return 1\n            else\n                echo \"Invalid password. Please try again.\"\n            fi\n        fi\n    done\n\n    # Here we export the OP_SESSION_TOKEN for use in the current session\n    export OP_SESSION_TOKEN\n}\n\n# Call the 1Password authentication function\nauthenticate_1password\n\n# Export the OP_SESSION_TOKEN for use in the profile scripts\nexport OP_SESSION_TOKEN\n\n"
+    },
+    "profile": {
+      "common": "# Source the 1password.session file\n[[ -f ~/.config/flox/1password.session ]] && source ~/.config/flox/1password.session\n\n# Alias to run the aws command. Set the OP_VAULT, OP_AWS_CREDENTIALS, and\n# OP_AWS_USERNAME_FIELD variables in ~/.config/flox/1password.session.\n# Alternatively, you can hard-code your credentials in the command below\n# or as environment variables in the [vars] section above!\nalias aws='op run --session \"${OP_SESSION_TOKEN}\" --env-file <(printf \"%s\\n\" AWS_ACCESS_KEY_ID=op://${OP_VAULT}/${OP_AWS_CREDENTIALS}/${OP_AWS_USERNAME_FIELD} AWS_SECRET_ACCESS_KEY=op://${OP_VAULT}/${OP_AWS_CREDENTIALS}/${OP_AWS_CREDENTIALS_FIELD}) -- aws'alias aws='op run --session \"${OP_SESSION_TOKEN}\" --env-file <(printf \"%s\\n\" AWS_ACCESS_KEY_ID=op://${OP_VAULT}/${OP_AWS_CREDENTIALS}/username AWS_SECRET_ACCESS_KEY=op://${OP_VAULT}/${OP_AWS_CREDENTIALS}/credential) -- aws'\n"
+    },
+    "options": {
+      "systems": [
+        "aarch64-darwin",
+        "aarch64-linux",
+        "x86_64-darwin",
+        "x86_64-linux"
+      ],
+      "allow": {
+        "licenses": []
+      },
+      "semver": {}
+    }
+  },
+  "packages": [
+    {
+      "attr_path": "_1password",
+      "broken": false,
+      "derivation": "/nix/store/dzcg1rbz8k95446f52j3asjr5rhdvh4c-1password-cli-2.29.0.drv",
+      "description": "1Password command-line tool",
+      "install_id": "_1password",
+      "license": "Unfree",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=9f4128e00b0ae8ec65918efeba59db998750ead6",
+      "name": "1password-cli-2.29.0",
+      "pname": "_1password",
+      "rev": "9f4128e00b0ae8ec65918efeba59db998750ead6",
+      "rev_count": 647193,
+      "rev_date": "2024-07-03T18:27:49Z",
+      "scrape_date": "2024-07-05T00:14:29Z",
+      "stabilities": [
+        "staging",
+        "unstable"
+      ],
+      "unfree": true,
+      "version": "1password-cli-2.29.0",
+      "outputs_to_install": [
+        "out"
+      ],
+      "outputs": {
+        "out": "/nix/store/1cx7302mdpb9zplgsl06in4z635q3xf4-1password-cli-2.29.0"
+      },
+      "system": "aarch64-darwin",
+      "group": "toplevel",
+      "priority": 5
+    },
+    {
+      "attr_path": "_1password",
+      "broken": false,
+      "derivation": "/nix/store/50x5d33f5r9pyzcbqkkagj8yl4sbqf40-1password-cli-2.29.0.drv",
+      "description": "1Password command-line tool",
+      "install_id": "_1password",
+      "license": "Unfree",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=9f4128e00b0ae8ec65918efeba59db998750ead6",
+      "name": "1password-cli-2.29.0",
+      "pname": "_1password",
+      "rev": "9f4128e00b0ae8ec65918efeba59db998750ead6",
+      "rev_count": 647193,
+      "rev_date": "2024-07-03T18:27:49Z",
+      "scrape_date": "2024-07-05T00:14:29Z",
+      "stabilities": [
+        "staging",
+        "unstable"
+      ],
+      "unfree": true,
+      "version": "1password-cli-2.29.0",
+      "outputs_to_install": [
+        "out"
+      ],
+      "outputs": {
+        "out": "/nix/store/jzhgf08ll9dyqwch85vidvww6fscjjvg-1password-cli-2.29.0"
+      },
+      "system": "aarch64-linux",
+      "group": "toplevel",
+      "priority": 5
+    },
+    {
+      "attr_path": "_1password",
+      "broken": false,
+      "derivation": "/nix/store/wvk20bqrzzck9r5jh1dcndrf9nz303k7-1password-cli-2.29.0.drv",
+      "description": "1Password command-line tool",
+      "install_id": "_1password",
+      "license": "Unfree",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=9f4128e00b0ae8ec65918efeba59db998750ead6",
+      "name": "1password-cli-2.29.0",
+      "pname": "_1password",
+      "rev": "9f4128e00b0ae8ec65918efeba59db998750ead6",
+      "rev_count": 647193,
+      "rev_date": "2024-07-03T18:27:49Z",
+      "scrape_date": "2024-07-05T00:14:29Z",
+      "stabilities": [
+        "staging",
+        "unstable"
+      ],
+      "unfree": true,
+      "version": "1password-cli-2.29.0",
+      "outputs_to_install": [
+        "out"
+      ],
+      "outputs": {
+        "out": "/nix/store/ghjpjjdnyz31788f05kx2jzw17s87d77-1password-cli-2.29.0"
+      },
+      "system": "x86_64-darwin",
+      "group": "toplevel",
+      "priority": 5
+    },
+    {
+      "attr_path": "_1password",
+      "broken": false,
+      "derivation": "/nix/store/l3s89kskr77kjbj69dp92w5mkgj60rg1-1password-cli-2.29.0.drv",
+      "description": "1Password command-line tool",
+      "install_id": "_1password",
+      "license": "Unfree",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=9f4128e00b0ae8ec65918efeba59db998750ead6",
+      "name": "1password-cli-2.29.0",
+      "pname": "_1password",
+      "rev": "9f4128e00b0ae8ec65918efeba59db998750ead6",
+      "rev_count": 647193,
+      "rev_date": "2024-07-03T18:27:49Z",
+      "scrape_date": "2024-07-05T00:14:29Z",
+      "stabilities": [
+        "staging",
+        "unstable"
+      ],
+      "unfree": true,
+      "version": "1password-cli-2.29.0",
+      "outputs_to_install": [
+        "out"
+      ],
+      "outputs": {
+        "out": "/nix/store/lkk9apsa47lz9aag2qk2qknbdysh6fk0-1password-cli-2.29.0"
+      },
+      "system": "x86_64-linux",
+      "group": "toplevel",
+      "priority": 5
+    },
+    {
+      "attr_path": "awscli2",
+      "broken": false,
+      "derivation": "/nix/store/qqz4h0cfv81hhxcs0lcdwhmh4l6m66mb-awscli2-2.17.0.drv",
+      "description": "Unified tool to manage your AWS services",
+      "install_id": "awscli2",
+      "license": "Apache-2.0",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=9f4128e00b0ae8ec65918efeba59db998750ead6",
+      "name": "awscli2-2.17.0",
+      "pname": "awscli2",
+      "rev": "9f4128e00b0ae8ec65918efeba59db998750ead6",
+      "rev_count": 647193,
+      "rev_date": "2024-07-03T18:27:49Z",
+      "scrape_date": "2024-07-05T00:14:29Z",
+      "stabilities": [
+        "staging",
+        "unstable"
+      ],
+      "unfree": false,
+      "version": "2.17.0",
+      "outputs_to_install": [
+        "out"
+      ],
+      "outputs": {
+        "dist": "/nix/store/a03zc0zxmf8xx02pc7j4dsycbz6vf4yq-awscli2-2.17.0-dist",
+        "out": "/nix/store/v9xss3bwpvw6ld5h2nsr08zsy1lvj3sd-awscli2-2.17.0"
+      },
+      "system": "aarch64-darwin",
+      "group": "toplevel",
+      "priority": 5
+    },
+    {
+      "attr_path": "awscli2",
+      "broken": false,
+      "derivation": "/nix/store/hsfwchxmhkjy4my07kq0bafp246cgaxp-awscli2-2.17.0.drv",
+      "description": "Unified tool to manage your AWS services",
+      "install_id": "awscli2",
+      "license": "Apache-2.0",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=9f4128e00b0ae8ec65918efeba59db998750ead6",
+      "name": "awscli2-2.17.0",
+      "pname": "awscli2",
+      "rev": "9f4128e00b0ae8ec65918efeba59db998750ead6",
+      "rev_count": 647193,
+      "rev_date": "2024-07-03T18:27:49Z",
+      "scrape_date": "2024-07-05T00:14:29Z",
+      "stabilities": [
+        "staging",
+        "unstable"
+      ],
+      "unfree": false,
+      "version": "2.17.0",
+      "outputs_to_install": [
+        "out"
+      ],
+      "outputs": {
+        "dist": "/nix/store/wcbxlldpa9dp6si7864sg0pbnk3dndlw-awscli2-2.17.0-dist",
+        "out": "/nix/store/lbcq024pyardrsxrq909zynk7cpxm404-awscli2-2.17.0"
+      },
+      "system": "aarch64-linux",
+      "group": "toplevel",
+      "priority": 5
+    },
+    {
+      "attr_path": "awscli2",
+      "broken": false,
+      "derivation": "/nix/store/az1xad9nhnj297lrhahnamfja477mh1n-awscli2-2.17.0.drv",
+      "description": "Unified tool to manage your AWS services",
+      "install_id": "awscli2",
+      "license": "Apache-2.0",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=9f4128e00b0ae8ec65918efeba59db998750ead6",
+      "name": "awscli2-2.17.0",
+      "pname": "awscli2",
+      "rev": "9f4128e00b0ae8ec65918efeba59db998750ead6",
+      "rev_count": 647193,
+      "rev_date": "2024-07-03T18:27:49Z",
+      "scrape_date": "2024-07-05T00:14:29Z",
+      "stabilities": [
+        "staging",
+        "unstable"
+      ],
+      "unfree": false,
+      "version": "2.17.0",
+      "outputs_to_install": [
+        "out"
+      ],
+      "outputs": {
+        "dist": "/nix/store/a9vzz0z6rbji3fcrnylhv5xv9vqprv19-awscli2-2.17.0-dist",
+        "out": "/nix/store/xjbi0mnsd5gm1nlphidg9x1wkk83rf9l-awscli2-2.17.0"
+      },
+      "system": "x86_64-darwin",
+      "group": "toplevel",
+      "priority": 5
+    },
+    {
+      "attr_path": "awscli2",
+      "broken": false,
+      "derivation": "/nix/store/bqas05f0bdy61i2dzqbsajhd9nfjyri7-awscli2-2.17.0.drv",
+      "description": "Unified tool to manage your AWS services",
+      "install_id": "awscli2",
+      "license": "Apache-2.0",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=9f4128e00b0ae8ec65918efeba59db998750ead6",
+      "name": "awscli2-2.17.0",
+      "pname": "awscli2",
+      "rev": "9f4128e00b0ae8ec65918efeba59db998750ead6",
+      "rev_count": 647193,
+      "rev_date": "2024-07-03T18:27:49Z",
+      "scrape_date": "2024-07-05T00:14:29Z",
+      "stabilities": [
+        "staging",
+        "unstable"
+      ],
+      "unfree": false,
+      "version": "2.17.0",
+      "outputs_to_install": [
+        "out"
+      ],
+      "outputs": {
+        "dist": "/nix/store/hscm41qlj2snmpylpm9y90glvp1bqg0k-awscli2-2.17.0-dist",
+        "out": "/nix/store/lphj51m7iy36g0fvdjvrn2zqg77hwg8k-awscli2-2.17.0"
+      },
+      "system": "x86_64-linux",
+      "group": "toplevel",
+      "priority": 5
+    },
+    {
+      "attr_path": "github-cli",
+      "broken": false,
+      "derivation": "/nix/store/1vdflmzajw8g2wppwhyjr3rjjpv4pdyn-gh-2.52.0.drv",
+      "description": "GitHub CLI tool",
+      "install_id": "github-cli",
+      "license": "MIT",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=9f4128e00b0ae8ec65918efeba59db998750ead6",
+      "name": "gh-2.52.0",
+      "pname": "github-cli",
+      "rev": "9f4128e00b0ae8ec65918efeba59db998750ead6",
+      "rev_count": 647193,
+      "rev_date": "2024-07-03T18:27:49Z",
+      "scrape_date": "2024-07-05T00:14:29Z",
+      "stabilities": [
+        "staging",
+        "unstable"
+      ],
+      "unfree": false,
+      "version": "gh-2.52.0",
+      "outputs_to_install": [
+        "out"
+      ],
+      "outputs": {
+        "out": "/nix/store/mad7r7xcw0wbhvg9czrw5hwc6906i7h4-gh-2.52.0"
+      },
+      "system": "aarch64-darwin",
+      "group": "toplevel",
+      "priority": 5
+    },
+    {
+      "attr_path": "github-cli",
+      "broken": false,
+      "derivation": "/nix/store/p48lkf1cdr9rvx5dvq4d1mc6jraz1983-gh-2.52.0.drv",
+      "description": "GitHub CLI tool",
+      "install_id": "github-cli",
+      "license": "MIT",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=9f4128e00b0ae8ec65918efeba59db998750ead6",
+      "name": "gh-2.52.0",
+      "pname": "github-cli",
+      "rev": "9f4128e00b0ae8ec65918efeba59db998750ead6",
+      "rev_count": 647193,
+      "rev_date": "2024-07-03T18:27:49Z",
+      "scrape_date": "2024-07-05T00:14:29Z",
+      "stabilities": [
+        "staging",
+        "unstable"
+      ],
+      "unfree": false,
+      "version": "gh-2.52.0",
+      "outputs_to_install": [
+        "out"
+      ],
+      "outputs": {
+        "out": "/nix/store/9v5zpk6pfizpi64smrapw28lfn4lp9zd-gh-2.52.0"
+      },
+      "system": "aarch64-linux",
+      "group": "toplevel",
+      "priority": 5
+    },
+    {
+      "attr_path": "github-cli",
+      "broken": false,
+      "derivation": "/nix/store/apik5w663ac6rrrqsyivsqrizlxxbs2n-gh-2.52.0.drv",
+      "description": "GitHub CLI tool",
+      "install_id": "github-cli",
+      "license": "MIT",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=9f4128e00b0ae8ec65918efeba59db998750ead6",
+      "name": "gh-2.52.0",
+      "pname": "github-cli",
+      "rev": "9f4128e00b0ae8ec65918efeba59db998750ead6",
+      "rev_count": 647193,
+      "rev_date": "2024-07-03T18:27:49Z",
+      "scrape_date": "2024-07-05T00:14:29Z",
+      "stabilities": [
+        "staging",
+        "unstable"
+      ],
+      "unfree": false,
+      "version": "gh-2.52.0",
+      "outputs_to_install": [
+        "out"
+      ],
+      "outputs": {
+        "out": "/nix/store/xya7si2ss204p0xl89whmdqr840r1r2q-gh-2.52.0"
+      },
+      "system": "x86_64-darwin",
+      "group": "toplevel",
+      "priority": 5
+    },
+    {
+      "attr_path": "github-cli",
+      "broken": false,
+      "derivation": "/nix/store/dbszaq0ilwb69ng0hsc2naxjb3mx6nax-gh-2.52.0.drv",
+      "description": "GitHub CLI tool",
+      "install_id": "github-cli",
+      "license": "MIT",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=9f4128e00b0ae8ec65918efeba59db998750ead6",
+      "name": "gh-2.52.0",
+      "pname": "github-cli",
+      "rev": "9f4128e00b0ae8ec65918efeba59db998750ead6",
+      "rev_count": 647193,
+      "rev_date": "2024-07-03T18:27:49Z",
+      "scrape_date": "2024-07-05T00:14:29Z",
+      "stabilities": [
+        "staging",
+        "unstable"
+      ],
+      "unfree": false,
+      "version": "gh-2.52.0",
+      "outputs_to_install": [
+        "out"
+      ],
+      "outputs": {
+        "out": "/nix/store/vff2gc5q5hx3xygq40aad6vbnij2l3cv-gh-2.52.0"
+      },
+      "system": "x86_64-linux",
+      "group": "toplevel",
+      "priority": 5
+    },
+    {
+      "attr_path": "gum",
+      "broken": false,
+      "derivation": "/nix/store/52i3x5mmp7dfm6p8zvk5virx2fw18ylr-gum-0.14.1.drv",
+      "description": "Tasty Bubble Gum for your shell",
+      "install_id": "gum",
+      "license": "MIT",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=9f4128e00b0ae8ec65918efeba59db998750ead6",
+      "name": "gum-0.14.1",
+      "pname": "gum",
+      "rev": "9f4128e00b0ae8ec65918efeba59db998750ead6",
+      "rev_count": 647193,
+      "rev_date": "2024-07-03T18:27:49Z",
+      "scrape_date": "2024-07-05T00:14:29Z",
+      "stabilities": [
+        "staging",
+        "unstable"
+      ],
+      "unfree": false,
+      "version": "0.14.1",
+      "outputs_to_install": [
+        "out"
+      ],
+      "outputs": {
+        "out": "/nix/store/wrwq2wp1b37aab7g84mwfjrck5qmbdwq-gum-0.14.1"
+      },
+      "system": "aarch64-darwin",
+      "group": "toplevel",
+      "priority": 5
+    },
+    {
+      "attr_path": "gum",
+      "broken": false,
+      "derivation": "/nix/store/qrvxw8s7rgd5xs8npmdjksm5m1mv9jw6-gum-0.14.1.drv",
+      "description": "Tasty Bubble Gum for your shell",
+      "install_id": "gum",
+      "license": "MIT",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=9f4128e00b0ae8ec65918efeba59db998750ead6",
+      "name": "gum-0.14.1",
+      "pname": "gum",
+      "rev": "9f4128e00b0ae8ec65918efeba59db998750ead6",
+      "rev_count": 647193,
+      "rev_date": "2024-07-03T18:27:49Z",
+      "scrape_date": "2024-07-05T00:14:29Z",
+      "stabilities": [
+        "staging",
+        "unstable"
+      ],
+      "unfree": false,
+      "version": "0.14.1",
+      "outputs_to_install": [
+        "out"
+      ],
+      "outputs": {
+        "out": "/nix/store/p5zr5kx07s1q2q2b4x3w7829d90lri3v-gum-0.14.1"
+      },
+      "system": "aarch64-linux",
+      "group": "toplevel",
+      "priority": 5
+    },
+    {
+      "attr_path": "gum",
+      "broken": false,
+      "derivation": "/nix/store/jdjqq2y83dn5hzwq4wn93pfx7whmsp7k-gum-0.14.1.drv",
+      "description": "Tasty Bubble Gum for your shell",
+      "install_id": "gum",
+      "license": "MIT",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=9f4128e00b0ae8ec65918efeba59db998750ead6",
+      "name": "gum-0.14.1",
+      "pname": "gum",
+      "rev": "9f4128e00b0ae8ec65918efeba59db998750ead6",
+      "rev_count": 647193,
+      "rev_date": "2024-07-03T18:27:49Z",
+      "scrape_date": "2024-07-05T00:14:29Z",
+      "stabilities": [
+        "staging",
+        "unstable"
+      ],
+      "unfree": false,
+      "version": "0.14.1",
+      "outputs_to_install": [
+        "out"
+      ],
+      "outputs": {
+        "out": "/nix/store/y8jq0g1248psylchrp6w4kl2w5aj5b70-gum-0.14.1"
+      },
+      "system": "x86_64-darwin",
+      "group": "toplevel",
+      "priority": 5
+    },
+    {
+      "attr_path": "gum",
+      "broken": false,
+      "derivation": "/nix/store/f4mi68wxfg1mkg0kdzlm89zjmv1km4hp-gum-0.14.1.drv",
+      "description": "Tasty Bubble Gum for your shell",
+      "install_id": "gum",
+      "license": "MIT",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=9f4128e00b0ae8ec65918efeba59db998750ead6",
+      "name": "gum-0.14.1",
+      "pname": "gum",
+      "rev": "9f4128e00b0ae8ec65918efeba59db998750ead6",
+      "rev_count": 647193,
+      "rev_date": "2024-07-03T18:27:49Z",
+      "scrape_date": "2024-07-05T00:14:29Z",
+      "stabilities": [
+        "staging",
+        "unstable"
+      ],
+      "unfree": false,
+      "version": "0.14.1",
+      "outputs_to_install": [
+        "out"
+      ],
+      "outputs": {
+        "out": "/nix/store/kdlpj359v1bzjya79j8iwapg0swzm8mh-gum-0.14.1"
+      },
+      "system": "x86_64-linux",
+      "group": "toplevel",
+      "priority": 5
+    }
+  ]
+}
