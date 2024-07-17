@@ -1,8 +1,9 @@
 #!/bin/bash
 
-# This script requires gum. I recognize that you might not want to install
-# gum. So I have a pragmatic solution! Remote activate my gum-ified Flox env
-# from FloxHub: flox pull barstoolbluz/gum. Or just install on your own via Flox!
+# This script requires gum. I do recognize that you might not want to install gum.
+# Never fear: it's included with Flox's 1Password example environment. Just
+# activate that environment and run this script. Or create a temporary Flox environment,
+# install gum, and run this script. Either way, run this script. Make it so.
 
 # Bootstrap configuration of ~/.config/op/config and ~/1password.session
 setup_1password_cli() {
