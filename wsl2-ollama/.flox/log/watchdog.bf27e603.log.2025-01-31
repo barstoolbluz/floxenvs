@@ -1,0 +1,25 @@
+2025-01-31T22:54:54.168899Z DEBUG flox_watchdog::sentry: Initializing Sentry with DSN: https://85c9526795f5047c99a5247aab616295:@o4506548203094016.ingest.us.sentry.io/4506548241825792
+2025-01-31T22:54:54.176623Z DEBUG sentry: enabled sentry client for DSN https://85c9526795f5047c99a5247aab616295:@o4506548203094016.ingest.us.sentry.io/4506548241825792    
+2025-01-31T22:54:54.177636Z DEBUG watchdog{socket="/run/user/1000/flox.347f1b70.sock" log_dir="/home/daedalus/dev/ollama/.flox/log"}: flox_watchdog: starting
+2025-01-31T22:54:54.178047Z DEBUG watchdog{socket="/run/user/1000/flox.347f1b70.sock" log_dir="/home/daedalus/dev/ollama/.flox/log"}: flox_watchdog: checked socket path="/run/user/1000/flox.347f1b70.sock" exists=false
+2025-01-31T22:54:54.178746Z  INFO watchdog{socket="/run/user/1000/flox.347f1b70.sock" log_dir="/home/daedalus/dev/ollama/.flox/log"}: flox_watchdog: watchdog is on duty this_pid=41973 target_activation_id="bf27e603"
+2025-01-31T22:54:54.179034Z DEBUG watchdog{socket="/run/user/1000/flox.347f1b70.sock" log_dir="/home/daedalus/dev/ollama/.flox/log"}: flox_watchdog: waiting for termination
+2025-01-31T22:54:54.179077Z DEBUG flox_watchdog::logger: still watching, woof woof
+2025-01-31T23:31:54.366342Z  INFO watchdog{socket="/run/user/1000/flox.347f1b70.sock" log_dir="/home/daedalus/dev/ollama/.flox/log"}: flox_watchdog: running cleanup after all PIDs terminated
+2025-01-31T23:31:54.367313Z DEBUG watchdog{socket="/run/user/1000/flox.347f1b70.sock" log_dir="/home/daedalus/dev/ollama/.flox/log"}: flox_watchdog: running cleanup
+2025-01-31T23:31:54.367662Z DEBUG watchdog{socket="/run/user/1000/flox.347f1b70.sock" log_dir="/home/daedalus/dev/ollama/.flox/log"}: flox_rust_sdk::providers::services: running process-compose down command=env NO_COLOR=1 /nix/store/4d924k1ayfgyphd06vgvpgyvwqqsb99a-process-compose-1.34.0/bin/process-compose down --unix-socket /run/user/1000/flox.347f1b70.sock
+2025-01-31T23:31:54.426403Z DEBUG watchdog{socket="/run/user/1000/flox.347f1b70.sock" log_dir="/home/daedalus/dev/ollama/.flox/log"}: flox_watchdog: finished cleanup
+2025-01-31T23:31:54.427309Z DEBUG sentry: dropping client guard -> disposing client    
+2025-01-31T23:31:54.427930Z DEBUG reqwest::connect: starting new connection: https://o4506548203094016.ingest.us.sentry.io/    
+2025-01-31T23:31:54.428626Z DEBUG sentry: client close; request transport to shut down    
+2025-01-31T23:31:54.486346Z DEBUG hyper_util::client::legacy::connect::http: connecting to 34.120.195.249:443
+2025-01-31T23:31:54.495558Z DEBUG hyper_util::client::legacy::connect::http: connected to 34.120.195.249:443
+2025-01-31T23:31:54.540885Z DEBUG hyper_util::client::legacy::pool: pooling idle connection for ("https", o4506548203094016.ingest.us.sentry.io)
+2025-01-31T23:31:54.541342Z DEBUG sentry: Get response: `{"id":"54b3c75b5a8c40d9adb56490edd0ce36"}`    
+2025-01-31T23:32:22.502900Z DEBUG flox_watchdog::sentry: Initializing Sentry with DSN: https://85c9526795f5047c99a5247aab616295:@o4506548203094016.ingest.us.sentry.io/4506548241825792
+2025-01-31T23:32:22.510821Z DEBUG sentry: enabled sentry client for DSN https://85c9526795f5047c99a5247aab616295:@o4506548203094016.ingest.us.sentry.io/4506548241825792    
+2025-01-31T23:32:22.511702Z DEBUG watchdog{socket="/run/user/1000/flox.347f1b70.sock" log_dir="/home/daedalus/dev/ollama/.flox/log"}: flox_watchdog: starting
+2025-01-31T23:32:22.511956Z DEBUG watchdog{socket="/run/user/1000/flox.347f1b70.sock" log_dir="/home/daedalus/dev/ollama/.flox/log"}: flox_watchdog: checked socket path="/run/user/1000/flox.347f1b70.sock" exists=false
+2025-01-31T23:32:22.512272Z  INFO watchdog{socket="/run/user/1000/flox.347f1b70.sock" log_dir="/home/daedalus/dev/ollama/.flox/log"}: flox_watchdog: watchdog is on duty this_pid=97799 target_activation_id="bf27e603"
+2025-01-31T23:32:22.512747Z DEBUG flox_watchdog::logger: still watching, woof woof
+2025-01-31T23:32:22.512997Z DEBUG watchdog{socket="/run/user/1000/flox.347f1b70.sock" log_dir="/home/daedalus/dev/ollama/.flox/log"}: flox_watchdog: waiting for termination

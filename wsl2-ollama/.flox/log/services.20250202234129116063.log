@@ -1,0 +1,8 @@
+25-02-02 23:41:29.214 INF Process Compose v1.34.0
+25-02-02 23:41:29.217 INF Loaded project from /home/daedalus/dev/wsl2-ollama/.flox/run/x86_64-linux.wsl2-ollama.dev/service-config.yaml
+25-02-02 23:41:29.217 INF Global shell command: /nix/store/717iy55ncqs0wmhdkwc5fg2vci5wbmq8-bash-5.2p32/bin/bash -c
+25-02-02 23:41:29.218 INF start UDS http server listening /run/user/1000/flox.4eba5c20.sock
+25-02-02 23:41:29.219 DBG Spinning up 3 processes. Order: ["flox_never_exit" "ollama" "ollama-ui"]
+25-02-02 23:41:29.220 INF Started command=["/nix/store/717iy55ncqs0wmhdkwc5fg2vci5wbmq8-bash-5.2p32/bin/bash","-c","/nix/store/ph44jcx3ddmlwh394mh1wb7f1qigxqb1-coreutils-9.5/bin/sleep infinity"] process=flox_never_exit
+25-02-02 23:41:29.220 INF Started command=["/nix/store/717iy55ncqs0wmhdkwc5fg2vci5wbmq8-bash-5.2p32/bin/bash","-c","# wait for ollama to be ready\nuntil ollama list; do sleep 1; done\nexport NEXT_CACHE_DIR=\"/home/daedalus/dev/wsl2-ollama/.flox/cache/next\"\nexport PORT=\nexport HOSTNAME=\nmkdir -p \nnextjs-ollama-llm-ui\n"] process=ollama-ui
+25-02-02 23:41:29.220 INF Started command=["/nix/store/717iy55ncqs0wmhdkwc5fg2vci5wbmq8-bash-5.2p32/bin/bash","-c","ollama serve"] process=ollama

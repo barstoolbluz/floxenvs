@@ -1,0 +1,16 @@
+2025-02-02T00:22:13.568377Z DEBUG flox_watchdog::logger: still watching, woof woof
+2025-02-02T01:20:54.572363Z DEBUG flox_watchdog::logger: still watching, woof woof
+2025-02-02T02:19:33.309653Z DEBUG flox_watchdog::logger: still watching, woof woof
+2025-02-02T03:18:11.519204Z DEBUG flox_watchdog::logger: still watching, woof woof
+2025-02-02T04:17:31.607550Z DEBUG flox_watchdog::logger: still watching, woof woof
+2025-02-02T17:20:56.352974Z DEBUG flox_watchdog::logger: still watching, woof woof
+2025-02-02T18:16:01.209620Z  INFO watchdog{socket="/run/user/1000/flox.347f1b70.sock" log_dir="/home/daedalus/dev/ollama/.flox/log"}: flox_watchdog: running cleanup after all PIDs terminated
+2025-02-02T18:16:01.211833Z DEBUG watchdog{socket="/run/user/1000/flox.347f1b70.sock" log_dir="/home/daedalus/dev/ollama/.flox/log"}: flox_watchdog: running cleanup
+2025-02-02T18:16:01.212276Z DEBUG watchdog{socket="/run/user/1000/flox.347f1b70.sock" log_dir="/home/daedalus/dev/ollama/.flox/log"}: flox_watchdog: finished cleanup
+2025-02-02T18:16:01.212552Z DEBUG sentry: dropping client guard -> disposing client    
+2025-02-02T18:16:01.212730Z DEBUG reqwest::connect: starting new connection: https://o4506548203094016.ingest.us.sentry.io/    
+2025-02-02T18:16:01.212947Z DEBUG sentry: client close; request transport to shut down    
+2025-02-02T18:16:01.229252Z DEBUG hyper_util::client::legacy::connect::http: connecting to 34.120.195.249:443
+2025-02-02T18:16:01.237524Z DEBUG hyper_util::client::legacy::connect::http: connected to 34.120.195.249:443
+2025-02-02T18:16:01.264201Z DEBUG hyper_util::client::legacy::pool: pooling idle connection for ("https", o4506548203094016.ingest.us.sentry.io)
+2025-02-02T18:16:01.265112Z DEBUG sentry: Get response: `{"id":"951bf2deb2a64418bde426e7c65e69d1"}`    

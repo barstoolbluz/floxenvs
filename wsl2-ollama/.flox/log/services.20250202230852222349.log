@@ -1,0 +1,17 @@
+25-02-02 23:08:52.321 INF Process Compose v1.34.0
+25-02-02 23:08:52.324 INF Loaded project from /home/daedalus/dev/wsl2-ollama/.flox/run/x86_64-linux.wsl2-ollama.dev/service-config.yaml
+25-02-02 23:08:52.325 INF Global shell command: /nix/store/717iy55ncqs0wmhdkwc5fg2vci5wbmq8-bash-5.2p32/bin/bash -c
+25-02-02 23:08:52.325 INF start UDS http server listening /run/user/1000/flox.4eba5c20.sock
+25-02-02 23:08:52.327 DBG Spinning up 3 processes. Order: ["ollama" "ollama-ui" "flox_never_exit"]
+25-02-02 23:08:52.328 INF Started command=["/nix/store/717iy55ncqs0wmhdkwc5fg2vci5wbmq8-bash-5.2p32/bin/bash","-c","ollama serve"] process=ollama
+25-02-02 23:08:52.328 INF Started command=["/nix/store/717iy55ncqs0wmhdkwc5fg2vci5wbmq8-bash-5.2p32/bin/bash","-c","/nix/store/ph44jcx3ddmlwh394mh1wb7f1qigxqb1-coreutils-9.5/bin/sleep infinity"] process=flox_never_exit
+25-02-02 23:08:52.329 INF Started command=["/nix/store/717iy55ncqs0wmhdkwc5fg2vci5wbmq8-bash-5.2p32/bin/bash","-c","# wait for ollama to be ready\nuntil ollama list; do sleep 1; done\nexport NEXT_CACHE_DIR=\"/home/daedalus/dev/wsl2-ollama/.flox/cache/next\"\nexport PORT=\nexport HOSTNAME=\nmkdir -p \nnextjs-ollama-llm-ui\n"] process=ollama-ui
+25-02-02 23:09:56.520 DBG Shutting down 3 processes. Order: ["ollama" "ollama-ui" "flox_never_exit"]
+25-02-02 23:09:56.520 DBG Stop Unix process. parentOnly=false pid=1050 signal=15
+25-02-02 23:09:56.521 DBG Stop Unix process. parentOnly=false pid=1053 signal=15
+25-02-02 23:09:56.523 DBG Stop Unix process. parentOnly=false pid=1051 signal=15
+25-02-02 23:09:56.523 INF Exited exit_code=0 process=ollama
+25-02-02 23:09:56.524 INF Exited exit_code=-1 process=flox_never_exit
+25-02-02 23:09:56.533 INF Exited exit_code=0 process=ollama-ui
+25-02-02 23:09:56.534 INF Project completed
+25-02-02 23:09:56.534 INF Thank you for using process-compose

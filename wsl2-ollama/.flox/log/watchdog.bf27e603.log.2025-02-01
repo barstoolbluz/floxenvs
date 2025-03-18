@@ -1,0 +1,52 @@
+2025-02-01T00:27:46.418337Z DEBUG flox_watchdog::logger: still watching, woof woof
+2025-02-01T01:23:10.821460Z DEBUG flox_watchdog::logger: still watching, woof woof
+2025-02-01T01:41:29.592077Z DEBUG flox_watchdog::sentry: Initializing Sentry with DSN: https://85c9526795f5047c99a5247aab616295:@o4506548203094016.ingest.us.sentry.io/4506548241825792
+2025-02-01T01:41:29.600953Z DEBUG sentry: enabled sentry client for DSN https://85c9526795f5047c99a5247aab616295:@o4506548203094016.ingest.us.sentry.io/4506548241825792    
+2025-02-01T01:41:29.601620Z DEBUG watchdog{socket="/run/user/1000/flox.347f1b70.sock" log_dir="/home/daedalus/dev/ollama/.flox/log"}: flox_watchdog: starting
+2025-02-01T01:41:29.602599Z DEBUG watchdog{socket="/run/user/1000/flox.347f1b70.sock" log_dir="/home/daedalus/dev/ollama/.flox/log"}: flox_watchdog: checked socket path="/run/user/1000/flox.347f1b70.sock" exists=false
+2025-02-01T01:41:29.602999Z  INFO watchdog{socket="/run/user/1000/flox.347f1b70.sock" log_dir="/home/daedalus/dev/ollama/.flox/log"}: flox_watchdog: watchdog is on duty this_pid=1030 target_activation_id="bf27e603"
+2025-02-01T01:41:29.603351Z DEBUG flox_watchdog::logger: still watching, woof woof
+2025-02-01T01:41:29.603372Z DEBUG watchdog{socket="/run/user/1000/flox.347f1b70.sock" log_dir="/home/daedalus/dev/ollama/.flox/log"}: flox_watchdog: waiting for termination
+2025-02-01T01:41:29.627477Z DEBUG flox_watchdog::logger: deleted log path=/home/daedalus/dev/ollama/.flox/log/services.20250131173055995857.log
+2025-02-01T01:41:29.629727Z DEBUG flox_watchdog::logger: deleted log path=/home/daedalus/dev/ollama/.flox/log/services.20250131173210325597.log
+2025-02-01T01:41:29.631632Z DEBUG flox_watchdog::logger: deleted log path=/home/daedalus/dev/ollama/.flox/log/services.20250131174227992090.log
+2025-02-01T01:41:29.633095Z DEBUG flox_watchdog::logger: deleted log path=/home/daedalus/dev/ollama/.flox/log/services.20250131175454170520.log
+2025-02-01T01:41:29.634312Z DEBUG flox_watchdog::logger: deleted log path=/home/daedalus/dev/ollama/.flox/log/services.20250131183353571882.log
+2025-02-01T01:41:29.635079Z DEBUG flox_watchdog::logger: deleted log path=/home/daedalus/dev/ollama/.flox/log/services.20250131183714611307.log
+2025-02-01T01:41:29.636633Z DEBUG flox_watchdog::logger: deleted log path=/home/daedalus/dev/ollama/.flox/log/services.20250131183926973054.log
+2025-02-01T01:41:29.637919Z DEBUG flox_watchdog::logger: deleted log path=/home/daedalus/dev/ollama/.flox/log/services.20250131185726705029.log
+2025-02-01T01:41:29.638974Z DEBUG flox_watchdog::logger: deleted log path=/home/daedalus/dev/ollama/.flox/log/services.20250131190128675479.log
+2025-02-01T01:41:29.640657Z DEBUG flox_watchdog::logger: deleted log path=/home/daedalus/dev/ollama/.flox/log/services.20250131190343681000.log
+2025-02-01T01:41:29.642575Z DEBUG flox_watchdog::logger: deleted log path=/home/daedalus/dev/ollama/.flox/log/services.20250131190507394980.log
+2025-02-01T01:41:29.644090Z DEBUG flox_watchdog::logger: deleted log path=/home/daedalus/dev/ollama/.flox/log/services.20250131190529539604.log
+2025-02-01T01:41:29.645757Z DEBUG flox_watchdog::logger: deleted log path=/home/daedalus/dev/ollama/.flox/log/services.20250131191023374303.log
+2025-02-01T01:41:29.647034Z DEBUG flox_watchdog::logger: deleted log path=/home/daedalus/dev/ollama/.flox/log/services.20250131191102352904.log
+2025-02-01T01:41:29.648410Z DEBUG flox_watchdog::logger: deleted log path=/home/daedalus/dev/ollama/.flox/log/services.20250131194337632702.log
+2025-02-01T01:41:37.720474Z  INFO watchdog{socket="/run/user/1000/flox.347f1b70.sock" log_dir="/home/daedalus/dev/ollama/.flox/log"}: flox_watchdog: running cleanup after all PIDs terminated
+2025-02-01T01:41:37.721294Z DEBUG watchdog{socket="/run/user/1000/flox.347f1b70.sock" log_dir="/home/daedalus/dev/ollama/.flox/log"}: flox_watchdog: running cleanup
+2025-02-01T01:41:37.721979Z DEBUG watchdog{socket="/run/user/1000/flox.347f1b70.sock" log_dir="/home/daedalus/dev/ollama/.flox/log"}: flox_rust_sdk::providers::services: running process-compose down command=env NO_COLOR=1 /nix/store/4d924k1ayfgyphd06vgvpgyvwqqsb99a-process-compose-1.34.0/bin/process-compose down --unix-socket /run/user/1000/flox.347f1b70.sock
+2025-02-01T01:41:37.763971Z DEBUG watchdog{socket="/run/user/1000/flox.347f1b70.sock" log_dir="/home/daedalus/dev/ollama/.flox/log"}: flox_watchdog: finished cleanup
+2025-02-01T01:41:37.764412Z DEBUG sentry: dropping client guard -> disposing client    
+2025-02-01T01:41:37.764780Z DEBUG sentry: client close; request transport to shut down    
+2025-02-01T01:41:37.764843Z DEBUG reqwest::connect: starting new connection: https://o4506548203094016.ingest.us.sentry.io/    
+2025-02-01T01:41:37.819266Z DEBUG hyper_util::client::legacy::connect::http: connecting to 34.120.195.249:443
+2025-02-01T01:41:37.826211Z DEBUG hyper_util::client::legacy::connect::http: connected to 34.120.195.249:443
+2025-02-01T01:41:37.852435Z DEBUG hyper_util::client::legacy::pool: pooling idle connection for ("https", o4506548203094016.ingest.us.sentry.io)
+2025-02-01T01:41:37.854028Z DEBUG sentry: Get response: `{"id":"6b8e1e600b784096b2de2699319b1450"}`    
+2025-02-01T01:45:19.377296Z DEBUG flox_watchdog::sentry: Initializing Sentry with DSN: https://85c9526795f5047c99a5247aab616295:@o4506548203094016.ingest.us.sentry.io/4506548241825792
+2025-02-01T01:45:19.383309Z DEBUG sentry: enabled sentry client for DSN https://85c9526795f5047c99a5247aab616295:@o4506548203094016.ingest.us.sentry.io/4506548241825792    
+2025-02-01T01:45:19.383714Z DEBUG watchdog{socket="/run/user/1000/flox.347f1b70.sock" log_dir="/home/daedalus/dev/ollama/.flox/log"}: flox_watchdog: starting
+2025-02-01T01:45:19.384179Z DEBUG watchdog{socket="/run/user/1000/flox.347f1b70.sock" log_dir="/home/daedalus/dev/ollama/.flox/log"}: flox_watchdog: checked socket path="/run/user/1000/flox.347f1b70.sock" exists=false
+2025-02-01T01:45:19.384554Z  INFO watchdog{socket="/run/user/1000/flox.347f1b70.sock" log_dir="/home/daedalus/dev/ollama/.flox/log"}: flox_watchdog: watchdog is on duty this_pid=1343 target_activation_id="bf27e603"
+2025-02-01T01:45:19.385065Z DEBUG watchdog{socket="/run/user/1000/flox.347f1b70.sock" log_dir="/home/daedalus/dev/ollama/.flox/log"}: flox_watchdog: waiting for termination
+2025-02-01T01:45:19.385138Z DEBUG flox_watchdog::logger: still watching, woof woof
+2025-02-01T01:45:19.401351Z DEBUG flox_watchdog::logger: deleted log path=/home/daedalus/dev/ollama/.flox/log/services.20250131194546748337.log
+2025-02-01T02:45:19.386415Z DEBUG flox_watchdog::logger: still watching, woof woof
+2025-02-01T03:45:19.387025Z DEBUG flox_watchdog::logger: still watching, woof woof
+2025-02-01T04:45:19.388533Z DEBUG flox_watchdog::logger: still watching, woof woof
+2025-02-01T05:45:19.389235Z DEBUG flox_watchdog::logger: still watching, woof woof
+2025-02-01T15:50:06.832188Z DEBUG flox_watchdog::logger: still watching, woof woof
+2025-02-01T20:42:53.186517Z DEBUG flox_watchdog::logger: still watching, woof woof
+2025-02-01T21:41:46.640483Z DEBUG flox_watchdog::logger: still watching, woof woof
+2025-02-01T22:40:45.863685Z DEBUG flox_watchdog::logger: still watching, woof woof
+2025-02-01T23:39:36.592644Z DEBUG flox_watchdog::logger: still watching, woof woof

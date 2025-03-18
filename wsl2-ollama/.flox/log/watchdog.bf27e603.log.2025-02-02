@@ -1,0 +1,17 @@
+2025-02-02T00:38:19.942337Z DEBUG flox_watchdog::logger: still watching, woof woof
+2025-02-02T01:37:00.505064Z DEBUG flox_watchdog::logger: still watching, woof woof
+2025-02-02T02:35:39.359336Z DEBUG flox_watchdog::logger: still watching, woof woof
+2025-02-02T03:34:16.230951Z DEBUG flox_watchdog::logger: still watching, woof woof
+2025-02-02T04:33:36.469048Z DEBUG flox_watchdog::logger: still watching, woof woof
+2025-02-02T17:36:51.296893Z DEBUG flox_watchdog::logger: still watching, woof woof
+2025-02-02T18:17:50.984021Z  INFO watchdog{socket="/run/user/1000/flox.347f1b70.sock" log_dir="/home/daedalus/dev/ollama/.flox/log"}: flox_watchdog: running cleanup after all PIDs terminated
+2025-02-02T18:17:50.985505Z DEBUG watchdog{socket="/run/user/1000/flox.347f1b70.sock" log_dir="/home/daedalus/dev/ollama/.flox/log"}: flox_watchdog: running cleanup
+2025-02-02T18:17:50.985829Z DEBUG watchdog{socket="/run/user/1000/flox.347f1b70.sock" log_dir="/home/daedalus/dev/ollama/.flox/log"}: flox_rust_sdk::providers::services: running process-compose down command=env NO_COLOR=1 /nix/store/4d924k1ayfgyphd06vgvpgyvwqqsb99a-process-compose-1.34.0/bin/process-compose down --unix-socket /run/user/1000/flox.347f1b70.sock
+2025-02-02T18:17:51.054203Z DEBUG watchdog{socket="/run/user/1000/flox.347f1b70.sock" log_dir="/home/daedalus/dev/ollama/.flox/log"}: flox_watchdog: finished cleanup
+2025-02-02T18:17:51.054454Z DEBUG sentry: dropping client guard -> disposing client    
+2025-02-02T18:17:51.054623Z DEBUG reqwest::connect: starting new connection: https://o4506548203094016.ingest.us.sentry.io/    
+2025-02-02T18:17:51.054792Z DEBUG sentry: client close; request transport to shut down    
+2025-02-02T18:17:51.084159Z DEBUG hyper_util::client::legacy::connect::http: connecting to 34.120.195.249:443
+2025-02-02T18:17:51.092784Z DEBUG hyper_util::client::legacy::connect::http: connected to 34.120.195.249:443
+2025-02-02T18:17:51.118970Z DEBUG hyper_util::client::legacy::pool: pooling idle connection for ("https", o4506548203094016.ingest.us.sentry.io)
+2025-02-02T18:17:51.119394Z DEBUG sentry: Get response: `{"id":"fd7c02d8acab4c3a8bab76ca6ab2f586"}`    

@@ -1,0 +1,19 @@
+2025-02-03T03:58:20.484365Z DEBUG flox_watchdog::sentry: Initializing Sentry with DSN: https://85c9526795f5047c99a5247aab616295:@o4506548203094016.ingest.us.sentry.io/4506548241825792
+2025-02-03T03:58:20.493274Z DEBUG sentry: enabled sentry client for DSN https://85c9526795f5047c99a5247aab616295:@o4506548203094016.ingest.us.sentry.io/4506548241825792    
+2025-02-03T03:58:20.493460Z DEBUG watchdog{socket="/run/user/1000/flox.4eba5c20.sock" log_dir="/home/daedalus/dev/wsl2-ollama/.flox/log"}: flox_watchdog: starting
+2025-02-03T03:58:20.493618Z DEBUG watchdog{socket="/run/user/1000/flox.4eba5c20.sock" log_dir="/home/daedalus/dev/wsl2-ollama/.flox/log"}: flox_watchdog: checked socket path="/run/user/1000/flox.4eba5c20.sock" exists=false
+2025-02-03T03:58:20.501490Z  INFO watchdog{socket="/run/user/1000/flox.4eba5c20.sock" log_dir="/home/daedalus/dev/wsl2-ollama/.flox/log"}: flox_watchdog: watchdog is on duty this_pid=23895 target_activation_id="67504b37"
+2025-02-03T03:58:20.501957Z DEBUG watchdog{socket="/run/user/1000/flox.4eba5c20.sock" log_dir="/home/daedalus/dev/wsl2-ollama/.flox/log"}: flox_watchdog: waiting for termination
+2025-02-03T03:58:20.501990Z DEBUG flox_watchdog::logger: still watching, woof woof
+2025-02-03T03:58:20.523930Z DEBUG flox_watchdog::logger: deleted log path=/home/daedalus/dev/wsl2-ollama/.flox/log/services.20250202224833388930.log
+2025-02-03T03:58:37.084839Z  INFO watchdog{socket="/run/user/1000/flox.4eba5c20.sock" log_dir="/home/daedalus/dev/wsl2-ollama/.flox/log"}: flox_watchdog: running cleanup after all PIDs terminated
+2025-02-03T03:58:37.086388Z DEBUG watchdog{socket="/run/user/1000/flox.4eba5c20.sock" log_dir="/home/daedalus/dev/wsl2-ollama/.flox/log"}: flox_watchdog: running cleanup
+2025-02-03T03:58:37.087794Z DEBUG watchdog{socket="/run/user/1000/flox.4eba5c20.sock" log_dir="/home/daedalus/dev/wsl2-ollama/.flox/log"}: flox_rust_sdk::providers::services: running process-compose down command=env NO_COLOR=1 /nix/store/4d924k1ayfgyphd06vgvpgyvwqqsb99a-process-compose-1.34.0/bin/process-compose down --unix-socket /run/user/1000/flox.4eba5c20.sock
+2025-02-03T03:58:37.135104Z DEBUG watchdog{socket="/run/user/1000/flox.4eba5c20.sock" log_dir="/home/daedalus/dev/wsl2-ollama/.flox/log"}: flox_watchdog: finished cleanup
+2025-02-03T03:58:37.135918Z DEBUG sentry: dropping client guard -> disposing client    
+2025-02-03T03:58:37.136051Z DEBUG reqwest::connect: starting new connection: https://o4506548203094016.ingest.us.sentry.io/    
+2025-02-03T03:58:37.136637Z DEBUG sentry: client close; request transport to shut down    
+2025-02-03T03:58:37.159175Z DEBUG hyper_util::client::legacy::connect::http: connecting to 34.120.195.249:443
+2025-02-03T03:58:37.166360Z DEBUG hyper_util::client::legacy::connect::http: connected to 34.120.195.249:443
+2025-02-03T03:58:37.202520Z DEBUG hyper_util::client::legacy::pool: pooling idle connection for ("https", o4506548203094016.ingest.us.sentry.io)
+2025-02-03T03:58:37.203078Z DEBUG sentry: Get response: `{"id":"52cc3f6d32db4ad5a69a4358edf1ced7"}`    

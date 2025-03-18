@@ -1,0 +1,15 @@
+2025-02-01T03:28:51.504310Z DEBUG flox_watchdog::sentry: Initializing Sentry with DSN: https://85c9526795f5047c99a5247aab616295:@o4506548203094016.ingest.us.sentry.io/4506548241825792
+2025-02-01T03:28:51.510568Z DEBUG sentry: enabled sentry client for DSN https://85c9526795f5047c99a5247aab616295:@o4506548203094016.ingest.us.sentry.io/4506548241825792    
+2025-02-01T03:28:51.510920Z DEBUG watchdog{socket="/run/user/1000/flox.347f1b70.sock" log_dir="/home/daedalus/dev/ollama/.flox/log"}: flox_watchdog: starting
+2025-02-01T03:28:51.511188Z DEBUG watchdog{socket="/run/user/1000/flox.347f1b70.sock" log_dir="/home/daedalus/dev/ollama/.flox/log"}: flox_watchdog: checked socket path="/run/user/1000/flox.347f1b70.sock" exists=true
+2025-02-01T03:28:51.511413Z  INFO watchdog{socket="/run/user/1000/flox.347f1b70.sock" log_dir="/home/daedalus/dev/ollama/.flox/log"}: flox_watchdog: watchdog is on duty this_pid=4939 target_activation_id="97362d7e"
+2025-02-01T03:28:51.511672Z DEBUG flox_watchdog::logger: still watching, woof woof
+2025-02-01T03:28:51.511694Z DEBUG watchdog{socket="/run/user/1000/flox.347f1b70.sock" log_dir="/home/daedalus/dev/ollama/.flox/log"}: flox_watchdog: waiting for termination
+2025-02-01T03:28:51.528355Z DEBUG flox_watchdog::logger: deleted log path=/home/daedalus/dev/ollama/.flox/log/services.20250131203222870948.log
+2025-02-01T04:28:51.512391Z DEBUG flox_watchdog::logger: still watching, woof woof
+2025-02-01T05:28:51.513281Z DEBUG flox_watchdog::logger: still watching, woof woof
+2025-02-01T15:33:39.384520Z DEBUG flox_watchdog::logger: still watching, woof woof
+2025-02-01T20:26:40.729590Z DEBUG flox_watchdog::logger: still watching, woof woof
+2025-02-01T21:25:37.655701Z DEBUG flox_watchdog::logger: still watching, woof woof
+2025-02-01T22:24:33.293813Z DEBUG flox_watchdog::logger: still watching, woof woof
+2025-02-01T23:23:28.380719Z DEBUG flox_watchdog::logger: still watching, woof woof

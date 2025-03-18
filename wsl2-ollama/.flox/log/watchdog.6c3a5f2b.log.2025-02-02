@@ -1,0 +1,343 @@
+2025-02-02T18:13:23.681415Z DEBUG flox_watchdog::sentry: Initializing Sentry with DSN: https://85c9526795f5047c99a5247aab616295:@o4506548203094016.ingest.us.sentry.io/4506548241825792
+2025-02-02T18:13:23.688977Z DEBUG sentry: enabled sentry client for DSN https://85c9526795f5047c99a5247aab616295:@o4506548203094016.ingest.us.sentry.io/4506548241825792    
+2025-02-02T18:13:23.689733Z DEBUG watchdog{socket="/run/user/1000/flox.347f1b70.sock" log_dir="/home/daedalus/dev/ollama/.flox/log"}: flox_watchdog: starting
+2025-02-02T18:13:23.690370Z DEBUG watchdog{socket="/run/user/1000/flox.347f1b70.sock" log_dir="/home/daedalus/dev/ollama/.flox/log"}: flox_watchdog: checked socket path="/run/user/1000/flox.347f1b70.sock" exists=true
+2025-02-02T18:13:23.690926Z  INFO watchdog{socket="/run/user/1000/flox.347f1b70.sock" log_dir="/home/daedalus/dev/ollama/.flox/log"}: flox_watchdog: watchdog is on duty this_pid=1006745 target_activation_id="6c3a5f2b"
+2025-02-02T18:13:23.691881Z DEBUG flox_watchdog::logger: still watching, woof woof
+2025-02-02T18:13:23.691906Z DEBUG watchdog{socket="/run/user/1000/flox.347f1b70.sock" log_dir="/home/daedalus/dev/ollama/.flox/log"}: flox_watchdog: waiting for termination
+2025-02-02T18:13:23.710818Z DEBUG flox_watchdog::logger: deleted log path=/home/daedalus/dev/ollama/.flox/log/services.20250131204129852430.log
+2025-02-02T18:13:26.443048Z  INFO watchdog{socket="/run/user/1000/flox.347f1b70.sock" log_dir="/home/daedalus/dev/ollama/.flox/log"}: flox_watchdog: running cleanup after all PIDs terminated
+2025-02-02T18:13:26.443318Z DEBUG watchdog{socket="/run/user/1000/flox.347f1b70.sock" log_dir="/home/daedalus/dev/ollama/.flox/log"}: flox_watchdog: running cleanup
+2025-02-02T18:13:26.443496Z DEBUG watchdog{socket="/run/user/1000/flox.347f1b70.sock" log_dir="/home/daedalus/dev/ollama/.flox/log"}: flox_watchdog: finished cleanup
+2025-02-02T18:13:26.443645Z DEBUG sentry: dropping client guard -> disposing client    
+2025-02-02T18:13:26.443706Z DEBUG reqwest::connect: starting new connection: https://o4506548203094016.ingest.us.sentry.io/    
+2025-02-02T18:13:26.443803Z DEBUG sentry: client close; request transport to shut down    
+2025-02-02T18:13:26.483110Z DEBUG hyper_util::client::legacy::connect::http: connecting to 34.120.195.249:443
+2025-02-02T18:13:26.489965Z DEBUG hyper_util::client::legacy::connect::http: connected to 34.120.195.249:443
+2025-02-02T18:13:26.518264Z DEBUG hyper_util::client::legacy::pool: pooling idle connection for ("https", o4506548203094016.ingest.us.sentry.io)
+2025-02-02T18:13:26.518485Z DEBUG sentry: Get response: `{"id":"9f15c877473f43efbf1301fae56b6403"}`    
+2025-02-02T18:14:06.216808Z DEBUG flox_watchdog::sentry: Initializing Sentry with DSN: https://85c9526795f5047c99a5247aab616295:@o4506548203094016.ingest.us.sentry.io/4506548241825792
+2025-02-02T18:14:06.223691Z DEBUG sentry: enabled sentry client for DSN https://85c9526795f5047c99a5247aab616295:@o4506548203094016.ingest.us.sentry.io/4506548241825792    
+2025-02-02T18:14:06.224532Z DEBUG watchdog{socket="/run/user/1000/flox.347f1b70.sock" log_dir="/home/daedalus/dev/ollama/.flox/log"}: flox_watchdog: starting
+2025-02-02T18:14:06.224855Z DEBUG watchdog{socket="/run/user/1000/flox.347f1b70.sock" log_dir="/home/daedalus/dev/ollama/.flox/log"}: flox_watchdog: checked socket path="/run/user/1000/flox.347f1b70.sock" exists=false
+2025-02-02T18:14:06.225095Z  INFO watchdog{socket="/run/user/1000/flox.347f1b70.sock" log_dir="/home/daedalus/dev/ollama/.flox/log"}: flox_watchdog: watchdog is on duty this_pid=1008056 target_activation_id="6c3a5f2b"
+2025-02-02T18:14:06.225473Z DEBUG watchdog{socket="/run/user/1000/flox.347f1b70.sock" log_dir="/home/daedalus/dev/ollama/.flox/log"}: flox_watchdog: waiting for termination
+2025-02-02T18:14:06.225473Z DEBUG flox_watchdog::logger: still watching, woof woof
+2025-02-02T18:14:06.237536Z DEBUG flox_watchdog::logger: deleted log path=/home/daedalus/dev/ollama/.flox/log/services.20250131204628364275.log
+2025-02-02T18:14:10.387979Z  INFO watchdog{socket="/run/user/1000/flox.347f1b70.sock" log_dir="/home/daedalus/dev/ollama/.flox/log"}: flox_watchdog: running cleanup after all PIDs terminated
+2025-02-02T18:14:10.388710Z DEBUG watchdog{socket="/run/user/1000/flox.347f1b70.sock" log_dir="/home/daedalus/dev/ollama/.flox/log"}: flox_watchdog: running cleanup
+2025-02-02T18:14:10.389054Z DEBUG watchdog{socket="/run/user/1000/flox.347f1b70.sock" log_dir="/home/daedalus/dev/ollama/.flox/log"}: flox_watchdog: finished cleanup
+2025-02-02T18:14:10.389438Z DEBUG sentry: dropping client guard -> disposing client    
+2025-02-02T18:14:10.389501Z DEBUG reqwest::connect: starting new connection: https://o4506548203094016.ingest.us.sentry.io/    
+2025-02-02T18:14:10.390210Z DEBUG sentry: client close; request transport to shut down    
+2025-02-02T18:14:10.403870Z DEBUG hyper_util::client::legacy::connect::http: connecting to 34.120.195.249:443
+2025-02-02T18:14:10.413238Z DEBUG hyper_util::client::legacy::connect::http: connected to 34.120.195.249:443
+2025-02-02T18:14:10.450202Z DEBUG hyper_util::client::legacy::pool: pooling idle connection for ("https", o4506548203094016.ingest.us.sentry.io)
+2025-02-02T18:14:10.450877Z DEBUG sentry: Get response: `{"id":"f4021e2e34ff4bda86c59c223247fd1b"}`    
+2025-02-02T18:25:41.329615Z DEBUG flox_watchdog::sentry: Initializing Sentry with DSN: https://85c9526795f5047c99a5247aab616295:@o4506548203094016.ingest.us.sentry.io/4506548241825792
+2025-02-02T18:25:41.337295Z DEBUG sentry: enabled sentry client for DSN https://85c9526795f5047c99a5247aab616295:@o4506548203094016.ingest.us.sentry.io/4506548241825792    
+2025-02-02T18:25:41.337968Z DEBUG watchdog{socket="/run/user/1000/flox.4eba5c20.sock" log_dir="/home/daedalus/dev/wsl2-ollama/.flox/log"}: flox_watchdog: starting
+2025-02-02T18:25:41.338635Z DEBUG watchdog{socket="/run/user/1000/flox.4eba5c20.sock" log_dir="/home/daedalus/dev/wsl2-ollama/.flox/log"}: flox_watchdog: checked socket path="/run/user/1000/flox.4eba5c20.sock" exists=false
+2025-02-02T18:25:41.339023Z  INFO watchdog{socket="/run/user/1000/flox.4eba5c20.sock" log_dir="/home/daedalus/dev/wsl2-ollama/.flox/log"}: flox_watchdog: watchdog is on duty this_pid=989 target_activation_id="6c3a5f2b"
+2025-02-02T18:25:41.339228Z DEBUG watchdog{socket="/run/user/1000/flox.4eba5c20.sock" log_dir="/home/daedalus/dev/wsl2-ollama/.flox/log"}: flox_watchdog: waiting for termination
+2025-02-02T18:25:41.339282Z DEBUG flox_watchdog::logger: still watching, woof woof
+2025-02-02T18:25:41.348215Z DEBUG flox_watchdog::logger: deleted log path=/home/daedalus/dev/wsl2-ollama/.flox/log/services.20250131205303149032.log
+2025-02-02T18:25:44.845423Z  INFO watchdog{socket="/run/user/1000/flox.4eba5c20.sock" log_dir="/home/daedalus/dev/wsl2-ollama/.flox/log"}: flox_watchdog: running cleanup after all PIDs terminated
+2025-02-02T18:25:44.845663Z DEBUG watchdog{socket="/run/user/1000/flox.4eba5c20.sock" log_dir="/home/daedalus/dev/wsl2-ollama/.flox/log"}: flox_watchdog: running cleanup
+2025-02-02T18:25:44.845835Z DEBUG watchdog{socket="/run/user/1000/flox.4eba5c20.sock" log_dir="/home/daedalus/dev/wsl2-ollama/.flox/log"}: flox_rust_sdk::providers::services: running process-compose down command=env NO_COLOR=1 /nix/store/4d924k1ayfgyphd06vgvpgyvwqqsb99a-process-compose-1.34.0/bin/process-compose down --unix-socket /run/user/1000/flox.4eba5c20.sock
+2025-02-02T18:25:44.880037Z DEBUG watchdog{socket="/run/user/1000/flox.4eba5c20.sock" log_dir="/home/daedalus/dev/wsl2-ollama/.flox/log"}: flox_watchdog: finished cleanup
+2025-02-02T18:25:44.880379Z DEBUG sentry: dropping client guard -> disposing client    
+2025-02-02T18:25:44.880801Z DEBUG sentry: client close; request transport to shut down    
+2025-02-02T18:25:44.880873Z DEBUG reqwest::connect: starting new connection: https://o4506548203094016.ingest.us.sentry.io/    
+2025-02-02T18:25:44.923278Z DEBUG hyper_util::client::legacy::connect::http: connecting to 34.120.195.249:443
+2025-02-02T18:25:44.933527Z DEBUG hyper_util::client::legacy::connect::http: connected to 34.120.195.249:443
+2025-02-02T18:25:44.960625Z DEBUG hyper_util::client::legacy::pool: pooling idle connection for ("https", o4506548203094016.ingest.us.sentry.io)
+2025-02-02T18:25:44.961715Z DEBUG sentry: Get response: `{"id":"935d990f146849e2a0d86140ffa0e910"}`    
+2025-02-02T18:55:47.729847Z DEBUG flox_watchdog::sentry: Initializing Sentry with DSN: https://85c9526795f5047c99a5247aab616295:@o4506548203094016.ingest.us.sentry.io/4506548241825792
+2025-02-02T18:55:47.738822Z DEBUG sentry: enabled sentry client for DSN https://85c9526795f5047c99a5247aab616295:@o4506548203094016.ingest.us.sentry.io/4506548241825792    
+2025-02-02T18:55:47.739407Z DEBUG watchdog{socket="/run/user/1000/flox.4eba5c20.sock" log_dir="/home/daedalus/dev/wsl2-ollama/.flox/log"}: flox_watchdog: starting
+2025-02-02T18:55:47.741316Z DEBUG watchdog{socket="/run/user/1000/flox.4eba5c20.sock" log_dir="/home/daedalus/dev/wsl2-ollama/.flox/log"}: flox_watchdog: checked socket path="/run/user/1000/flox.4eba5c20.sock" exists=false
+2025-02-02T18:55:47.741744Z  INFO watchdog{socket="/run/user/1000/flox.4eba5c20.sock" log_dir="/home/daedalus/dev/wsl2-ollama/.flox/log"}: flox_watchdog: watchdog is on duty this_pid=1019 target_activation_id="6c3a5f2b"
+2025-02-02T18:55:47.742207Z DEBUG flox_watchdog::logger: still watching, woof woof
+2025-02-02T18:55:47.742222Z DEBUG watchdog{socket="/run/user/1000/flox.4eba5c20.sock" log_dir="/home/daedalus/dev/wsl2-ollama/.flox/log"}: flox_watchdog: waiting for termination
+2025-02-02T18:55:47.769746Z DEBUG flox_watchdog::logger: deleted log path=/home/daedalus/dev/wsl2-ollama/.flox/log/services.20250131205448527268.log
+2025-02-02T18:56:36.456488Z  INFO watchdog{socket="/run/user/1000/flox.4eba5c20.sock" log_dir="/home/daedalus/dev/wsl2-ollama/.flox/log"}: flox_watchdog: running cleanup after all PIDs terminated
+2025-02-02T18:56:36.457105Z DEBUG watchdog{socket="/run/user/1000/flox.4eba5c20.sock" log_dir="/home/daedalus/dev/wsl2-ollama/.flox/log"}: flox_watchdog: running cleanup
+2025-02-02T18:56:36.457338Z DEBUG watchdog{socket="/run/user/1000/flox.4eba5c20.sock" log_dir="/home/daedalus/dev/wsl2-ollama/.flox/log"}: flox_rust_sdk::providers::services: running process-compose down command=env NO_COLOR=1 /nix/store/4d924k1ayfgyphd06vgvpgyvwqqsb99a-process-compose-1.34.0/bin/process-compose down --unix-socket /run/user/1000/flox.4eba5c20.sock
+2025-02-02T18:56:36.503432Z DEBUG watchdog{socket="/run/user/1000/flox.4eba5c20.sock" log_dir="/home/daedalus/dev/wsl2-ollama/.flox/log"}: flox_watchdog: finished cleanup
+2025-02-02T18:56:36.503900Z DEBUG sentry: dropping client guard -> disposing client    
+2025-02-02T18:56:36.504207Z DEBUG sentry: client close; request transport to shut down    
+2025-02-02T18:56:36.504539Z DEBUG reqwest::connect: starting new connection: https://o4506548203094016.ingest.us.sentry.io/    
+2025-02-02T18:56:36.540627Z DEBUG hyper_util::client::legacy::connect::http: connecting to 34.120.195.249:443
+2025-02-02T18:56:36.548680Z DEBUG hyper_util::client::legacy::connect::http: connected to 34.120.195.249:443
+2025-02-02T18:56:36.578627Z DEBUG hyper_util::client::legacy::pool: pooling idle connection for ("https", o4506548203094016.ingest.us.sentry.io)
+2025-02-02T18:56:36.579410Z DEBUG sentry: Get response: `{"id":"f6b28d2077f4404c9c75358927c2b270"}`    
+2025-02-02T19:01:32.505560Z DEBUG flox_watchdog::sentry: Initializing Sentry with DSN: https://85c9526795f5047c99a5247aab616295:@o4506548203094016.ingest.us.sentry.io/4506548241825792
+2025-02-02T19:01:32.514517Z DEBUG sentry: enabled sentry client for DSN https://85c9526795f5047c99a5247aab616295:@o4506548203094016.ingest.us.sentry.io/4506548241825792    
+2025-02-02T19:01:32.515079Z DEBUG watchdog{socket="/run/user/1000/flox.4eba5c20.sock" log_dir="/home/daedalus/dev/wsl2-ollama/.flox/log"}: flox_watchdog: starting
+2025-02-02T19:01:32.515986Z DEBUG watchdog{socket="/run/user/1000/flox.4eba5c20.sock" log_dir="/home/daedalus/dev/wsl2-ollama/.flox/log"}: flox_watchdog: checked socket path="/run/user/1000/flox.4eba5c20.sock" exists=false
+2025-02-02T19:01:32.516292Z  INFO watchdog{socket="/run/user/1000/flox.4eba5c20.sock" log_dir="/home/daedalus/dev/wsl2-ollama/.flox/log"}: flox_watchdog: watchdog is on duty this_pid=1032 target_activation_id="6c3a5f2b"
+2025-02-02T19:01:32.516982Z DEBUG flox_watchdog::logger: still watching, woof woof
+2025-02-02T19:01:32.517421Z DEBUG watchdog{socket="/run/user/1000/flox.4eba5c20.sock" log_dir="/home/daedalus/dev/wsl2-ollama/.flox/log"}: flox_watchdog: waiting for termination
+2025-02-02T19:01:32.528499Z DEBUG flox_watchdog::logger: deleted log path=/home/daedalus/dev/wsl2-ollama/.flox/log/services.20250131205634301981.log
+2025-02-02T19:01:47.544828Z  INFO watchdog{socket="/run/user/1000/flox.4eba5c20.sock" log_dir="/home/daedalus/dev/wsl2-ollama/.flox/log"}: flox_watchdog: running cleanup after all PIDs terminated
+2025-02-02T19:01:47.545482Z DEBUG watchdog{socket="/run/user/1000/flox.4eba5c20.sock" log_dir="/home/daedalus/dev/wsl2-ollama/.flox/log"}: flox_watchdog: running cleanup
+2025-02-02T19:01:47.546067Z DEBUG watchdog{socket="/run/user/1000/flox.4eba5c20.sock" log_dir="/home/daedalus/dev/wsl2-ollama/.flox/log"}: flox_rust_sdk::providers::services: running process-compose down command=env NO_COLOR=1 /nix/store/4d924k1ayfgyphd06vgvpgyvwqqsb99a-process-compose-1.34.0/bin/process-compose down --unix-socket /run/user/1000/flox.4eba5c20.sock
+2025-02-02T19:01:47.584564Z DEBUG watchdog{socket="/run/user/1000/flox.4eba5c20.sock" log_dir="/home/daedalus/dev/wsl2-ollama/.flox/log"}: flox_watchdog: finished cleanup
+2025-02-02T19:01:47.584892Z DEBUG sentry: dropping client guard -> disposing client    
+2025-02-02T19:01:47.585099Z DEBUG sentry: client close; request transport to shut down    
+2025-02-02T19:01:47.585208Z DEBUG reqwest::connect: starting new connection: https://o4506548203094016.ingest.us.sentry.io/    
+2025-02-02T19:01:47.601160Z DEBUG hyper_util::client::legacy::connect::http: connecting to 34.120.195.249:443
+2025-02-02T19:01:47.607767Z DEBUG hyper_util::client::legacy::connect::http: connected to 34.120.195.249:443
+2025-02-02T19:01:47.633693Z DEBUG hyper_util::client::legacy::pool: pooling idle connection for ("https", o4506548203094016.ingest.us.sentry.io)
+2025-02-02T19:01:47.634602Z DEBUG sentry: Get response: `{"id":"bd63c73a1adc4fb9b43dc45306bac4c2"}`    
+2025-02-02T19:02:31.409321Z DEBUG flox_watchdog::sentry: Initializing Sentry with DSN: https://85c9526795f5047c99a5247aab616295:@o4506548203094016.ingest.us.sentry.io/4506548241825792
+2025-02-02T19:02:31.419085Z DEBUG sentry: enabled sentry client for DSN https://85c9526795f5047c99a5247aab616295:@o4506548203094016.ingest.us.sentry.io/4506548241825792    
+2025-02-02T19:02:31.419422Z DEBUG watchdog{socket="/run/user/1000/flox.4eba5c20.sock" log_dir="/home/daedalus/dev/wsl2-ollama/.flox/log"}: flox_watchdog: starting
+2025-02-02T19:02:31.419590Z DEBUG watchdog{socket="/run/user/1000/flox.4eba5c20.sock" log_dir="/home/daedalus/dev/wsl2-ollama/.flox/log"}: flox_watchdog: checked socket path="/run/user/1000/flox.4eba5c20.sock" exists=false
+2025-02-02T19:02:31.419716Z  INFO watchdog{socket="/run/user/1000/flox.4eba5c20.sock" log_dir="/home/daedalus/dev/wsl2-ollama/.flox/log"}: flox_watchdog: watchdog is on duty this_pid=1259 target_activation_id="6c3a5f2b"
+2025-02-02T19:02:31.419917Z DEBUG watchdog{socket="/run/user/1000/flox.4eba5c20.sock" log_dir="/home/daedalus/dev/wsl2-ollama/.flox/log"}: flox_watchdog: waiting for termination
+2025-02-02T19:02:31.420230Z DEBUG flox_watchdog::logger: still watching, woof woof
+2025-02-02T19:02:31.431387Z DEBUG flox_watchdog::logger: deleted log path=/home/daedalus/dev/wsl2-ollama/.flox/log/services.20250202130131276730.log
+2025-02-02T19:06:43.335609Z  INFO watchdog{socket="/run/user/1000/flox.4eba5c20.sock" log_dir="/home/daedalus/dev/wsl2-ollama/.flox/log"}: flox_watchdog: running cleanup after all PIDs terminated
+2025-02-02T19:06:43.336827Z DEBUG watchdog{socket="/run/user/1000/flox.4eba5c20.sock" log_dir="/home/daedalus/dev/wsl2-ollama/.flox/log"}: flox_watchdog: running cleanup
+2025-02-02T19:06:43.337838Z DEBUG watchdog{socket="/run/user/1000/flox.4eba5c20.sock" log_dir="/home/daedalus/dev/wsl2-ollama/.flox/log"}: flox_rust_sdk::providers::services: running process-compose down command=env NO_COLOR=1 /nix/store/4d924k1ayfgyphd06vgvpgyvwqqsb99a-process-compose-1.34.0/bin/process-compose down --unix-socket /run/user/1000/flox.4eba5c20.sock
+2025-02-02T19:06:43.395739Z DEBUG watchdog{socket="/run/user/1000/flox.4eba5c20.sock" log_dir="/home/daedalus/dev/wsl2-ollama/.flox/log"}: flox_watchdog: finished cleanup
+2025-02-02T19:06:43.396243Z DEBUG sentry: dropping client guard -> disposing client    
+2025-02-02T19:06:43.396302Z DEBUG reqwest::connect: starting new connection: https://o4506548203094016.ingest.us.sentry.io/    
+2025-02-02T19:06:43.396465Z DEBUG sentry: client close; request transport to shut down    
+2025-02-02T19:06:43.411237Z DEBUG hyper_util::client::legacy::connect::http: connecting to 34.120.195.249:443
+2025-02-02T19:06:43.420718Z DEBUG hyper_util::client::legacy::connect::http: connected to 34.120.195.249:443
+2025-02-02T19:06:43.445606Z DEBUG hyper_util::client::legacy::pool: pooling idle connection for ("https", o4506548203094016.ingest.us.sentry.io)
+2025-02-02T19:06:43.446233Z DEBUG sentry: Get response: `{"id":"62b22fd225254b3b9d6094cdffa0f669"}`    
+2025-02-02T19:06:52.125323Z DEBUG flox_watchdog::sentry: Initializing Sentry with DSN: https://85c9526795f5047c99a5247aab616295:@o4506548203094016.ingest.us.sentry.io/4506548241825792
+2025-02-02T19:06:52.132320Z DEBUG sentry: enabled sentry client for DSN https://85c9526795f5047c99a5247aab616295:@o4506548203094016.ingest.us.sentry.io/4506548241825792    
+2025-02-02T19:06:52.132569Z DEBUG watchdog{socket="/run/user/1000/flox.4eba5c20.sock" log_dir="/home/daedalus/dev/wsl2-ollama/.flox/log"}: flox_watchdog: starting
+2025-02-02T19:06:52.132739Z DEBUG watchdog{socket="/run/user/1000/flox.4eba5c20.sock" log_dir="/home/daedalus/dev/wsl2-ollama/.flox/log"}: flox_watchdog: checked socket path="/run/user/1000/flox.4eba5c20.sock" exists=false
+2025-02-02T19:06:52.132903Z  INFO watchdog{socket="/run/user/1000/flox.4eba5c20.sock" log_dir="/home/daedalus/dev/wsl2-ollama/.flox/log"}: flox_watchdog: watchdog is on duty this_pid=1590 target_activation_id="6c3a5f2b"
+2025-02-02T19:06:52.133222Z DEBUG flox_watchdog::logger: still watching, woof woof
+2025-02-02T19:06:52.133287Z DEBUG watchdog{socket="/run/user/1000/flox.4eba5c20.sock" log_dir="/home/daedalus/dev/wsl2-ollama/.flox/log"}: flox_watchdog: waiting for termination
+2025-02-02T19:06:52.159500Z DEBUG flox_watchdog::logger: deleted log path=/home/daedalus/dev/wsl2-ollama/.flox/log/services.20250202131322716024.log
+2025-02-02T19:07:05.923264Z  INFO watchdog{socket="/run/user/1000/flox.4eba5c20.sock" log_dir="/home/daedalus/dev/wsl2-ollama/.flox/log"}: flox_watchdog: running cleanup after all PIDs terminated
+2025-02-02T19:07:05.923867Z DEBUG watchdog{socket="/run/user/1000/flox.4eba5c20.sock" log_dir="/home/daedalus/dev/wsl2-ollama/.flox/log"}: flox_watchdog: running cleanup
+2025-02-02T19:07:05.924321Z DEBUG watchdog{socket="/run/user/1000/flox.4eba5c20.sock" log_dir="/home/daedalus/dev/wsl2-ollama/.flox/log"}: flox_watchdog: did not shut down process-compose reason="no socket"
+2025-02-02T19:07:05.925096Z DEBUG watchdog{socket="/run/user/1000/flox.4eba5c20.sock" log_dir="/home/daedalus/dev/wsl2-ollama/.flox/log"}: flox_watchdog: finished cleanup
+2025-02-02T19:07:05.925608Z DEBUG sentry: dropping client guard -> disposing client    
+2025-02-02T19:07:05.925733Z DEBUG reqwest::connect: starting new connection: https://o4506548203094016.ingest.us.sentry.io/    
+2025-02-02T19:07:05.925816Z DEBUG sentry: client close; request transport to shut down    
+2025-02-02T19:07:05.959319Z DEBUG hyper_util::client::legacy::connect::http: connecting to 34.120.195.249:443
+2025-02-02T19:07:05.971990Z DEBUG hyper_util::client::legacy::connect::http: connected to 34.120.195.249:443
+2025-02-02T19:07:06.003722Z DEBUG hyper_util::client::legacy::pool: pooling idle connection for ("https", o4506548203094016.ingest.us.sentry.io)
+2025-02-02T19:07:06.004363Z DEBUG sentry: Get response: `{"id":"610e943cb5484e86b23f58b6450e9342"}`    
+2025-02-02T19:08:17.708299Z DEBUG flox_watchdog::sentry: Initializing Sentry with DSN: https://85c9526795f5047c99a5247aab616295:@o4506548203094016.ingest.us.sentry.io/4506548241825792
+2025-02-02T19:08:17.714100Z DEBUG sentry: enabled sentry client for DSN https://85c9526795f5047c99a5247aab616295:@o4506548203094016.ingest.us.sentry.io/4506548241825792    
+2025-02-02T19:08:17.714406Z DEBUG watchdog{socket="/run/user/1000/flox.4eba5c20.sock" log_dir="/home/daedalus/dev/wsl2-ollama/.flox/log"}: flox_watchdog: starting
+2025-02-02T19:08:17.714592Z DEBUG watchdog{socket="/run/user/1000/flox.4eba5c20.sock" log_dir="/home/daedalus/dev/wsl2-ollama/.flox/log"}: flox_watchdog: checked socket path="/run/user/1000/flox.4eba5c20.sock" exists=false
+2025-02-02T19:08:17.714691Z  INFO watchdog{socket="/run/user/1000/flox.4eba5c20.sock" log_dir="/home/daedalus/dev/wsl2-ollama/.flox/log"}: flox_watchdog: watchdog is on duty this_pid=1741 target_activation_id="6c3a5f2b"
+2025-02-02T19:08:17.714869Z DEBUG watchdog{socket="/run/user/1000/flox.4eba5c20.sock" log_dir="/home/daedalus/dev/wsl2-ollama/.flox/log"}: flox_watchdog: waiting for termination
+2025-02-02T19:08:17.714960Z DEBUG flox_watchdog::logger: still watching, woof woof
+2025-02-02T19:08:20.922667Z  INFO watchdog{socket="/run/user/1000/flox.4eba5c20.sock" log_dir="/home/daedalus/dev/wsl2-ollama/.flox/log"}: flox_watchdog: running cleanup after all PIDs terminated
+2025-02-02T19:08:20.923137Z DEBUG watchdog{socket="/run/user/1000/flox.4eba5c20.sock" log_dir="/home/daedalus/dev/wsl2-ollama/.flox/log"}: flox_watchdog: running cleanup
+2025-02-02T19:08:20.923461Z DEBUG watchdog{socket="/run/user/1000/flox.4eba5c20.sock" log_dir="/home/daedalus/dev/wsl2-ollama/.flox/log"}: flox_rust_sdk::providers::services: running process-compose down command=env NO_COLOR=1 /nix/store/4d924k1ayfgyphd06vgvpgyvwqqsb99a-process-compose-1.34.0/bin/process-compose down --unix-socket /run/user/1000/flox.4eba5c20.sock
+2025-02-02T19:08:20.954937Z DEBUG watchdog{socket="/run/user/1000/flox.4eba5c20.sock" log_dir="/home/daedalus/dev/wsl2-ollama/.flox/log"}: flox_watchdog: finished cleanup
+2025-02-02T19:08:20.955117Z DEBUG sentry: dropping client guard -> disposing client    
+2025-02-02T19:08:20.955165Z DEBUG reqwest::connect: starting new connection: https://o4506548203094016.ingest.us.sentry.io/    
+2025-02-02T19:08:20.956264Z DEBUG sentry: client close; request transport to shut down    
+2025-02-02T19:08:20.993419Z DEBUG hyper_util::client::legacy::connect::http: connecting to 34.120.195.249:443
+2025-02-02T19:08:20.999348Z DEBUG hyper_util::client::legacy::connect::http: connected to 34.120.195.249:443
+2025-02-02T19:08:21.025328Z DEBUG hyper_util::client::legacy::pool: pooling idle connection for ("https", o4506548203094016.ingest.us.sentry.io)
+2025-02-02T19:08:21.026411Z DEBUG sentry: Get response: `{"id":"f87ae0c9f17a4f4db75ccb69bb074404"}`    
+2025-02-02T19:36:22.581961Z DEBUG flox_watchdog::sentry: Initializing Sentry with DSN: https://85c9526795f5047c99a5247aab616295:@o4506548203094016.ingest.us.sentry.io/4506548241825792
+2025-02-02T19:36:22.590983Z DEBUG sentry: enabled sentry client for DSN https://85c9526795f5047c99a5247aab616295:@o4506548203094016.ingest.us.sentry.io/4506548241825792    
+2025-02-02T19:36:22.591511Z DEBUG watchdog{socket="/run/user/1000/flox.4eba5c20.sock" log_dir="/home/daedalus/dev/wsl2-ollama/.flox/log"}: flox_watchdog: starting
+2025-02-02T19:36:22.592294Z DEBUG watchdog{socket="/run/user/1000/flox.4eba5c20.sock" log_dir="/home/daedalus/dev/wsl2-ollama/.flox/log"}: flox_watchdog: checked socket path="/run/user/1000/flox.4eba5c20.sock" exists=false
+2025-02-02T19:36:22.592498Z  INFO watchdog{socket="/run/user/1000/flox.4eba5c20.sock" log_dir="/home/daedalus/dev/wsl2-ollama/.flox/log"}: flox_watchdog: watchdog is on duty this_pid=2369 target_activation_id="6c3a5f2b"
+2025-02-02T19:36:22.592752Z DEBUG flox_watchdog::logger: still watching, woof woof
+2025-02-02T19:36:22.592832Z DEBUG watchdog{socket="/run/user/1000/flox.4eba5c20.sock" log_dir="/home/daedalus/dev/wsl2-ollama/.flox/log"}: flox_watchdog: waiting for termination
+2025-02-02T19:36:22.607092Z DEBUG flox_watchdog::logger: deleted log path=/home/daedalus/dev/wsl2-ollama/.flox/log/services.20250202131406220664.log
+2025-02-02T19:36:31.424655Z  INFO watchdog{socket="/run/user/1000/flox.4eba5c20.sock" log_dir="/home/daedalus/dev/wsl2-ollama/.flox/log"}: flox_watchdog: running cleanup after all PIDs terminated
+2025-02-02T19:36:31.425781Z DEBUG watchdog{socket="/run/user/1000/flox.4eba5c20.sock" log_dir="/home/daedalus/dev/wsl2-ollama/.flox/log"}: flox_watchdog: running cleanup
+2025-02-02T19:36:31.427014Z DEBUG watchdog{socket="/run/user/1000/flox.4eba5c20.sock" log_dir="/home/daedalus/dev/wsl2-ollama/.flox/log"}: flox_watchdog: did not shut down process-compose reason="no socket"
+2025-02-02T19:36:31.428354Z DEBUG watchdog{socket="/run/user/1000/flox.4eba5c20.sock" log_dir="/home/daedalus/dev/wsl2-ollama/.flox/log"}: flox_watchdog: finished cleanup
+2025-02-02T19:36:31.429740Z DEBUG sentry: dropping client guard -> disposing client    
+2025-02-02T19:36:31.430992Z DEBUG sentry: client close; request transport to shut down    
+2025-02-02T19:36:31.442793Z DEBUG reqwest::connect: starting new connection: https://o4506548203094016.ingest.us.sentry.io/    
+2025-02-02T19:36:31.467104Z DEBUG hyper_util::client::legacy::connect::http: connecting to 34.120.195.249:443
+2025-02-02T19:36:31.474527Z DEBUG hyper_util::client::legacy::connect::http: connected to 34.120.195.249:443
+2025-02-02T19:36:31.506868Z DEBUG hyper_util::client::legacy::pool: pooling idle connection for ("https", o4506548203094016.ingest.us.sentry.io)
+2025-02-02T19:36:31.507529Z DEBUG sentry: Get response: `{"id":"ce1d0864a11b42e3a9bcb61d3787273b"}`    
+2025-02-02T19:37:50.345758Z DEBUG flox_watchdog::sentry: Initializing Sentry with DSN: https://85c9526795f5047c99a5247aab616295:@o4506548203094016.ingest.us.sentry.io/4506548241825792
+2025-02-02T19:37:50.354639Z DEBUG sentry: enabled sentry client for DSN https://85c9526795f5047c99a5247aab616295:@o4506548203094016.ingest.us.sentry.io/4506548241825792    
+2025-02-02T19:37:50.354862Z DEBUG watchdog{socket="/run/user/1000/flox.4eba5c20.sock" log_dir="/home/daedalus/dev/wsl2-ollama/.flox/log"}: flox_watchdog: starting
+2025-02-02T19:37:50.354979Z DEBUG watchdog{socket="/run/user/1000/flox.4eba5c20.sock" log_dir="/home/daedalus/dev/wsl2-ollama/.flox/log"}: flox_watchdog: checked socket path="/run/user/1000/flox.4eba5c20.sock" exists=false
+2025-02-02T19:37:50.355057Z  INFO watchdog{socket="/run/user/1000/flox.4eba5c20.sock" log_dir="/home/daedalus/dev/wsl2-ollama/.flox/log"}: flox_watchdog: watchdog is on duty this_pid=2539 target_activation_id="6c3a5f2b"
+2025-02-02T19:37:50.355192Z DEBUG flox_watchdog::logger: still watching, woof woof
+2025-02-02T19:37:50.355209Z DEBUG watchdog{socket="/run/user/1000/flox.4eba5c20.sock" log_dir="/home/daedalus/dev/wsl2-ollama/.flox/log"}: flox_watchdog: waiting for termination
+2025-02-02T19:37:56.247628Z  INFO watchdog{socket="/run/user/1000/flox.4eba5c20.sock" log_dir="/home/daedalus/dev/wsl2-ollama/.flox/log"}: flox_watchdog: running cleanup after all PIDs terminated
+2025-02-02T19:37:56.248039Z DEBUG watchdog{socket="/run/user/1000/flox.4eba5c20.sock" log_dir="/home/daedalus/dev/wsl2-ollama/.flox/log"}: flox_watchdog: running cleanup
+2025-02-02T19:37:56.248393Z DEBUG watchdog{socket="/run/user/1000/flox.4eba5c20.sock" log_dir="/home/daedalus/dev/wsl2-ollama/.flox/log"}: flox_watchdog: did not shut down process-compose reason="no socket"
+2025-02-02T19:37:56.249043Z DEBUG watchdog{socket="/run/user/1000/flox.4eba5c20.sock" log_dir="/home/daedalus/dev/wsl2-ollama/.flox/log"}: flox_watchdog: finished cleanup
+2025-02-02T19:37:56.249578Z DEBUG sentry: dropping client guard -> disposing client    
+2025-02-02T19:37:56.249804Z DEBUG reqwest::connect: starting new connection: https://o4506548203094016.ingest.us.sentry.io/    
+2025-02-02T19:37:56.249913Z DEBUG sentry: client close; request transport to shut down    
+2025-02-02T19:37:56.287682Z DEBUG hyper_util::client::legacy::connect::http: connecting to 34.120.195.249:443
+2025-02-02T19:37:56.294170Z DEBUG hyper_util::client::legacy::connect::http: connected to 34.120.195.249:443
+2025-02-02T19:37:56.337088Z DEBUG hyper_util::client::legacy::pool: pooling idle connection for ("https", o4506548203094016.ingest.us.sentry.io)
+2025-02-02T19:37:56.342858Z DEBUG sentry: Get response: `{"id":"9ddc22b16cc241a98bf976e532bd8093"}`    
+2025-02-02T19:40:09.376844Z DEBUG flox_watchdog::sentry: Initializing Sentry with DSN: https://85c9526795f5047c99a5247aab616295:@o4506548203094016.ingest.us.sentry.io/4506548241825792
+2025-02-02T19:40:09.383009Z DEBUG sentry: enabled sentry client for DSN https://85c9526795f5047c99a5247aab616295:@o4506548203094016.ingest.us.sentry.io/4506548241825792    
+2025-02-02T19:40:09.383265Z DEBUG watchdog{socket="/run/user/1000/flox.4eba5c20.sock" log_dir="/home/daedalus/dev/wsl2-ollama/.flox/log"}: flox_watchdog: starting
+2025-02-02T19:40:09.383487Z DEBUG watchdog{socket="/run/user/1000/flox.4eba5c20.sock" log_dir="/home/daedalus/dev/wsl2-ollama/.flox/log"}: flox_watchdog: checked socket path="/run/user/1000/flox.4eba5c20.sock" exists=false
+2025-02-02T19:40:09.383671Z  INFO watchdog{socket="/run/user/1000/flox.4eba5c20.sock" log_dir="/home/daedalus/dev/wsl2-ollama/.flox/log"}: flox_watchdog: watchdog is on duty this_pid=2695 target_activation_id="6c3a5f2b"
+2025-02-02T19:40:09.383870Z DEBUG flox_watchdog::logger: still watching, woof woof
+2025-02-02T19:40:09.383892Z DEBUG watchdog{socket="/run/user/1000/flox.4eba5c20.sock" log_dir="/home/daedalus/dev/wsl2-ollama/.flox/log"}: flox_watchdog: waiting for termination
+2025-02-02T19:40:13.090772Z  INFO watchdog{socket="/run/user/1000/flox.4eba5c20.sock" log_dir="/home/daedalus/dev/wsl2-ollama/.flox/log"}: flox_watchdog: running cleanup after all PIDs terminated
+2025-02-02T19:40:13.091858Z DEBUG watchdog{socket="/run/user/1000/flox.4eba5c20.sock" log_dir="/home/daedalus/dev/wsl2-ollama/.flox/log"}: flox_watchdog: running cleanup
+2025-02-02T19:40:13.092375Z DEBUG watchdog{socket="/run/user/1000/flox.4eba5c20.sock" log_dir="/home/daedalus/dev/wsl2-ollama/.flox/log"}: flox_rust_sdk::providers::services: running process-compose down command=env NO_COLOR=1 /nix/store/4d924k1ayfgyphd06vgvpgyvwqqsb99a-process-compose-1.34.0/bin/process-compose down --unix-socket /run/user/1000/flox.4eba5c20.sock
+2025-02-02T19:40:13.134735Z DEBUG watchdog{socket="/run/user/1000/flox.4eba5c20.sock" log_dir="/home/daedalus/dev/wsl2-ollama/.flox/log"}: flox_watchdog: finished cleanup
+2025-02-02T19:40:13.168458Z DEBUG sentry: dropping client guard -> disposing client    
+2025-02-02T19:40:13.168632Z DEBUG reqwest::connect: starting new connection: https://o4506548203094016.ingest.us.sentry.io/    
+2025-02-02T19:40:13.197229Z DEBUG sentry: client close; request transport to shut down    
+2025-02-02T19:40:13.226679Z DEBUG hyper_util::client::legacy::connect::http: connecting to 34.120.195.249:443
+2025-02-02T19:40:13.251047Z DEBUG hyper_util::client::legacy::connect::http: connected to 34.120.195.249:443
+2025-02-02T19:40:13.298323Z DEBUG hyper_util::client::legacy::pool: pooling idle connection for ("https", o4506548203094016.ingest.us.sentry.io)
+2025-02-02T19:40:13.298803Z DEBUG sentry: Get response: `{"id":"5fda87284ba84d018f0917c11498e8b4"}`    
+2025-02-02T19:40:30.390567Z DEBUG flox_watchdog::sentry: Initializing Sentry with DSN: https://85c9526795f5047c99a5247aab616295:@o4506548203094016.ingest.us.sentry.io/4506548241825792
+2025-02-02T19:40:30.397900Z DEBUG sentry: enabled sentry client for DSN https://85c9526795f5047c99a5247aab616295:@o4506548203094016.ingest.us.sentry.io/4506548241825792    
+2025-02-02T19:40:30.398155Z DEBUG watchdog{socket="/run/user/1000/flox.4eba5c20.sock" log_dir="/home/daedalus/dev/wsl2-ollama/.flox/log"}: flox_watchdog: starting
+2025-02-02T19:40:30.398606Z DEBUG watchdog{socket="/run/user/1000/flox.4eba5c20.sock" log_dir="/home/daedalus/dev/wsl2-ollama/.flox/log"}: flox_watchdog: checked socket path="/run/user/1000/flox.4eba5c20.sock" exists=false
+2025-02-02T19:40:30.399172Z  INFO watchdog{socket="/run/user/1000/flox.4eba5c20.sock" log_dir="/home/daedalus/dev/wsl2-ollama/.flox/log"}: flox_watchdog: watchdog is on duty this_pid=2946 target_activation_id="6c3a5f2b"
+2025-02-02T19:40:30.399870Z DEBUG flox_watchdog::logger: still watching, woof woof
+2025-02-02T19:40:30.399889Z DEBUG watchdog{socket="/run/user/1000/flox.4eba5c20.sock" log_dir="/home/daedalus/dev/wsl2-ollama/.flox/log"}: flox_watchdog: waiting for termination
+2025-02-02T19:40:30.420933Z DEBUG flox_watchdog::logger: deleted log path=/home/daedalus/dev/wsl2-ollama/.flox/log/services.20250202132541478403.log
+2025-02-02T20:33:31.888122Z  INFO watchdog{socket="/run/user/1000/flox.4eba5c20.sock" log_dir="/home/daedalus/dev/wsl2-ollama/.flox/log"}: flox_watchdog: running cleanup after all PIDs terminated
+2025-02-02T20:33:31.888608Z DEBUG watchdog{socket="/run/user/1000/flox.4eba5c20.sock" log_dir="/home/daedalus/dev/wsl2-ollama/.flox/log"}: flox_watchdog: running cleanup
+2025-02-02T20:33:31.889080Z DEBUG watchdog{socket="/run/user/1000/flox.4eba5c20.sock" log_dir="/home/daedalus/dev/wsl2-ollama/.flox/log"}: flox_rust_sdk::providers::services: running process-compose down command=env NO_COLOR=1 /nix/store/4d924k1ayfgyphd06vgvpgyvwqqsb99a-process-compose-1.34.0/bin/process-compose down --unix-socket /run/user/1000/flox.4eba5c20.sock
+2025-02-02T20:33:31.918878Z DEBUG watchdog{socket="/run/user/1000/flox.4eba5c20.sock" log_dir="/home/daedalus/dev/wsl2-ollama/.flox/log"}: flox_watchdog: finished cleanup
+2025-02-02T20:33:31.919296Z DEBUG sentry: dropping client guard -> disposing client    
+2025-02-02T20:33:31.919364Z DEBUG reqwest::connect: starting new connection: https://o4506548203094016.ingest.us.sentry.io/    
+2025-02-02T20:33:31.919626Z DEBUG sentry: client close; request transport to shut down    
+2025-02-02T20:33:31.955455Z DEBUG hyper_util::client::legacy::connect::http: connecting to 34.120.195.249:443
+2025-02-02T20:33:31.973745Z DEBUG hyper_util::client::legacy::connect::http: connected to 34.120.195.249:443
+2025-02-02T20:33:32.000351Z DEBUG hyper_util::client::legacy::pool: pooling idle connection for ("https", o4506548203094016.ingest.us.sentry.io)
+2025-02-02T20:33:32.001400Z DEBUG sentry: Get response: `{"id":"66433ee06b84441aaa48848fa699d399"}`    
+2025-02-02T23:22:50.963489Z DEBUG flox_watchdog::sentry: Initializing Sentry with DSN: https://85c9526795f5047c99a5247aab616295:@o4506548203094016.ingest.us.sentry.io/4506548241825792
+2025-02-02T23:22:50.969871Z DEBUG sentry: enabled sentry client for DSN https://85c9526795f5047c99a5247aab616295:@o4506548203094016.ingest.us.sentry.io/4506548241825792    
+2025-02-02T23:22:50.970084Z DEBUG watchdog{socket="/run/user/1000/flox.cf372816.sock" log_dir="/mnt/h/daedalus/dev/wsl2-ollama/.flox/log"}: flox_watchdog: starting
+2025-02-02T23:22:50.970272Z DEBUG watchdog{socket="/run/user/1000/flox.cf372816.sock" log_dir="/mnt/h/daedalus/dev/wsl2-ollama/.flox/log"}: flox_watchdog: checked socket path="/run/user/1000/flox.cf372816.sock" exists=false
+2025-02-02T23:22:50.970474Z  INFO watchdog{socket="/run/user/1000/flox.cf372816.sock" log_dir="/mnt/h/daedalus/dev/wsl2-ollama/.flox/log"}: flox_watchdog: watchdog is on duty this_pid=2961 target_activation_id="6c3a5f2b"
+2025-02-02T23:22:50.970705Z DEBUG watchdog{socket="/run/user/1000/flox.cf372816.sock" log_dir="/mnt/h/daedalus/dev/wsl2-ollama/.flox/log"}: flox_watchdog: waiting for termination
+2025-02-02T23:22:50.970705Z DEBUG flox_watchdog::logger: still watching, woof woof
+2025-02-02T23:22:50.984702Z DEBUG flox_watchdog::logger: deleted log path=/mnt/h/daedalus/dev/wsl2-ollama/.flox/log/services.20250202135611215060.log
+2025-02-02T23:23:36.414538Z  INFO watchdog{socket="/run/user/1000/flox.cf372816.sock" log_dir="/mnt/h/daedalus/dev/wsl2-ollama/.flox/log"}: flox_watchdog: running cleanup after all PIDs terminated
+2025-02-02T23:23:36.415301Z DEBUG watchdog{socket="/run/user/1000/flox.cf372816.sock" log_dir="/mnt/h/daedalus/dev/wsl2-ollama/.flox/log"}: flox_watchdog: running cleanup
+2025-02-02T23:23:36.416067Z DEBUG watchdog{socket="/run/user/1000/flox.cf372816.sock" log_dir="/mnt/h/daedalus/dev/wsl2-ollama/.flox/log"}: flox_rust_sdk::providers::services: running process-compose down command=env NO_COLOR=1 /nix/store/4d924k1ayfgyphd06vgvpgyvwqqsb99a-process-compose-1.34.0/bin/process-compose down --unix-socket /run/user/1000/flox.cf372816.sock
+2025-02-02T23:23:36.446190Z DEBUG watchdog{socket="/run/user/1000/flox.cf372816.sock" log_dir="/mnt/h/daedalus/dev/wsl2-ollama/.flox/log"}: flox_watchdog: finished cleanup
+2025-02-02T23:23:36.446813Z DEBUG sentry: dropping client guard -> disposing client    
+2025-02-02T23:23:36.446991Z DEBUG reqwest::connect: starting new connection: https://o4506548203094016.ingest.us.sentry.io/    
+2025-02-02T23:23:36.447356Z DEBUG sentry: client close; request transport to shut down    
+2025-02-02T23:23:36.486206Z DEBUG hyper_util::client::legacy::connect::http: connecting to 34.120.195.249:443
+2025-02-02T23:23:36.503849Z DEBUG hyper_util::client::legacy::connect::http: connected to 34.120.195.249:443
+2025-02-02T23:23:36.534877Z DEBUG hyper_util::client::legacy::pool: pooling idle connection for ("https", o4506548203094016.ingest.us.sentry.io)
+2025-02-02T23:23:36.535988Z DEBUG sentry: Get response: `{"id":"9eb232745d924f7884c4876e66e20b3d"}`    
+2025-02-02T23:40:10.682068Z DEBUG flox_watchdog::sentry: Initializing Sentry with DSN: https://85c9526795f5047c99a5247aab616295:@o4506548203094016.ingest.us.sentry.io/4506548241825792
+2025-02-02T23:40:10.689567Z DEBUG sentry: enabled sentry client for DSN https://85c9526795f5047c99a5247aab616295:@o4506548203094016.ingest.us.sentry.io/4506548241825792    
+2025-02-02T23:40:10.690592Z DEBUG watchdog{socket="/run/user/1000/flox.4eba5c20.sock" log_dir="/home/daedalus/dev/wsl2-ollama/.flox/log"}: flox_watchdog: starting
+2025-02-02T23:40:10.693296Z DEBUG watchdog{socket="/run/user/1000/flox.4eba5c20.sock" log_dir="/home/daedalus/dev/wsl2-ollama/.flox/log"}: flox_watchdog: checked socket path="/run/user/1000/flox.4eba5c20.sock" exists=false
+2025-02-02T23:40:10.693812Z  INFO watchdog{socket="/run/user/1000/flox.4eba5c20.sock" log_dir="/home/daedalus/dev/wsl2-ollama/.flox/log"}: flox_watchdog: watchdog is on duty this_pid=1271 target_activation_id="6c3a5f2b"
+2025-02-02T23:40:10.694175Z DEBUG flox_watchdog::logger: still watching, woof woof
+2025-02-02T23:40:10.694233Z DEBUG watchdog{socket="/run/user/1000/flox.4eba5c20.sock" log_dir="/home/daedalus/dev/wsl2-ollama/.flox/log"}: flox_watchdog: waiting for termination
+2025-02-02T23:40:10.707158Z DEBUG flox_watchdog::logger: deleted log path=/home/daedalus/dev/wsl2-ollama/.flox/log/services.20250202140132872991.log
+2025-02-02T23:40:16.205461Z  INFO watchdog{socket="/run/user/1000/flox.4eba5c20.sock" log_dir="/home/daedalus/dev/wsl2-ollama/.flox/log"}: flox_watchdog: running cleanup after all PIDs terminated
+2025-02-02T23:40:16.205782Z DEBUG watchdog{socket="/run/user/1000/flox.4eba5c20.sock" log_dir="/home/daedalus/dev/wsl2-ollama/.flox/log"}: flox_watchdog: running cleanup
+2025-02-02T23:40:16.205897Z DEBUG watchdog{socket="/run/user/1000/flox.4eba5c20.sock" log_dir="/home/daedalus/dev/wsl2-ollama/.flox/log"}: flox_rust_sdk::providers::services: running process-compose down command=env NO_COLOR=1 /nix/store/4d924k1ayfgyphd06vgvpgyvwqqsb99a-process-compose-1.34.0/bin/process-compose down --unix-socket /run/user/1000/flox.4eba5c20.sock
+2025-02-02T23:40:16.242036Z DEBUG watchdog{socket="/run/user/1000/flox.4eba5c20.sock" log_dir="/home/daedalus/dev/wsl2-ollama/.flox/log"}: flox_watchdog: finished cleanup
+2025-02-02T23:40:16.242578Z DEBUG sentry: dropping client guard -> disposing client    
+2025-02-02T23:40:16.243038Z DEBUG reqwest::connect: starting new connection: https://o4506548203094016.ingest.us.sentry.io/    
+2025-02-02T23:40:16.265976Z DEBUG sentry: client close; request transport to shut down    
+2025-02-02T23:40:16.304811Z DEBUG hyper_util::client::legacy::connect::http: connecting to 34.120.195.249:443
+2025-02-02T23:40:16.314415Z DEBUG hyper_util::client::legacy::connect::http: connected to 34.120.195.249:443
+2025-02-02T23:40:16.345704Z DEBUG hyper_util::client::legacy::pool: pooling idle connection for ("https", o4506548203094016.ingest.us.sentry.io)
+2025-02-02T23:40:16.346082Z DEBUG sentry: Get response: `{"id":"c0893c1f1dc843e2a3354f2fd86c7b22"}`    
+2025-02-02T23:40:42.396151Z DEBUG flox_watchdog::sentry: Initializing Sentry with DSN: https://85c9526795f5047c99a5247aab616295:@o4506548203094016.ingest.us.sentry.io/4506548241825792
+2025-02-02T23:40:42.402929Z DEBUG sentry: enabled sentry client for DSN https://85c9526795f5047c99a5247aab616295:@o4506548203094016.ingest.us.sentry.io/4506548241825792    
+2025-02-02T23:40:42.403249Z DEBUG watchdog{socket="/run/user/1000/flox.4eba5c20.sock" log_dir="/home/daedalus/dev/wsl2-ollama/.flox/log"}: flox_watchdog: starting
+2025-02-02T23:40:42.403410Z DEBUG watchdog{socket="/run/user/1000/flox.4eba5c20.sock" log_dir="/home/daedalus/dev/wsl2-ollama/.flox/log"}: flox_watchdog: checked socket path="/run/user/1000/flox.4eba5c20.sock" exists=false
+2025-02-02T23:40:42.403653Z  INFO watchdog{socket="/run/user/1000/flox.4eba5c20.sock" log_dir="/home/daedalus/dev/wsl2-ollama/.flox/log"}: flox_watchdog: watchdog is on duty this_pid=1534 target_activation_id="6c3a5f2b"
+2025-02-02T23:40:42.404450Z DEBUG flox_watchdog::logger: still watching, woof woof
+2025-02-02T23:40:42.404592Z DEBUG watchdog{socket="/run/user/1000/flox.4eba5c20.sock" log_dir="/home/daedalus/dev/wsl2-ollama/.flox/log"}: flox_watchdog: waiting for termination
+2025-02-02T23:40:42.416874Z DEBUG flox_watchdog::logger: deleted log path=/home/daedalus/dev/wsl2-ollama/.flox/log/services.20250202140244885560.log
+2025-02-02T23:40:44.411840Z  INFO watchdog{socket="/run/user/1000/flox.4eba5c20.sock" log_dir="/home/daedalus/dev/wsl2-ollama/.flox/log"}: flox_watchdog: running cleanup after all PIDs terminated
+2025-02-02T23:40:44.412484Z DEBUG watchdog{socket="/run/user/1000/flox.4eba5c20.sock" log_dir="/home/daedalus/dev/wsl2-ollama/.flox/log"}: flox_watchdog: running cleanup
+2025-02-02T23:40:44.412752Z DEBUG watchdog{socket="/run/user/1000/flox.4eba5c20.sock" log_dir="/home/daedalus/dev/wsl2-ollama/.flox/log"}: flox_watchdog: did not shut down process-compose reason="no socket"
+2025-02-02T23:40:44.412984Z DEBUG watchdog{socket="/run/user/1000/flox.4eba5c20.sock" log_dir="/home/daedalus/dev/wsl2-ollama/.flox/log"}: flox_watchdog: finished cleanup
+2025-02-02T23:40:44.413593Z DEBUG sentry: dropping client guard -> disposing client    
+2025-02-02T23:40:44.413668Z DEBUG reqwest::connect: starting new connection: https://o4506548203094016.ingest.us.sentry.io/    
+2025-02-02T23:40:44.414117Z DEBUG sentry: client close; request transport to shut down    
+2025-02-02T23:40:44.457718Z DEBUG hyper_util::client::legacy::connect::http: connecting to 34.120.195.249:443
+2025-02-02T23:40:44.465931Z DEBUG hyper_util::client::legacy::connect::http: connected to 34.120.195.249:443
+2025-02-02T23:40:44.499962Z DEBUG hyper_util::client::legacy::pool: pooling idle connection for ("https", o4506548203094016.ingest.us.sentry.io)
+2025-02-02T23:40:44.500372Z DEBUG sentry: Get response: `{"id":"0034267f886b4e509434a200fdc55af6"}`    
+2025-02-02T23:41:05.834566Z DEBUG flox_watchdog::sentry: Initializing Sentry with DSN: https://85c9526795f5047c99a5247aab616295:@o4506548203094016.ingest.us.sentry.io/4506548241825792
+2025-02-02T23:41:05.840957Z DEBUG sentry: enabled sentry client for DSN https://85c9526795f5047c99a5247aab616295:@o4506548203094016.ingest.us.sentry.io/4506548241825792    
+2025-02-02T23:41:05.841261Z DEBUG watchdog{socket="/run/user/1000/flox.4eba5c20.sock" log_dir="/home/daedalus/dev/wsl2-ollama/.flox/log"}: flox_watchdog: starting
+2025-02-02T23:41:05.841481Z DEBUG watchdog{socket="/run/user/1000/flox.4eba5c20.sock" log_dir="/home/daedalus/dev/wsl2-ollama/.flox/log"}: flox_watchdog: checked socket path="/run/user/1000/flox.4eba5c20.sock" exists=false
+2025-02-02T23:41:05.842015Z  INFO watchdog{socket="/run/user/1000/flox.4eba5c20.sock" log_dir="/home/daedalus/dev/wsl2-ollama/.flox/log"}: flox_watchdog: watchdog is on duty this_pid=1628 target_activation_id="6c3a5f2b"
+2025-02-02T23:41:05.842682Z DEBUG flox_watchdog::logger: still watching, woof woof
+2025-02-02T23:41:05.842701Z DEBUG watchdog{socket="/run/user/1000/flox.4eba5c20.sock" log_dir="/home/daedalus/dev/wsl2-ollama/.flox/log"}: flox_watchdog: waiting for termination
+2025-02-02T23:41:12.267396Z  INFO watchdog{socket="/run/user/1000/flox.4eba5c20.sock" log_dir="/home/daedalus/dev/wsl2-ollama/.flox/log"}: flox_watchdog: running cleanup after all PIDs terminated
+2025-02-02T23:41:12.267889Z DEBUG watchdog{socket="/run/user/1000/flox.4eba5c20.sock" log_dir="/home/daedalus/dev/wsl2-ollama/.flox/log"}: flox_watchdog: running cleanup
+2025-02-02T23:41:12.268151Z DEBUG watchdog{socket="/run/user/1000/flox.4eba5c20.sock" log_dir="/home/daedalus/dev/wsl2-ollama/.flox/log"}: flox_watchdog: did not shut down process-compose reason="no socket"
+2025-02-02T23:41:12.268417Z DEBUG watchdog{socket="/run/user/1000/flox.4eba5c20.sock" log_dir="/home/daedalus/dev/wsl2-ollama/.flox/log"}: flox_watchdog: finished cleanup
+2025-02-02T23:41:12.268614Z DEBUG sentry: dropping client guard -> disposing client    
+2025-02-02T23:41:12.268676Z DEBUG reqwest::connect: starting new connection: https://o4506548203094016.ingest.us.sentry.io/    
+2025-02-02T23:41:12.268894Z DEBUG sentry: client close; request transport to shut down    
+2025-02-02T23:41:12.300068Z DEBUG hyper_util::client::legacy::connect::http: connecting to 34.120.195.249:443
+2025-02-02T23:41:12.309203Z DEBUG hyper_util::client::legacy::connect::http: connected to 34.120.195.249:443
+2025-02-02T23:41:12.338042Z DEBUG hyper_util::client::legacy::pool: pooling idle connection for ("https", o4506548203094016.ingest.us.sentry.io)
+2025-02-02T23:41:12.338365Z DEBUG sentry: Get response: `{"id":"c195b1f27252425e8e5df26ffc776d51"}`    
+2025-02-02T23:41:17.019540Z DEBUG flox_watchdog::sentry: Initializing Sentry with DSN: https://85c9526795f5047c99a5247aab616295:@o4506548203094016.ingest.us.sentry.io/4506548241825792
+2025-02-02T23:41:17.026685Z DEBUG sentry: enabled sentry client for DSN https://85c9526795f5047c99a5247aab616295:@o4506548203094016.ingest.us.sentry.io/4506548241825792    
+2025-02-02T23:41:17.027114Z DEBUG watchdog{socket="/run/user/1000/flox.4eba5c20.sock" log_dir="/home/daedalus/dev/wsl2-ollama/.flox/log"}: flox_watchdog: starting
+2025-02-02T23:41:17.027405Z DEBUG watchdog{socket="/run/user/1000/flox.4eba5c20.sock" log_dir="/home/daedalus/dev/wsl2-ollama/.flox/log"}: flox_watchdog: checked socket path="/run/user/1000/flox.4eba5c20.sock" exists=false
+2025-02-02T23:41:17.027618Z  INFO watchdog{socket="/run/user/1000/flox.4eba5c20.sock" log_dir="/home/daedalus/dev/wsl2-ollama/.flox/log"}: flox_watchdog: watchdog is on duty this_pid=1727 target_activation_id="6c3a5f2b"
+2025-02-02T23:41:17.028073Z DEBUG watchdog{socket="/run/user/1000/flox.4eba5c20.sock" log_dir="/home/daedalus/dev/wsl2-ollama/.flox/log"}: flox_watchdog: waiting for termination
+2025-02-02T23:41:17.028142Z DEBUG flox_watchdog::logger: still watching, woof woof
+2025-02-02T23:41:40.699886Z  INFO watchdog{socket="/run/user/1000/flox.4eba5c20.sock" log_dir="/home/daedalus/dev/wsl2-ollama/.flox/log"}: flox_watchdog: running cleanup after all PIDs terminated
+2025-02-02T23:41:40.700553Z DEBUG watchdog{socket="/run/user/1000/flox.4eba5c20.sock" log_dir="/home/daedalus/dev/wsl2-ollama/.flox/log"}: flox_watchdog: running cleanup
+2025-02-02T23:41:40.700888Z DEBUG watchdog{socket="/run/user/1000/flox.4eba5c20.sock" log_dir="/home/daedalus/dev/wsl2-ollama/.flox/log"}: flox_rust_sdk::providers::services: running process-compose down command=env NO_COLOR=1 /nix/store/4d924k1ayfgyphd06vgvpgyvwqqsb99a-process-compose-1.34.0/bin/process-compose down --unix-socket /run/user/1000/flox.4eba5c20.sock
+2025-02-02T23:41:40.745353Z DEBUG watchdog{socket="/run/user/1000/flox.4eba5c20.sock" log_dir="/home/daedalus/dev/wsl2-ollama/.flox/log"}: flox_watchdog: finished cleanup
+2025-02-02T23:41:40.746960Z DEBUG sentry: dropping client guard -> disposing client    
+2025-02-02T23:41:40.747032Z DEBUG reqwest::connect: starting new connection: https://o4506548203094016.ingest.us.sentry.io/    
+2025-02-02T23:41:40.747320Z DEBUG sentry: client close; request transport to shut down    
+2025-02-02T23:41:40.777283Z DEBUG hyper_util::client::legacy::connect::http: connecting to 34.120.195.249:443
+2025-02-02T23:41:40.785519Z DEBUG hyper_util::client::legacy::connect::http: connected to 34.120.195.249:443
+2025-02-02T23:41:40.827978Z DEBUG hyper_util::client::legacy::pool: pooling idle connection for ("https", o4506548203094016.ingest.us.sentry.io)
+2025-02-02T23:41:40.828560Z DEBUG sentry: Get response: `{"id":"3c0021f7c0f4403fbcf6fe1e37ae017c"}`    
+2025-02-02T23:42:03.249691Z DEBUG flox_watchdog::sentry: Initializing Sentry with DSN: https://85c9526795f5047c99a5247aab616295:@o4506548203094016.ingest.us.sentry.io/4506548241825792
+2025-02-02T23:42:03.257864Z DEBUG sentry: enabled sentry client for DSN https://85c9526795f5047c99a5247aab616295:@o4506548203094016.ingest.us.sentry.io/4506548241825792    
+2025-02-02T23:42:03.258201Z DEBUG watchdog{socket="/run/user/1000/flox.4eba5c20.sock" log_dir="/home/daedalus/dev/wsl2-ollama/.flox/log"}: flox_watchdog: starting
+2025-02-02T23:42:03.258414Z DEBUG watchdog{socket="/run/user/1000/flox.4eba5c20.sock" log_dir="/home/daedalus/dev/wsl2-ollama/.flox/log"}: flox_watchdog: checked socket path="/run/user/1000/flox.4eba5c20.sock" exists=false
+2025-02-02T23:42:03.258639Z  INFO watchdog{socket="/run/user/1000/flox.4eba5c20.sock" log_dir="/home/daedalus/dev/wsl2-ollama/.flox/log"}: flox_watchdog: watchdog is on duty this_pid=1939 target_activation_id="6c3a5f2b"
+2025-02-02T23:42:03.259065Z DEBUG watchdog{socket="/run/user/1000/flox.4eba5c20.sock" log_dir="/home/daedalus/dev/wsl2-ollama/.flox/log"}: flox_watchdog: waiting for termination
+2025-02-02T23:42:03.259256Z DEBUG flox_watchdog::logger: still watching, woof woof
+2025-02-02T23:42:03.270866Z DEBUG flox_watchdog::logger: deleted log path=/home/daedalus/dev/wsl2-ollama/.flox/log/services.20250202140817801219.log
+2025-02-02T23:42:35.665625Z  INFO watchdog{socket="/run/user/1000/flox.4eba5c20.sock" log_dir="/home/daedalus/dev/wsl2-ollama/.flox/log"}: flox_watchdog: running cleanup after all PIDs terminated
+2025-02-02T23:42:35.666234Z DEBUG watchdog{socket="/run/user/1000/flox.4eba5c20.sock" log_dir="/home/daedalus/dev/wsl2-ollama/.flox/log"}: flox_watchdog: running cleanup
+2025-02-02T23:42:35.666542Z DEBUG watchdog{socket="/run/user/1000/flox.4eba5c20.sock" log_dir="/home/daedalus/dev/wsl2-ollama/.flox/log"}: flox_rust_sdk::providers::services: running process-compose down command=env NO_COLOR=1 /nix/store/4d924k1ayfgyphd06vgvpgyvwqqsb99a-process-compose-1.34.0/bin/process-compose down --unix-socket /run/user/1000/flox.4eba5c20.sock
+2025-02-02T23:42:35.705658Z DEBUG watchdog{socket="/run/user/1000/flox.4eba5c20.sock" log_dir="/home/daedalus/dev/wsl2-ollama/.flox/log"}: flox_watchdog: finished cleanup
+2025-02-02T23:42:35.705835Z DEBUG sentry: dropping client guard -> disposing client    
+2025-02-02T23:42:35.705919Z DEBUG reqwest::connect: starting new connection: https://o4506548203094016.ingest.us.sentry.io/    
+2025-02-02T23:42:35.706093Z DEBUG sentry: client close; request transport to shut down    
+2025-02-02T23:42:35.722614Z DEBUG hyper_util::client::legacy::connect::http: connecting to 34.120.195.249:443
+2025-02-02T23:42:35.731345Z DEBUG hyper_util::client::legacy::connect::http: connected to 34.120.195.249:443
+2025-02-02T23:42:35.758102Z DEBUG hyper_util::client::legacy::pool: pooling idle connection for ("https", o4506548203094016.ingest.us.sentry.io)
+2025-02-02T23:42:35.758370Z DEBUG sentry: Get response: `{"id":"583e982689be49688076d80aef1a4d61"}`    
+2025-02-02T23:55:57.713226Z DEBUG flox_watchdog::sentry: Initializing Sentry with DSN: https://85c9526795f5047c99a5247aab616295:@o4506548203094016.ingest.us.sentry.io/4506548241825792
+2025-02-02T23:55:57.721826Z DEBUG sentry: enabled sentry client for DSN https://85c9526795f5047c99a5247aab616295:@o4506548203094016.ingest.us.sentry.io/4506548241825792    
+2025-02-02T23:55:57.722279Z DEBUG watchdog{socket="/run/user/1000/flox.4eba5c20.sock" log_dir="/home/daedalus/dev/wsl2-ollama/.flox/log"}: flox_watchdog: starting
+2025-02-02T23:55:57.722534Z DEBUG watchdog{socket="/run/user/1000/flox.4eba5c20.sock" log_dir="/home/daedalus/dev/wsl2-ollama/.flox/log"}: flox_watchdog: checked socket path="/run/user/1000/flox.4eba5c20.sock" exists=false
+2025-02-02T23:55:57.723107Z  INFO watchdog{socket="/run/user/1000/flox.4eba5c20.sock" log_dir="/home/daedalus/dev/wsl2-ollama/.flox/log"}: flox_watchdog: watchdog is on duty this_pid=2359 target_activation_id="6c3a5f2b"
+2025-02-02T23:55:57.723538Z DEBUG watchdog{socket="/run/user/1000/flox.4eba5c20.sock" log_dir="/home/daedalus/dev/wsl2-ollama/.flox/log"}: flox_watchdog: waiting for termination
+2025-02-02T23:55:57.725121Z DEBUG flox_watchdog::logger: still watching, woof woof
+2025-02-02T23:55:57.740002Z DEBUG flox_watchdog::logger: deleted log path=/home/daedalus/dev/wsl2-ollama/.flox/log/services.20250202144009478413.log
