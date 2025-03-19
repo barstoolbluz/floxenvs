@@ -5,15 +5,15 @@ Once you have the 1Password CLI set up (see **Prerequisites**, below), you'll ne
 ```toml
 [vars]
 # 1password github config
-OP_GITHUB_VAULT = "1password"           # Name of 1Password vault containing GitHub tokens
-OP_GITHUB_TOKEN_ITEM = "repo"           # Name of the item storing GitHub token
-OP_GITHUB_TOKEN_FIELD = "token"         # Field name containing the GitHub token
+OP_GITHUB_VAULT = "vault"           # Name of 1Password vault containing GitHub tokens
+OP_GITHUB_TOKEN_ITEM = "token_item"           # Name of the item storing GitHub token
+OP_GITHUB_TOKEN_FIELD = "token_field"         # Field name containing the GitHub token
 
 # 1password aws config
-OP_AWS_VAULT = "1password"              # Name of 1Password vault containing AWS credentials
-OP_AWS_CREDENTIALS_ITEM = "awskeyz"     # Name of the item storing AWS credentials
+OP_AWS_VAULT = "vault"              # Name of 1Password vault containing AWS credentials
+OP_AWS_CREDENTIALS_ITEM = "aws_creds"     # Name of the item storing AWS credentials
 OP_AWS_USERNAME_FIELD = "username"      # Field name for AWS access key ID
-OP_AWS_CREDENTIALS_FIELD = "credential" # Field name for AWS secret access key
+OP_AWS_CREDENTIALS_FIELD = "credentials" # Field name for AWS secret access key
 ```
 
 **Important:** You must modify these environment variables to match your own 1Password vault structure:
