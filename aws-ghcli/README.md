@@ -1,6 +1,6 @@
 ### 1Password Vault Configuration
 
-Once you have the 1Password CLI set up, you'll need to customize the environment variables to match your specific 1Password vault structure. The default values in the `manifest.toml` are examples and will need to be modified:
+Once you have the 1Password CLI set up (see **Prerequisites**, below), you'll need to customize the environment variables to match your specific 1Password vault structure. The default values in the `manifest.toml` are examples and will need to be modified:
 
 ```toml
 [vars]
