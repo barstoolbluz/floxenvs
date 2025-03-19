@@ -285,10 +285,19 @@ databricks() {
 
 The `on-activate` hook will automatically add these functions to the shell wrapper files in `$FLOX_ENV_CACHE/shell/`, making them available for both interactive and non-interactive shells.
 
-Note that different tools may require different numbers of credentials. Research which environment variables each tool expects for authentication. Some common patterns:
-- Single token (like GitHub)
-- Key/secret pair (like AWS)
-- Host/token combination (like Databricks)
-- Multiple credentials (some cloud providers)
+Note that different tools may require different numbers of credentials. Two key aspects to research:
+
+1. **Tool requirements**: Identify which environment variables each tool expects for authentication:
+   - Single token (like GitHub)
+   - Key/secret pair (like AWS)
+   - Host/token combination (like Databricks)
+   - Multiple credentials (some cloud providers)
+
+2. **1Password structure**: Determine how these credentials are stored in your 1Password vault:
+   - Which vault contains the credentials
+   - The name of the item storing the credentials
+   - The exact field names used within that item
+
+You'll need to match your 1Password structure to the environment variables required by each tool. This might involve creating new items or fields in your 1Password vault specifically organized for use with this environment.
 
 For tools that don't accept environment variables, you'll need a custom approach similar to the Git wrapper, using techniques appropriate for that specific tool's authentication mechanism.
