@@ -192,7 +192,7 @@ aws s3 ls
 - **Zsh** – `wrapper.sh`
 - **Fish** – `wrapper.fish`
 
-Wrapper scripts are automatically sourced on activation in Flox shells.
+Flox automatically sources the appropriate wrapper script depending on which shell it's running in.
 
 ## Notes
 
