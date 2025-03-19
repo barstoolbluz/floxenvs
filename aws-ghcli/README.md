@@ -1,4 +1,17 @@
-# Flox Environment: Secure Credentials Management with 1Password 🔐
+### 1Password Vault Configuration
+
+Once you have the 1Password CLI set up, you need to configure the following items in your 1Password vault:
+
+#### GitHub Configuration
+- Vault: `1password` (configurable via `OP_GITHUB_VAULT`)
+- Item name: `repo` (configurable via `OP_GITHUB_TOKEN_ITEM`)
+- Field containing token: `token` (configurable via `OP_GITHUB_TOKEN_FIELD`)
+
+#### AWS Configuration
+- Vault: `1password` (configurable via `OP_AWS_VAULT`)
+- Item name: `awskeyz` (configurable via `OP_AWS_CREDENTIALS_ITEM`)
+- Field for access key ID: `username` (configurable via `OP_AWS_USERNAME_FIELD`)
+- Field for secret access key: `credential` (configurable via `OP_AWS_CREDENTIALS_FIELD`)# Flox Environment: Secure Credentials Management with 1Password 🔐
 
 This Flox environment provides a secure way to manage credentials for common developer tools by integrating with 1Password. It prevents credentials from being stored in unencrypted files on disk, significantly reducing the risk of credential leakage.
 
@@ -50,7 +63,7 @@ The wrapper functions use two different approaches for credential handling:
 - Directly reads the token from 1Password
 - Creates a temporary script (via `GIT_ASKPASS`) that outputs the token when Git requests it
 - The token is never written to disk in plaintext (only to a temporary file that is immediately deleted)
-- Benefits from the process isolation of the subshell
+- Benefits from the process isolation of the subshell, though this is not as strong as container isolation
 - The temporary file and token are cleaned up when the command completes
 
 Both methods ensure credentials are never persistently stored in unencrypted files and exist only for the duration needed to complete the command.
@@ -62,22 +75,44 @@ Both methods ensure credentials are never persistently stored in unencrypted fil
 3. When you run a wrapped command, it fetches the required credentials from 1Password
 4. The credentials exist only for the duration of the command execution
 
-## Setup Requirements
+## Prerequisites
 
-### 1Password Configuration
+### 1Password CLI Setup
 
-You need to configure the following items in your 1Password vault:
+This environment expects the 1Password CLI to be already set up on your system. Specifically, it looks for a config file at `~/.config/op/config`.
 
-#### GitHub Configuration
-- Vault: `1password` (configurable via `OP_GITHUB_VAULT`)
-- Item name: `repo` (configurable via `OP_GITHUB_TOKEN_ITEM`)
-- Field containing token: `token` (configurable via `OP_GITHUB_TOKEN_FIELD`)
+#### Option 1: Automatic Setup
 
-#### AWS Configuration
-- Vault: `1password` (configurable via `OP_AWS_VAULT`)
-- Item name: `awskeyz` (configurable via `OP_AWS_CREDENTIALS_ITEM`)
-- Field for access key ID: `username` (configurable via `OP_AWS_USERNAME_FIELD`)
-- Field for secret access key: `credential` (configurable via `OP_AWS_CREDENTIALS_FIELD`)
+You can use the provided wizard to set up 1Password CLI automatically:
+
+```sh
+flox activate -r barstoolbluz/1pass
+```
+
+This wizard will guide you through the process of creating the necessary configuration.
+
+#### Option 2: Manual Setup
+
+Alternatively, you can set up the 1Password CLI manually by creating the config file yourself. The file should be structured like this:
+
+```json
+{
+        "latest_signin": "your_organization",
+        "device": "2xdzachbrog69jockvku6qshakeyerhips",
+        "accounts": [
+                {
+                        "shorthand": "your_org_shorthand",
+                        "accountUUID": "H4D9BhyE9WmS7-MbaG0qWDsaOi",
+                        "url": "https://your-team.1password.com",
+                        "email": "your.email@example.com",
+                        "accountKey": "Y6bXKI-Z6_9ONAkwYRbFnQRcn3lyIEY4DDpgkURh",
+                        "userUUID": "GR9EqmcQVmIGa6XCIpW8hue6Ef"
+                }
+        ]
+}
+```
+
+You'll need to replace the example values with your actual 1Password account information.
 
 ## Usage 🛠️
 
