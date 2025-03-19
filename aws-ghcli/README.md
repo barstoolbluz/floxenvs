@@ -1,17 +1,35 @@
 ### 1Password Vault Configuration
 
-Once you have the 1Password CLI set up, you need to configure the following items in your 1Password vault:
+Once you have the 1Password CLI set up, you'll need to customize the environment variables to match your specific 1Password vault structure. The default values in the `manifest.toml` are examples and will need to be modified:
 
-#### GitHub Configuration
-- Vault: `1password` (configurable via `OP_GITHUB_VAULT`)
-- Item name: `repo` (configurable via `OP_GITHUB_TOKEN_ITEM`)
-- Field containing token: `token` (configurable via `OP_GITHUB_TOKEN_FIELD`)
+```toml
+[vars]
+# 1password github config
+OP_GITHUB_VAULT = "1password"           # Name of 1Password vault containing GitHub tokens
+OP_GITHUB_TOKEN_ITEM = "repo"           # Name of the item storing GitHub token
+OP_GITHUB_TOKEN_FIELD = "token"         # Field name containing the GitHub token
 
-#### AWS Configuration
-- Vault: `1password` (configurable via `OP_AWS_VAULT`)
-- Item name: `awskeyz` (configurable via `OP_AWS_CREDENTIALS_ITEM`)
-- Field for access key ID: `username` (configurable via `OP_AWS_USERNAME_FIELD`)
-- Field for secret access key: `credential` (configurable via `OP_AWS_CREDENTIALS_FIELD`)# Flox Environment: Secure Credentials Management with 1Password 🔐
+# 1password aws config
+OP_AWS_VAULT = "1password"              # Name of 1Password vault containing AWS credentials
+OP_AWS_CREDENTIALS_ITEM = "awskeyz"     # Name of the item storing AWS credentials
+OP_AWS_USERNAME_FIELD = "username"      # Field name for AWS access key ID
+OP_AWS_CREDENTIALS_FIELD = "credential" # Field name for AWS secret access key
+```
+
+**Important:** You must modify these environment variables to match your own 1Password vault structure:
+
+1. **For GitHub access**: 
+   - Set `OP_GITHUB_VAULT` to the name of your vault containing GitHub tokens
+   - Set `OP_GITHUB_TOKEN_ITEM` to the name of your item storing the GitHub token
+   - Set `OP_GITHUB_TOKEN_FIELD` to the field name containing your GitHub token
+
+2. **For AWS access**:
+   - Set `OP_AWS_VAULT` to the name of your vault containing AWS credentials
+   - Set `OP_AWS_CREDENTIALS_ITEM` to the name of your item storing AWS credentials
+   - Set `OP_AWS_USERNAME_FIELD` to the field name for your AWS access key ID
+   - Set `OP_AWS_CREDENTIALS_FIELD` to the field name for your AWS secret access key
+
+The path format used by the wrapper functions will be: `op://[VAULT]/[ITEM]/[FIELD]`# Flox Environment: Secure Credentials Management with 1Password 🔐
 
 This Flox environment provides a secure way to manage credentials for common developer tools by integrating with 1Password. It prevents credentials from being stored in unencrypted files on disk, significantly reducing the risk of credential leakage.
 
