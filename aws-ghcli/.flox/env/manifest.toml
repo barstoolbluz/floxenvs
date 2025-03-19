@@ -9,6 +9,8 @@ awscli2.pkg-path = "awscli2"
 gh.pkg-path = "gh"
 gitFull.pkg-path = "gitFull"
 gum.pkg-path = "gum"
+bat.pkg-path = "bat"
+curl.pkg-path = "curl"
 
 [vars]
 # 1password github config
@@ -102,22 +104,76 @@ function aws
 end
 EOFISH
 chmod +x "${FLOX_ENV_CACHE}/shell/wrapper.fish"
+
+# curl README.md from github repo
+get_help() {
+  local fail_silently=${1:-true}
+  local readme_path="${FLOX_ENV_CACHE}/README.md"
+  local readme_url="https://raw.githubusercontent.com/barstoolbluz/floxenvs/main/aws-ghcli/README.md"
+  
+  if $fail_silently; then
+    curl -s "$readme_url" -o "$readme_path" >/dev/null 2>&1 || true
+  else
+    curl -s "$readme_url" -o "$readme_path"
+  fi
+}
+
+# informational message; comment-out or delete 'show_help' under # runnit to disable
+show_help() {
+    gum style \
+        --border rounded \
+        --border-foreground 240 \
+        --padding "1 2" \
+        --margin "1 0" \
+        --width 96 \
+        "$(gum style --foreground 141 --bold 'This is a  F l o x  environment for AWS and GitHub CLI')
+
+👉  Getting Help:
+    $(gum style --foreground 212 'help')        Display this help message
+
+👉  Integrated Tools:
+    $(gum style --foreground 212 'aws')         AWS CLI with 1Password credentials
+    $(gum style --foreground 212 'gh')          GitHub CLI with 1Password auth
+    $(gum style --foreground 212 'git')         Git with 1Password auth for remote operations
+
+👉  Usage Tips:
+    • Use $(gum style --foreground 212 'aws'), $(gum style --foreground 212 'gh'), and $(gum style --foreground 212 'git') interactively as normal
+    • In scripts, source the shell wrapper files from:
+      $(gum style --foreground 212 "\$FLOX_ENV_CACHE/shell/wrapper.[sh|fish]")
+    • Bypass wrappers with $(gum style --foreground 212 'command aws'), $(gum style --foreground 212 'command gh'), or $(gum style --foreground 212 'command git')
+    
+👉  Authentication:
+    • Fetches credentials securely from 1Password
+    • Authentication happens automatically when needed"
+
+    echo ""
+}
+
+# runnit
+get_help
+show_help
 '''
 
 [profile]
 bash = '''
 # Source the 1Password wrapper functions
 [[ -f "${FLOX_ENV_CACHE}/shell/wrapper.sh" ]] && source "${FLOX_ENV_CACHE}/shell/wrapper.sh"
+
+help() { [[ -f "$FLOX_ENV_CACHE/README.md" ]] && bat --paging=always --style=plain "$FLOX_ENV_CACHE/README.md"; }
 '''
 
 zsh = '''
 # Source the 1Password wrapper functions
 [[ -f "${FLOX_ENV_CACHE}/shell/wrapper.sh" ]] && source "${FLOX_ENV_CACHE}/shell/wrapper.sh"
+
+help() { [[ -f "$FLOX_ENV_CACHE/README.md" ]] && bat --paging=always --style=plain "$FLOX_ENV_CACHE/README.md"; }
 '''
 
 fish = '''
 # Source the 1Password wrapper functions
 test -f "$FLOX_ENV_CACHE/shell/wrapper.fish" && source "$FLOX_ENV_CACHE/shell/wrapper.fish"
+
+function help; test -f "$FLOX_ENV_CACHE/README.md" && bat --paging=always --style=plain "$FLOX_ENV_CACHE/README.md"; end
 '''
 
 # Settings for compatible systems
