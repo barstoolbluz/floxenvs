@@ -104,7 +104,7 @@ This environment expects the 1Password CLI to be already set up on your system. 
 You can use the provided wizard to set up 1Password CLI automatically:
 
 ```sh
-flox activate -r barstoolbluz/1pass
+flox activate -r barstoolbluz/setup-1pass
 ```
 
 This wizard will guide you through the process of creating the necessary configuration.
