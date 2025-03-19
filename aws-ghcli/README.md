@@ -1,35 +1,4 @@
-### 1Password Vault Configuration
-
-Once you have the 1Password CLI set up (see **Prerequisites**, below), you'll need to customize the environment variables to match your specific 1Password vault structure. The default values in the `manifest.toml` are examples and will need to be modified:
-
-```toml
-[vars]
-# 1password github config
-OP_GITHUB_VAULT = "vault"           # Name of 1Password vault containing GitHub tokens
-OP_GITHUB_TOKEN_ITEM = "token_item"           # Name of the item storing GitHub token
-OP_GITHUB_TOKEN_FIELD = "token_field"         # Field name containing the GitHub token
-
-# 1password aws config
-OP_AWS_VAULT = "vault"              # Name of 1Password vault containing AWS credentials
-OP_AWS_CREDENTIALS_ITEM = "aws_creds"     # Name of the item storing AWS credentials
-OP_AWS_USERNAME_FIELD = "username"      # Field name for AWS access key ID
-OP_AWS_CREDENTIALS_FIELD = "credentials" # Field name for AWS secret access key
-```
-
-**Important:** You must modify these environment variables to match your own 1Password vault structure:
-
-1. **For GitHub access**: 
-   - Set `OP_GITHUB_VAULT` to the name of your vault containing GitHub tokens
-   - Set `OP_GITHUB_TOKEN_ITEM` to the name of your item storing the GitHub token
-   - Set `OP_GITHUB_TOKEN_FIELD` to the field name containing your GitHub token
-
-2. **For AWS access**:
-   - Set `OP_AWS_VAULT` to the name of your vault containing AWS credentials
-   - Set `OP_AWS_CREDENTIALS_ITEM` to the name of your item storing AWS credentials
-   - Set `OP_AWS_USERNAME_FIELD` to the field name for your AWS access key ID
-   - Set `OP_AWS_CREDENTIALS_FIELD` to the field name for your AWS secret access key
-
-The path format used by the wrapper functions will be: `op://[VAULT]/[ITEM]/[FIELD]`# Flox Environment: Secure Credentials Management with 1Password 🔐
+# Flox Environment: Secure Credentials Management with 1Password 🔐
 
 This Flox environment provides a secure way to manage credentials for common developer tools by integrating with 1Password. It prevents credentials from being stored in unencrypted files on disk, significantly reducing the risk of credential leakage.
 
@@ -92,6 +61,42 @@ Both methods ensure credentials are never persistently stored in unencrypted fil
 2. Your 1Password session token is stored for subsequent commands
 3. When you run a wrapped command, it fetches the required credentials from 1Password
 4. The credentials exist only for the duration of the command execution
+
+### 1Password Vault Configuration
+
+Once you have the 1Password CLI set up (see **Prerequisites**, below), you'll need to customize the environment variables to match your specific 1Password vault structure. The default values in the `manifest.toml` are examples and will need to be modified:
+
+```toml
+[vars]
+# 1password github config
+OP_GITHUB_VAULT = "vault"           # Name of 1Password vault containing GitHub tokens
+OP_GITHUB_TOKEN_ITEM = "token_item"           # Name of the item storing GitHub token
+OP_GITHUB_TOKEN_FIELD = "token_field"         # Field name containing the GitHub token
+
+# 1password aws config
+OP_AWS_VAULT = "vault"              # Name of 1Password vault containing AWS credentials
+OP_AWS_CREDENTIALS_ITEM = "aws_creds"     # Name of the item storing AWS credentials
+OP_AWS_USERNAME_FIELD = "username"      # Field name for AWS access key ID
+OP_AWS_CREDENTIALS_FIELD = "credentials" # Field name for AWS secret access key
+```
+
+**Important:** You must modify these environment variables to match your own 1Password vault structure:
+
+1. **For GitHub access**: 
+   - Set `OP_GITHUB_VAULT` to the name of your vault containing GitHub tokens
+   - Set `OP_GITHUB_TOKEN_ITEM` to the name of your item storing the GitHub token
+   - Set `OP_GITHUB_TOKEN_FIELD` to the field name containing your GitHub token
+
+2. **For AWS access**:
+   - Set `OP_AWS_VAULT` to the name of your vault containing AWS credentials
+   - Set `OP_AWS_CREDENTIALS_ITEM` to the name of your item storing AWS credentials
+   - Set `OP_AWS_USERNAME_FIELD` to the field name for your AWS access key ID
+   - Set `OP_AWS_CREDENTIALS_FIELD` to the field name for your AWS secret access key
+
+These environment variables are used to construct 1Password reference paths in the format `op://[VAULT]/[ITEM]/[FIELD]`, which are used differently depending on the wrapper function:
+
+- The `gh` and `aws` wrappers use these paths with `op run --env-file`
+- The `git` wrapper uses these paths with `op read` for direct credential access
 
 ## Prerequisites
 
@@ -247,12 +252,43 @@ This pattern can be extended to other CLI tools that require credentials. For ex
 
 ## How to Extend
 
-To wrap additional tools, follow this pattern:
+To extend this pattern to additional tools, you'll need to:
+
+1. **Define environment variables** in the `[vars]` section of your `manifest.toml` for each credential:
+
+```toml
+[vars]
+# Existing vars
+OP_GITHUB_VAULT = "vault"
+# ...
+
+# New vars for your tool (e.g., Databricks)
+OP_DATABRICKS_VAULT = "vault"              # Vault containing Databricks credentials
+OP_DATABRICKS_ITEM = "databricks_creds"    # Item storing Databricks credentials
+OP_DATABRICKS_HOST_FIELD = "host"          # Field for Databricks host
+OP_DATABRICKS_TOKEN_FIELD = "token"        # Field for Databricks token
+```
+
+2. **Create a wrapper function** in the appropriate section of the `on-activate` hook in your `manifest.toml`:
 
 ```bash
+# For tools that use environment variables
 toolname() { 
-  op run --session "$OP_SESSION_TOKEN" --env-file <(echo -e "ENV_VAR1=op://vault/item/field1\nENV_VAR2=op://vault/item/field2") -- toolname "$@"; 
+  op run --session "$OP_SESSION_TOKEN" --env-file <(echo -e "ENV_VAR1=op://$OP_TOOL_VAULT/$OP_TOOL_ITEM/$OP_TOOL_FIELD1\nENV_VAR2=op://$OP_TOOL_VAULT/$OP_TOOL_ITEM/$OP_TOOL_FIELD2") -- toolname "$@"; 
+}
+
+# Example for Databricks CLI
+databricks() { 
+  op run --session "$OP_SESSION_TOKEN" --env-file <(echo -e "DATABRICKS_HOST=op://$OP_DATABRICKS_VAULT/$OP_DATABRICKS_ITEM/$OP_DATABRICKS_HOST_FIELD\nDATABRICKS_TOKEN=op://$OP_DATABRICKS_VAULT/$OP_DATABRICKS_ITEM/$OP_DATABRICKS_TOKEN_FIELD") -- databricks "$@"; 
 }
 ```
 
-For tools that don't accept environment variables, you may need a custom approach similar to the Git wrapper.
+The `on-activate` hook will automatically add these functions to the shell wrapper files in `$FLOX_ENV_CACHE/shell/`, making them available for both interactive and non-interactive shells.
+
+Note that different tools may require different numbers of credentials. Research which environment variables each tool expects for authentication. Some common patterns:
+- Single token (like GitHub)
+- Key/secret pair (like AWS)
+- Host/token combination (like Databricks)
+- Multiple credentials (some cloud providers)
+
+For tools that don't accept environment variables, you'll need a custom approach similar to the Git wrapper, using techniques appropriate for that specific tool's authentication mechanism.
