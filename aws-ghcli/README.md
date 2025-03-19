@@ -1,33 +1,141 @@
-# Flox Environment: GitHub + AWS with 1Password Integration
+# Flox Environment: Secure Credentials Management with 1Password 🔐
 
-## Overview
+This Flox environment provides a secure way to manage credentials for common developer tools by integrating with 1Password. It prevents credentials from being stored in unencrypted files on disk, significantly reducing the risk of credential leakage.
 
-This Flox environment sets up a development workspace with `git`, `gh`, and `awscli2`, integrating with 1Password for secure credential management. It ensures seamless authentication for GitHub and AWS by wrapping CLI commands to retrieve tokens and keys dynamically from 1Password.
+## Installed Tools
 
-## Installed Packages
+- **1Password CLI** (`op`): Used for secure credential management
+- **AWS CLI 2** (`aws`): For interacting with AWS services
+- **GitHub CLI** (`gh`): For interacting with GitHub repositories
+- **Git** (full version): For version control
+- **Gum**: A tool for glamorous shell scripts
+- **Bat**: A cat clone with syntax highlighting and Git integration
+- **Curl**: Command-line tool for transferring data with URLs
 
-- `gitFull`: Full Git installation.
-- `gh`: GitHub CLI.
-- `awscli2`: AWS CLI v2.
-- `_1password`: Required for credential retrieval.
-- `gum`: Lightweight interactive shell utilities.
+## Security Benefits ✅
+
+Many development tools store credentials in unencrypted files:
+- GitHub CLI stores tokens in `~/.config/gh/hosts.yml`
+- AWS CLI stores credentials in `~/.aws/credentials`
+- Git may cache credentials in plaintext in some configurations
+
+This environment wraps these tools to avoid persistent credential storage by:
+1. Fetching credentials from 1Password at runtime
+2. Injecting them into commands via environment variables in ephemeral subshells
+3. Ensuring credentials are never written to disk and exist only for the duration of the command
 
 ## How It Works
 
-- On activation, the environment checks for an active 1Password session.
-- If not authenticated, it prompts for 1Password login and stores the session token.
-- Wrapper functions redefine `git`, `gh`, and `aws` to pull credentials from 1Password dynamically:
-  - `git` auto-injects GitHub tokens for operations like `push`, `pull`, `clone`, etc.
-  - `gh` runs with GitHub authentication from 1Password.
-  - `aws` retrieves AWS credentials from 1Password and injects them as environment variables.
+This environment implements wrapper functions for `git`, `gh`, and `aws` that:
 
-### Non-Interactive Shells
+1. Extract credentials from 1Password at runtime
+2. Pass these credentials to the underlying commands securely
+3. Clean up any temporary files after execution
+
+Credentials are available only for the duration of the command and never written to unencrypted files.
+
+### Authentication Methods
+
+The wrapper functions use two different approaches for credential handling:
+
+#### `op run` (for `gh` and `aws`)
+- Used by the `gh` and `aws` wrappers
+- Executes commands in an ephemeral subshell
+- Retrieves secrets directly from 1Password and exports them as environment variables
+- Credentials exist only within this ephemeral subshell
+- When the command finishes executing, the subshell is destroyed, along with any credentials
+
+#### `op read` (for `git`)
+- Used by the `git` wrapper for operations requiring authentication
+- Directly reads the token from 1Password
+- Creates a temporary script (via `GIT_ASKPASS`) that outputs the token when Git requests it
+- The token is never written to disk in plaintext (only to a temporary file that is immediately deleted)
+- Benefits from the process isolation of the subshell
+- The temporary file and token are cleaned up when the command completes
+
+Both methods ensure credentials are never persistently stored in unencrypted files and exist only for the duration needed to complete the command.
+
+### Authentication Flow
+
+1. On environment activation, you'll authenticate with 1Password
+2. Your 1Password session token is stored for subsequent commands
+3. When you run a wrapped command, it fetches the required credentials from 1Password
+4. The credentials exist only for the duration of the command execution
+
+## Setup Requirements
+
+### 1Password Configuration
+
+You need to configure the following items in your 1Password vault:
+
+#### GitHub Configuration
+- Vault: `1password` (configurable via `OP_GITHUB_VAULT`)
+- Item name: `repo` (configurable via `OP_GITHUB_TOKEN_ITEM`)
+- Field containing token: `token` (configurable via `OP_GITHUB_TOKEN_FIELD`)
+
+#### AWS Configuration
+- Vault: `1password` (configurable via `OP_AWS_VAULT`)
+- Item name: `awskeyz` (configurable via `OP_AWS_CREDENTIALS_ITEM`)
+- Field for access key ID: `username` (configurable via `OP_AWS_USERNAME_FIELD`)
+- Field for secret access key: `credential` (configurable via `OP_AWS_CREDENTIALS_FIELD`)
+
+## Usage 🛠️
+
+### Activate the Environment
+```sh
+flox activate
+```
+
+Once the environment is activated, you can use `git`, `gh`, and `aws` commands as you normally would. The wrapper functions will handle credential management transparently:
+
+### GitHub CLI (gh)
+```sh
+# Check auth status
+gh auth status
+
+# List repositories
+gh repo list
+
+# Clone a repository
+gh repo clone org/repo
+```
+
+### Git
+```sh
+# Push to a repository (auth handled automatically)
+git push origin main
+
+# Pull from a repository
+git pull
+
+# Clone a private repository
+git clone https://github.com/organization/private-repo.git
+```
+
+### AWS CLI
+```sh
+# List S3 buckets
+aws s3 ls
+
+# Describe EC2 instances
+aws ec2 describe-instances
+```
+
+## Compatible Systems
+
+This environment is compatible with:
+- aarch64-darwin (Apple Silicon Macs)
+- aarch64-linux
+- x86_64-darwin (Intel Macs)
+- x86_64-linux
+
+## Non-Interactive Shells ⚠️
 
 The wrapper functions for `git`, `gh`, and `aws` are written to `$FLOX_ENV_CACHE/shell/`. This is necessary because:
 
-- Wrapper functions defined interactively aren't available in non-interactive scripts.
-- `bash -i` doesn’t always work as expected for sourcing interactive functions.
-- Scripts running in this Flox environment **must source** the relevant wrapper script before calling `git`, `gh`, or `aws`.
+- Wrapper functions defined interactively aren't available in non-interactive scripts
+- `bash -i` doesn't always work as expected for sourcing interactive functions
+- Scripts running in this Flox environment **must source** the relevant wrapper script before calling `git`, `gh`, or `aws`
 
 For example, in a non-interactive bash or zsh script:
 
@@ -43,53 +151,40 @@ source "$FLOX_ENV_CACHE/shell/wrapper.fish"
 aws s3 ls
 ```
 
-## Usage
-
-### Activate the Environment
-```sh
-flox activate
-```
-
-### GitHub CLI (gh)
-Runs with GitHub authentication from 1Password:
-
-```sh
-gh auth status
-gh repo clone org/repo
-```
-
-### Git
-Automatically retrieves and injects GitHub tokens for authentication:
-
-```sh
-git push origin main
-```
-
-### AWS CLI
-Fetches AWS credentials dynamically:
-
-```sh
-aws s3 ls
-```
-
 ## Shell Compatibility
-Bash – `wrapper.sh`
-Zsh – `wrapper.sh`
-Fish – `wrapper.fish`
+
+- **Bash** – `wrapper.sh`
+- **Zsh** – `wrapper.sh`
+- **Fish** – `wrapper.fish`
 
 Wrapper scripts are automatically sourced on activation in Flox shells.
 
-## Supported Systems
-
-Linux – `aarch64-linux`, `x86_64-linux`
-macOS – `aarch64-darwin`, `x86_64-darwin`
-
-
 ## Notes
+
 The environment caches session tokens under:
 
 ```sh
 $HOME/.config/op/1password-session.token
 ```
 
-For non-interactive scripts, source the relevant wrapper script before using `git`, `gh`, or `aws`.
+## Extensibility
+
+This pattern can be extended to other CLI tools that require credentials. For example, you could add similar wrappers for:
+- Databricks CLI
+- Snowflake CLI
+- Azure CLI
+- Google Cloud Platform SDK
+- Terraform CLI
+- OpenStack CLI
+
+## How to Extend
+
+To wrap additional tools, follow this pattern:
+
+```bash
+toolname() { 
+  op run --session "$OP_SESSION_TOKEN" --env-file <(echo -e "ENV_VAR1=op://vault/item/field1\nENV_VAR2=op://vault/item/field2") -- toolname "$@"; 
+}
+```
+
+For tools that don't accept environment variables, you may need a custom approach similar to the Git wrapper.
