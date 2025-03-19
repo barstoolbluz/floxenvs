@@ -86,7 +86,7 @@ This environment expects the 1Password CLI to be already set up on your system. 
 You can use the provided wizard to set up 1Password CLI automatically:
 
 ```sh
-flox activate -r barstoolbluz/setup-1pass
+flox activate -r barstoolbluz/1pass
 ```
 
 This wizard will guide you through the process of creating the necessary configuration.
@@ -196,11 +196,26 @@ Flox automatically sources the appropriate wrapper script depending on which she
 
 ## Notes
 
-The environment caches session tokens under:
+### Session Token Caching
+
+The environment caches 1Password session tokens under:
 
 ```sh
 $HOME/.config/op/1password-session.token
 ```
+
+#### About 1Password Session Tokens
+
+A session token is a temporary authentication credential that allows the 1Password CLI to access your vault without requiring you to enter your password for every operation.
+
+**Security considerations:**
+
+- **Convenience vs. Security**: Caching the token provides convenience by allowing you to use 1Password-integrated commands without re-authenticating, even if you temporarily exit the Flox environment.
+- **Time-limited**: Session tokens are temporary and expire after a period of inactivity (typically 30 minutes), limiting exposure.
+- **Local storage only**: The token is stored only on your local machine and is protected with file permissions (chmod 600).
+- **Risk awareness**: If your system is compromised while a valid session token exists, an attacker could potentially access your 1Password vault until the token expires.
+
+This approach balances security and usability. For higher security environments, you may want to modify the environment to avoid caching the token, though this will require re-authentication more frequently.
 
 ## Extensibility
 
