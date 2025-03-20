@@ -1,6 +1,6 @@
 # Flox Environment: Secure Credentials Management with 1Password 🔐
 
-This Flox environment provides a secure way to manage credentials for common developer tools by integrating with 1Password. It prevents credentials from being stored in unencrypted files on disk, significantly reducing the risk of credential leakage.
+This Flox environment provides a secure way to manage credentials for common developer tools by integrating with 1Password. It prevents credentials from being stored in unencrypted files on disk, significantly reducing the risk of credential leakage. It supports both local development and CI/CD environments.
 
 ## Installed Tools
 
@@ -51,18 +51,31 @@ The wrapper functions use two different approaches for credential handling:
 - Creates a temporary script (via `GIT_ASKPASS`) that outputs the token when Git requests it
 - The token is never written to disk in plaintext (only to a temporary file that is immediately deleted)
 - Benefits from the process isolation of the subshell, though this is not as strong as container isolation
-- The temporary file and token are cleaned up when the command completes
+- The temporary file and token are cleaned up when the command completes using trap-based cleanup mechanisms specific to each shell
 
 Both methods ensure credentials are never persistently stored in unencrypted files and exist only for the duration needed to complete the command.
 
-### Authentication Flow
+### Environment-Aware Authentication Flow
 
-1. On environment activation, you'll authenticate with 1Password
-2. Your 1Password session token is stored for subsequent commands
+The environment now intelligently detects whether it's running in a local development environment or a CI/CD environment and adapts its authentication method accordingly:
+
+#### Local Development Environment
+1. On environment activation, you'll authenticate with 1Password interactively
+2. Your 1Password session token is stored both in memory and in a local file for persistence
 3. When you run a wrapped command, it fetches the required credentials from 1Password
 4. The credentials exist only for the duration of the command execution
+5. If authentication fails, you'll get up to 3 retry attempts
 
-### 1Password Vault Configuration
+#### CI/CD Environment
+1. The environment detects that it's running in CI (currently supports GitHub Actions)
+2. Authentication occurs non-interactively using 1Password service accounts
+3. The 1Password session token is kept exclusively in environment variables (no file I/O)
+4. Wrapper functions prioritize environment variables for authentication
+5. All operations remain purely in memory to eliminate potential file-based failure points
+
+## 1Password Vault Configuration
+
+### Local Development Setup
 
 Once you have the 1Password CLI set up (see **Prerequisites**, below), you'll need to customize the environment variables to match your specific 1Password vault structure. The default values in the `manifest.toml` are examples and will need to be modified:
 
@@ -93,14 +106,52 @@ OP_AWS_CREDENTIALS_FIELD = "credentials" # Field name for AWS secret access key
    - Set `OP_AWS_USERNAME_FIELD` to the field name for your AWS access key ID
    - Set `OP_AWS_CREDENTIALS_FIELD` to the field name for your AWS secret access key
 
-These environment variables are used to construct 1Password reference paths in the format `op://[VAULT]/[ITEM]/[FIELD]`, which are used differently depending on the wrapper function:
+### CI/CD Environment Setup
 
-- The `gh` and `aws` wrappers use these paths with `op run --env-file`
-- The `git` wrapper uses these paths with `op read` for direct credential access
+For CI/CD environments, you'll need to set up 1Password service accounts and configure the appropriate environment variables:
+
+1. **Create a 1Password Service Account**:
+   - Follow [1Password's documentation](https://developer.1password.com/docs/service-accounts) to create a service account
+   - Generate a service account token with appropriate access to your vaults
+
+2. **Configure GitHub Actions**:
+   - Add the service account token as a secret in your GitHub repository:
+     ```
+     OP_SERVICE_ACCOUNT_TOKEN=your-service-account-token
+     ```
+   - Ensure any other required configuration variables are also set as GitHub secrets
+
+3. **GitHub Actions Workflow Example**:
+   ```yaml
+   name: CI with 1Password Integration
+   
+   on:
+     push:
+       branches: [ main ]
+   
+   jobs:
+     build:
+       runs-on: ubuntu-latest
+       
+       steps:
+       - uses: actions/checkout@v3
+       
+       - name: Set up Flox
+         uses: flox-examples/setup-flox@v1
+       
+       - name: Activate environment with credentials
+         env:
+           OP_SERVICE_ACCOUNT_TOKEN: ${{ secrets.OP_SERVICE_ACCOUNT_TOKEN }}
+         run: flox activate
+       
+       # Your other steps that use the secure credentials
+   ```
+
+The environment will automatically detect that it's running in GitHub Actions and use the service account token for non-interactive authentication.
 
 ## Prerequisites
 
-### 1Password CLI Setup
+### 1Password CLI Setup (Local Development)
 
 This environment expects the 1Password CLI to be already set up on your system. Specifically, it looks for a config file at `~/.config/op/config`.
 
@@ -195,11 +246,18 @@ The wrapper functions for `git`, `gh`, and `aws` are written to `$FLOX_ENV_CACHE
 - `bash -i` doesn't always work as expected for sourcing interactive functions
 - Scripts running in this Flox environment **must source** the relevant wrapper script before calling `git`, `gh`, or `aws`
 
-For example, in a non-interactive bash or zsh script:
+For example, in a non-interactive bash script:
 
 ```sh
-source "$FLOX_ENV_CACHE/shell/wrapper.sh"
+source "$FLOX_ENV_CACHE/shell/wrapper.bash"
 git push origin main
+```
+
+For zsh scripts:
+
+```sh
+source "$FLOX_ENV_CACHE/shell/wrapper.zsh"
+gh repo list
 ```
 
 For fish scripts:
@@ -209,23 +267,29 @@ source "$FLOX_ENV_CACHE/shell/wrapper.fish"
 aws s3 ls
 ```
 
+Flox automatically sources the appropriate wrapper script depending on which shell it's running in.
+
 ## Shell Compatibility
 
-- **Bash** – `wrapper.sh`
-- **Zsh** – `wrapper.sh`
+- **Bash** – `wrapper.bash`
+- **Zsh** – `wrapper.zsh`
 - **Fish** – `wrapper.fish`
 
-Flox automatically sources the appropriate wrapper script depending on which shell it's running in.
+Each shell wrapper implements proper trap-based cleanup mechanisms specific to its environment to ensure secure handling of credentials even if commands fail or are interrupted.
 
 ## Notes
 
-### Session Token Caching
+### Session Token Handling
 
+#### Local Environment
 The environment caches 1Password session tokens under:
 
 ```sh
 $HOME/.config/op/1password-session.token
 ```
+
+#### CI Environment
+In CI environments, session tokens are kept exclusively in memory as environment variables to eliminate file I/O operations and potential points of failure.
 
 #### About 1Password Session Tokens
 
@@ -235,7 +299,8 @@ A session token is a temporary authentication credential that allows the 1Passwo
 
 - **Convenience vs. Security**: Caching the token provides convenience by allowing you to use 1Password-integrated commands without re-authenticating, even if you temporarily exit the Flox environment.
 - **Time-limited**: Session tokens are temporary and expire after a period of inactivity (typically 30 minutes), limiting exposure.
-- **Local storage only**: The token is stored only on your local machine and is protected with file permissions (chmod 600).
+- **Local storage only**: In local environments, the token is stored only on your local machine and is protected with file permissions (chmod 600).
+- **CI security**: In CI environments, tokens remain in memory only and are never written to disk.
 - **Risk awareness**: If your system is compromised while a valid session token exists, an attacker could potentially access your 1Password vault until the token expires.
 
 This approach balances security and usability. For higher security environments, you may want to modify the environment to avoid caching the token, though this will require re-authentication more frequently.
@@ -280,6 +345,48 @@ toolname() {
 # Example for Databricks CLI
 databricks() { 
   op run --session "$OP_SESSION_TOKEN" --env-file <(echo -e "DATABRICKS_HOST=op://$OP_DATABRICKS_VAULT/$OP_DATABRICKS_ITEM/$OP_DATABRICKS_HOST_FIELD\nDATABRICKS_TOKEN=op://$OP_DATABRICKS_VAULT/$OP_DATABRICKS_ITEM/$OP_DATABRICKS_TOKEN_FIELD") -- databricks "$@"; 
+}
+```
+
+3. **Make your wrapper environment-aware** by including proper environment detection and error handling:
+
+```bash
+detect_environment() {
+  # Check for GitHub Actions
+  if [ -n "$GITHUB_ACTIONS" ]; then
+    echo "ci"
+    return
+  fi
+  
+  # Add checks for other CI platforms as needed
+  # if [ -n "$JENKINS_URL" ]; then echo "ci"; return; fi
+  # if [ -n "$GITLAB_CI" ]; then echo "ci"; return; fi
+  
+  # Default to local environment
+  echo "local"
+}
+
+toolname() {
+  local env_type=$(detect_environment)
+  
+  # Check for existing session token
+  if [ "$env_type" = "ci" ]; then
+    # CI environment - use environment variables
+    if [ -z "$OP_SESSION_TOKEN" ]; then
+      # Try to authenticate using service account
+      if [ -z "$OP_SERVICE_ACCOUNT_TOKEN" ]; then
+        echo "Error: OP_SERVICE_ACCOUNT_TOKEN not set in CI environment" >&2
+        return 1
+      fi
+      export OP_SESSION_TOKEN="$OP_SERVICE_ACCOUNT_TOKEN"
+    fi
+  else
+    # Local environment - use file-based token with fallback to interactive login
+    # (existing code)
+  fi
+  
+  # Proceed with command execution
+  op run --session "$OP_SESSION_TOKEN" --env-file <(echo -e "ENV_VAR1=op://$OP_TOOL_VAULT/$OP_TOOL_ITEM/$OP_TOOL_FIELD1\nENV_VAR2=op://$OP_TOOL_VAULT/$OP_TOOL_ITEM/$OP_TOOL_FIELD2") -- toolname "$@"
 }
 ```
 
