@@ -1,7 +1,0 @@
-2025-03-16T23:58:55.746231Z DEBUG flox_watchdog::sentry: Initializing Sentry with DSN: https://85c9526795f5047c99a5247aab616295:@o4506548203094016.ingest.us.sentry.io/4506548241825792
-2025-03-16T23:58:55.754303Z DEBUG sentry: enabled sentry client for DSN https://85c9526795f5047c99a5247aab616295:@o4506548203094016.ingest.us.sentry.io/4506548241825792    
-2025-03-16T23:58:55.754346Z DEBUG watchdog{socket="/run/user/1000/flox.ae633923.sock" log_dir="/home/daedalus/dev/aws-ghcli/.flox/log"}: flox_watchdog: starting
-2025-03-16T23:58:55.754367Z DEBUG watchdog{socket="/run/user/1000/flox.ae633923.sock" log_dir="/home/daedalus/dev/aws-ghcli/.flox/log"}: flox_watchdog: checked socket path="/run/user/1000/flox.ae633923.sock" exists=false
-2025-03-16T23:58:55.754371Z  INFO watchdog{socket="/run/user/1000/flox.ae633923.sock" log_dir="/home/daedalus/dev/aws-ghcli/.flox/log"}: flox_watchdog: watchdog is on duty this_pid=908435 target_activation_id="af9e9e60"
-2025-03-16T23:58:55.754460Z DEBUG flox_watchdog::logger: still watching, woof woof
-2025-03-16T23:58:55.754480Z DEBUG watchdog{socket="/run/user/1000/flox.ae633923.sock" log_dir="/home/daedalus/dev/aws-ghcli/.flox/log"}: flox_watchdog: waiting for termination
