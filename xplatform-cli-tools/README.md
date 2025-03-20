@@ -267,7 +267,7 @@ source "$FLOX_ENV_CACHE/shell/wrapper.fish"
 aws s3 ls
 ```
 
-Flox automatically sources the appropriate wrapper script depending on which shell it's running in.
+For interactive sessions, Flox automatically sources the appropriate wrapper script depending on which shell it's running in.
 
 ## Shell Compatibility
 
