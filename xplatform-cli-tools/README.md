@@ -2,7 +2,7 @@
 
 This Flox environment provides a secure way to manage credentials for common developer tools by integrating with 1Password. It prevents credentials from being stored in unencrypted files on disk, significantly reducing the risk of credential leakage. It supports both local development and CI/CD environments.
 
-## Installed Tools
+## Installed Packages
 
 - **1Password CLI** (`op`): Used for secure credential management
 - **AWS CLI 2** (`aws`): For interacting with AWS services
