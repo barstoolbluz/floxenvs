@@ -49,7 +49,7 @@ On first activation, you'll get a simple UI that:
 2. Uses sane defaults if you just want to get moving
 3. Creates an isolated data directory that won't conflict with anything
 
-## 📝 Daily Usage
+## 📝 Built-in Commands
 
 After setup, these commands are all you need:
 
