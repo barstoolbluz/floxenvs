@@ -45,7 +45,7 @@ This repo contains pre-configured [Flox](https://flox.dev/docs) environments for
 1. Install [Flox](https://flox.dev/get)
 2. Clone this repo
    ```bash
-   git clone https://github.com/yourusername/floxenvs
+   git clone https://github.com/barstoolbluz/floxenvs
    ```
 
 ### Activating an Environment
