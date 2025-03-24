@@ -1,0 +1,246 @@
+## Flox Environment Manifest -----------------------------------------
+##
+##   _Everything_ you need to know about the _manifest_ is here:
+##
+##               https://flox.dev/docs/concepts/manifest
+##
+## -------------------------------------------------------------------
+# Flox manifest version managed by Flox CLI
+version = 1
+
+
+## Install Packages --------------------------------------------------
+##  $ flox install gum  <- puts a package in [install] section below
+##  $ flox search gum   <- search for a package
+##  $ flox show gum     <- show all versions of a package
+## -------------------------------------------------------------------
+[install]
+pip.pkg-path = "python312Packages.pip"
+gum.pkg-path = "gum"
+zlib.pkg-path = "zlib" #  required for building, compiling, and using psycopg2
+gcc-unwrapped.pkg-path = "gcc-unwrapped" #  required for building and compiling psycopg2
+sqlalchemy.pkg-path = "python312Packages.sqlalchemy"
+alembic.pkg-path = "python312Packages.alembic"
+
+## Environment Variables ---------------------------------------------
+##  ... available for use in the activated environment
+##      as well as [hook], [profile] scripts and [services] below.
+## -------------------------------------------------------------------
+[vars]
+# INTRO_MESSAGE = "It's gettin' Flox in here"
+
+
+## Activation Hook ---------------------------------------------------
+##  ... run by _bash_ shell when you run 'flox activate'.
+## -------------------------------------------------------------------
+[hook]
+on-activate = '''
+show_venv_help() {
+    # Create the help message with Gum styling
+    gum style \
+        --border rounded \
+        --border-foreground 240 \
+        --padding "1 2" \
+        --margin "1 0" \
+        --width 96 \
+        "$(gum style --foreground 141 --bold 'This is a Flox Python 3.12 / PostgreSQL dev environment')
+
+🔨  Environment Management:
+    $(gum style --foreground 212 'mkvenv')       Creates a new virtual environment
+                 Default: creates .venv in current directory
+                 Can specify custom name (e.g., 'project-env')
+                 Handles existing venv conflicts interactively
+
+⚡  Venv Activation:
+    $(gum style --foreground 212 'aktivate')     Finds and activates venvs
+                 Auto-activates if only one venv found
+                 Interactive selection if multiple
+
+📦  Package Management: 
+    $(gum style --foreground 212 'pist')         Pip install from requirements.txt
+                 Can specify alternative file
+
+🚪  Session Management:
+    $(gum style --foreground 212 'qwit')         Safely exits the current venv
+                 Deactivates venv while remaining in the Flox subshell"
+
+    echo ""
+}
+
+## one function to run them all
+main() {
+    show_venv_help
+}
+
+## runnit
+main
+
+'''
+## Profile script ----------------------------------------------------
+## ... sourced by _your shell_ when you run 'flox activate'.
+## -------------------------------------------------------------------
+[profile]
+# common = '''
+#   gum style \
+#   --foreground 212 --border-foreground 212 --border double \
+#   --align center --width 50 --margin "1 2" --padding "2 4" \
+#     $INTRO_MESSAGE
+# '''
+bash = '''
+mkvenv() {
+    [ -d ".venv" ] && case $(gum choose --header "A virtual environment (.venv) already exists. Choose an action:" "Quit" "Replace .venv" "Create new virtual environment") in
+        "Quit") return 0 ;;
+        "Replace .venv") rm -rf .venv ;;
+        "Create new virtual environment")
+            name=$(gum input --placeholder "Enter name") || return 1
+            [ -z "$name" ] && return 1
+            python3 -m venv "$name" && source "$name/bin/activate"
+            return 0 ;;
+    esac
+    python3 -m venv .venv && source .venv/bin/activate
+}
+
+aktivate() {
+    readarray -t venvs < <(find . -name "activate" -type f | sed 's|/bin/activate$||')
+    [ ${#venvs[@]} -eq 0 ] && echo "No virtual environments found." && return 1
+    if [ ${#venvs[@]} -eq 1 ]; then
+        [ -n "$VIRTUAL_ENV" ] && deactivate
+        source "${venvs[0]}/bin/activate"
+        return 0
+    fi
+    venvs+=("quit")
+    selected=$(gum choose --header "Select environment to activate:" "${venvs[@]#./}") || return 1
+    [ "$selected" = "quit" ] && return 0
+    [ -n "$VIRTUAL_ENV" ] && deactivate
+    source "$selected/bin/activate"
+}
+
+pist() {
+    readarray -t venvs < <(find . -name "activate" -type f | sed 's|/bin/activate$||')
+    [ ${#venvs[@]} -eq 0 ] && mkvenv
+    [[ "$VIRTUAL_ENV" ]] || aktivate
+    pip install -r "${1:-requirements.txt}"
+}
+
+qwit() {
+    if [ -n "$VIRTUAL_ENV" ]; then
+        deactivate
+    else
+        echo "No active virtual environment found."
+    fi
+}
+'''
+
+zsh = '''
+mkvenv() {
+    [ -d ".venv" ] && case $(gum choose --header "A virtual environment (.venv) already exists. Choose an action:" "Quit" "Replace .venv" "Create new virtual environment") in
+        "Quit") return 0 ;;
+        "Replace .venv") rm -rf .venv ;;
+        "Create new virtual environment")
+            name=$(gum input --placeholder "Enter name") || return 1
+            [ -z "$name" ] && return 1
+            python3 -m venv "$name" && source "$name/bin/activate"
+            return 0 ;;
+    esac
+    python3 -m venv .venv && source .venv/bin/activate
+}
+
+aktivate() {
+    readarray -t venvs < <(find . -name "activate" -type f | sed 's|/bin/activate$||')
+    [ ${#venvs[@]} -eq 0 ] && echo "No virtual environments found." && return 1
+    if [ ${#venvs[@]} -eq 1 ]; then
+        [ -n "$VIRTUAL_ENV" ] && deactivate
+        source "${venvs[0]}/bin/activate"
+        return 0
+    fi
+    venvs+=("quit")
+    selected=$(gum choose --header "Select environment to activate:" "${venvs[@]#./}") || return 1
+    [ "$selected" = "quit" ] && return 0
+    [ -n "$VIRTUAL_ENV" ] && deactivate
+    source "$selected/bin/activate"
+}
+
+pist() {
+    pip install -r "${1:-requirements.txt}"
+}
+
+qwit() {
+    if [ -n "$VIRTUAL_ENV" ]; then
+        deactivate
+    else
+        echo "No active virtual environment found."
+    fi
+}
+'''
+
+fish = '''
+function mkvenv
+    if test -d ".venv"
+        set choice (gum choose --header "A virtual environment (.venv) already exists. Choose an action:" "Quit" "Replace .venv" "Create new virtual environment")
+        switch $choice
+            case "Quit"
+                return 0
+            case "Replace .venv"
+                rm -rf .venv
+            case "Create new virtual environment"
+                set name (gum input --placeholder "Enter name")
+                test $status -ne 0; and return 1
+                test -z "$name"; and return 1
+                python3 -m venv "$name"; and source "$name/bin/activate"
+                return 0
+        end
+    end
+    python3 -m venv .venv; and source .venv/bin/activate
+end
+
+function aktivate
+    set -l venvs (find . -name "activate" -type f | sed 's|/bin/activate$||')
+    if test (count $venvs) -eq 0
+        echo "No virtual environments found."
+        return 1
+    end
+    if test (count $venvs) -eq 1
+        test -n "$VIRTUAL_ENV"; and deactivate
+        source "$venvs[1]/bin/activate.fish"
+        return 0
+    end
+    set -a venvs "quit"
+    set selected (string replace -a "./" "" $venvs | gum choose --header "Select environment to activate:")
+    or return 1
+    test "$selected" = "quit"; and return 0
+    test -n "$VIRTUAL_ENV"; and deactivate
+    source "$selected/bin/activate.fish"
+end
+
+function pist
+    pip install -r (test (count $argv) -gt 0 && echo $argv[1] || echo "requirements.txt")
+end
+
+function qwit
+    if test -n "$VIRTUAL_ENV"
+        deactivate
+    else
+        echo "No active virtual environment found."
+    end
+end
+'''
+## Services ----------------------------------------------------------
+##  $ flox services start             <- Starts all services
+##  $ flox services status            <- Status of running services
+##  $ flox activate --start-services  <- Activates & starts all
+## -------------------------------------------------------------------
+[services]
+# myservice.command = "python3 -m http.server"
+
+
+## Other Environment Options -----------------------------------------
+[options]
+# Systems that environment is compatible with
+systems = [
+  "aarch64-darwin",
+  "aarch64-linux",
+  "x86_64-darwin",
+  "x86_64-linux",
+]
+# Uncomment to disable CUDA detection.
+# cuda-detection = false

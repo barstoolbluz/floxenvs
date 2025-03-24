@@ -1,0 +1,584 @@
+{
+  "lockfile-version": 1,
+  "manifest": {
+    "version": 1,
+    "install": {
+      "gum": {
+        "pkg-path": "gum"
+      },
+      "metabase": {
+        "pkg-path": "metabase"
+      },
+      "postgis": {
+        "pkg-path": "postgresql16Packages.postgis"
+      },
+      "postgresql": {
+        "pkg-path": "postgresql_16"
+      }
+    },
+    "vars": {
+      "MB_ANON_TRACKING_ENABLED": "true",
+      "MB_CHECK_FOR_UPDATES": "true",
+      "MB_JETTY_HOST": "0.0.0.0",
+      "MB_JETTY_PORT": "3000",
+      "PGDATABASE": "postgres",
+      "PGHOSTADDR": "127.0.0.1",
+      "PGPASS": "pgpass",
+      "PGPORT": "15432",
+      "PGUSER": "pguser"
+    },
+    "hook": {
+      "on-activate": "# define env vars available during activation\nexport PGDIR=\"${FLOX_ENV_CACHE}/postgres\"\nexport CONFIG_FILE=\"${FLOX_ENV_CACHE}/postgres.config\"\nexport DEFAULT_PGHOSTADDR=\"127.0.0.1\"\nexport DEFAULT_PGPORT=\"15432\"\nexport DEFAULT_PGUSER=\"pguser\"\nexport DEFAULT_PGPASS=\"pgpass\"\nexport DEFAULT_PGDATABASE=\"postgres\"\nexport DEFAULT_PGDIR=\"${FLOX_ENV_CACHE}/postgres\"\n\n# enable/disable debugging; set to \"true\" to enable verbose output\nexport PG_DEBUG=\"false\"\n\n# this function checks if first run\ncheck_first_run() {\n    if [[ ! -f \"$CONFIG_FILE\" ]]; then\n        return 0 # True, this is the first run\n    else\n        return 1 # False, not the first run\n    fi\n}\n\n# this function loads postgres.config if exists\nload_config() {\n    if [[ -f \"$CONFIG_FILE\" ]]; then\n        source \"$CONFIG_FILE\"\n    else\n        # set defaults if no postgres.config\n        export PGHOSTADDR=\"$DEFAULT_PGHOSTADDR\"\n        export PGPORT=\"$DEFAULT_PGPORT\"\n        export PGUSER=\"$DEFAULT_PGUSER\"\n        export PGPASS=\"$DEFAULT_PGPASS\"\n        export PGDATABASE=\"$DEFAULT_PGDATABASE\"\n        export PGDIR=\"$DEFAULT_PGDIR\"\n    fi\n}\n\n# this function saves postgres.config to file\nsave_config() {\n    mkdir -p \"$(dirname \"$CONFIG_FILE\")\"\n    cat > \"$CONFIG_FILE\" << EOF\n# postgresql configuration - Generated on $(date)\nexport PGHOSTADDR=\"$PGHOSTADDR\"\nexport PGPORT=\"$PGPORT\"\nexport PGUSER=\"$PGUSER\"\nexport PGPASS=\"$PGPASS\"\nexport PGDATABASE=\"$PGDATABASE\"\nexport PGDIR=\"$PGDIR\"\nexport PG_DEBUG=\"$PG_DEBUG\"\n\n## BEGIN ACTIVATION HOOK ##\n$(declare -f debug_log)\n$(declare -f check_first_run)\n$(declare -f load_config)\n$(declare -f save_config)\n$(declare -f prompt_for_config)\n$(declare -f update_dependent_vars)\n$(declare -f initialize_postgres)\n$(declare -f create_config_file)\n$(declare -f start_postgres)\n$(declare -f create_database)\n$(declare -f stop_postgres)\n$(declare -f reconfigure_postgres)\n$(declare -f first_run_setup)\n$(declare -f display_postgres_config_ui)\n$(declare -f postgres_setup)\n$(declare -f main)\n## END ACTIVATION HOOK ##\nEOF\n    chmod 644 \"$CONFIG_FILE\"\n}\n\n# this function prompts user 'do you want to custom configure postgres vars?'\nprompt_for_config() {\n    echo \"\"\n    if gum confirm \"$(gum style --foreground 240 'Would you like to customize your PostgreSQL configuration?')\" --default=false; then\n        PGHOSTADDR=$(gum input --placeholder \"$DEFAULT_PGHOSTADDR\" --value \"$DEFAULT_PGHOSTADDR\" --prompt \"Host Address: \")\n        PGPORT=$(gum input --placeholder \"$DEFAULT_PGPORT\" --value \"$DEFAULT_PGPORT\" --prompt \"Port: \")\n        PGUSER=$(gum input --placeholder \"$DEFAULT_PGUSER\" --value \"$DEFAULT_PGUSER\" --prompt \"Username: \")\n        PGPASS=$(gum input --placeholder \"$DEFAULT_PGPASS\" --value \"$DEFAULT_PGPASS\" --prompt \"Password: \" --password)\n        PGDATABASE=$(gum input --placeholder \"$DEFAULT_PGDATABASE\" --value \"$DEFAULT_PGDATABASE\" --prompt \"Database: \")\n        \n        if gum confirm \"Use default directory for PostgreSQL data?\" --default=true; then\n            PGDIR=\"$DEFAULT_PGDIR\"\n        else\n            PGDIR=$(gum input --placeholder \"$DEFAULT_PGDIR\" --value \"$DEFAULT_PGDIR\" --prompt \"PostgreSQL Data Directory: \")\n        fi\n    else\n        # defaults for gum prompts\n        PGHOSTADDR=\"$DEFAULT_PGHOSTADDR\"\n        PGPORT=\"$DEFAULT_PGPORT\"\n        PGUSER=\"$DEFAULT_PGUSER\"\n        PGPASS=\"$DEFAULT_PGPASS\"\n        PGDATABASE=\"$DEFAULT_PGDATABASE\"\n        PGDIR=\"$DEFAULT_PGDIR\"\n    fi\n    \n    # export user-defined variables\n    export PGHOSTADDR PGPORT PGUSER PGPASS PGDATABASE PGDIR\n    \n    # save to postgres.config\n    save_config\n}\n\n# this function handles debug logging\ndebug_log() {\n    if [[ \"$PG_DEBUG\" == \"true\" ]]; then\n        echo \"$@\"\n    fi\n}\n\n# this function updates dependent vars after loading postgres.config\nupdate_dependent_vars() {\n    # is $PGDIR an absolute path?\n    if [[ ! \"$PGDIR\" = /* ]]; then\n        PGDIR=\"$(pwd)/$PGDIR\"\n        export PGDIR\n    fi\n    \n    # set dependent vars with absolute paths\n    export PGDATA=\"$PGDIR/data\"\n    export PGHOST=\"$PGDIR/run\"\n    export PGCONFIGFILE=\"$PGDIR/postgresql.conf\"\n    export LOG_PATH=\"$PGHOST/LOG\"\n    export SESSION_SECRET=\"$USER-session-secret\"\n    export DATABASE_URL=\"postgresql:///$PGDATABASE?host=$PGHOST&port=$PGPORT\"\n    \n    # debug output\n    debug_log \"Configuration paths:\"\n    debug_log \"  PGDIR: $PGDIR\"\n    debug_log \"  PGDATA: $PGDATA\"\n    debug_log \"  PGHOST: $PGHOST\"\n}\n\n# this function initializes postgres\ninitialize_postgres() {\n    mkdir -p \"$(dirname \"$PGDATA\")\" && chmod 700 \"$(dirname \"$PGDATA\")\"\n    rm -rf \"$PGDATA\" && mkdir -p \"$PGDATA\" && chmod 700 \"$PGDATA\"\n    \n    if [[ \"$PG_DEBUG\" == \"true\" ]]; then\n        initdb \"$PGDATA\" --locale=C --encoding=UTF8 -A md5 --auth=trust --username \"$PGUSER\" --pwfile=<(echo \"$PGPASS\")\n    else\n        initdb \"$PGDATA\" --locale=C --encoding=UTF8 -A md5 --auth=trust --username \"$PGUSER\" --pwfile=<(echo \"$PGPASS\") > /dev/null 2>&1\n    fi\n    \n    return $?\n}\n\n# this function creates config file if not exist\ncreate_config_file() {\n    echo \"listen_addresses = '$PGHOSTADDR'\nport = $PGPORT\nunix_socket_directories = '$PGHOST'\nunix_socket_permissions = 0700\" > \"$PGDATA/postgresql.conf\"\n    return 0\n}\n\n# this function starts postgres\nstart_postgres() {\n    # is $PGHOST an absolute path?\n    if [[ ! \"$PGHOST\" = /* ]]; then\n        debug_log \"Warning: PGHOST is not an absolute path. Using absolute path instead.\"\n        PGHOST=\"$(pwd)/$PGHOST\"\n        export PGHOST\n    fi\n    \n    # create debugging dir\n    debug_log \"Creating PostgreSQL socket directory at: $PGHOST\"\n    mkdir -p \"$PGHOST\" \n    \n    # enforce permissions\n    chmod 700 \"$PGHOST\"\n    \n    # was / was not debugging dir created successfully?\n    if [[ ! -d \"$PGHOST\" ]]; then\n        echo \"Error: Failed to create PostgreSQL socket directory at $PGHOST\"\n        return 1\n    fi\n    \n    debug_log \"Starting PostgreSQL with socket directory: $PGHOST\"\n    debug_log \"Data directory: $PGDATA\"\n    \n    # start postgres with or without debugging\n    if [[ \"$PG_DEBUG\" == \"true\" ]]; then\n        pg_ctl -D \"$PGDATA\" -w start -o \"-c unix_socket_directories=$PGHOST -c listen_addresses=$PGHOSTADDR -p $PGPORT\"\n    else\n        pg_ctl -D \"$PGDATA\" -w start -o \"-c unix_socket_directories=$PGHOST -c listen_addresses=$PGHOSTADDR -p $PGPORT\" > /dev/null 2>&1\n    fi\n    \n    return $?\n}\n\n# this function creates database if not exist\ncreate_database() {\n    psql -lqt | cut -d \\| -f 1 | grep -qw $PGDATABASE || createdb > /dev/null 2>&1\n    return 0\n}\n\n# this function stops postgres\nstop_postgres() {\n    if [[ \"$PG_DEBUG\" == \"true\" ]]; then\n        pg_ctl -D \"$PGDATA\" -m fast -w stop\n    else\n        pg_ctl -D \"$PGDATA\" -m fast -w stop > /dev/null 2>&1\n    fi\n    return $?\n}\n\n# we call this function from profile if we want/need to reconfigure postgres\nreconfigure_postgres() {\n    rm -f \"$CONFIG_FILE\"\n    first_run_setup\n    postgres_setup\n}\n\n# it's tautological!\nfirst_run_setup() {\n    if check_first_run; then\n        display_postgres_config_ui\n    else\n        load_config\n    fi\n    \n    update_dependent_vars\n}\n\n# our gum-ified tui (thank you ye good folk at charmbracelet!)\ndisplay_postgres_config_ui() {\n    clear\n    \n    # customize header + colors\n    gum style \\\n        --border rounded \\\n        --border-foreground 240 \\\n        --padding \"1 2\" \\\n        --margin \"1 0\" \\\n        --width 70 \\\n        \"$(gum style --foreground 27 --bold 'PostgreSQL Configuration')\n        \n$(gum style --foreground 240 'First-time setup for your local development database')\"\n    \n    prompt_for_config\n}\n\n# postgres setup master function\npostgres_setup() {\n    debug_log \"Setting up PostgreSQL...\"\n    \n    # this is where we init postgres\n    debug_log \"Initializing PostgreSQL...\"\n    initialize_postgres || { echo \"Failed to initialize PostgreSQL\"; return 1; }\n    \n    if [[ -f \"$PGDATA/PG_VERSION\" ]]; then\n        debug_log \"PostgreSQL data directory initialized successfully\"\n        \n        # this is where we create postgres config\n        debug_log \"Creating PostgreSQL configuration file...\"\n        create_config_file || { echo \"Failed to create configuration file\"; return 1; }\n        \n        # stop existing postgres instance(s)\n        debug_log \"Ensuring PostgreSQL is not running...\"\n        if [[ \"$PG_DEBUG\" == \"true\" ]]; then\n            pg_ctl stop -D \"$PGDATA\" 2>/dev/null || true\n        else\n            pg_ctl stop -D \"$PGDATA\" > /dev/null 2>&1 || true\n        fi\n        \n        # this is where we start it up\n        debug_log \"Starting PostgreSQL...\"\n        start_postgres || { echo \"Failed to start PostgreSQL\"; return 1; }\n        \n        # this is where we create database\n        debug_log \"Creating database...\"\n        create_database || { echo \"Failed to create database\"; return 1; }\n        \n        # this is where we shut it down\n        debug_log \"Stopping PostgreSQL...\"\n        stop_postgres || { echo \"Failed to stop PostgreSQL\"; return 1; }\n        \n        debug_log \"PostgreSQL setup completed successfully\"\n    else\n        echo \"Error: PostgreSQL data directory was not initialized correctly\"\n        return 1\n    fi\n    \n    return 0\n}\n\n# gummified help message\nshow_postgres_help() {\n    # Determine display host\n    local display_host\n    if [[ \"$PGHOSTADDR\" == \"0.0.0.0\" ]]; then\n        display_host=\"localhost\"\n    else\n        display_host=\"$PGHOSTADDR\"\n    fi\n    \n    # Create the help message with Gum styling\n    gum style \\\n        --border rounded \\\n        --border-foreground 240 \\\n        --padding \"1 2\" \\\n        --margin \"1 0\" \\\n        --width 96 \\\n        \"$(gum style --foreground 141 --bold 'This is a  F l o x  PostgreSQL / Metabase Environment')\n\n👉  Service Management:\n    $(gum style --foreground 212 'flox activate -s')     Start PostgreSQL and Metabase at activation\n    $(gum style --foreground 212 'pgstart')              Start PostgreSQL post activation\n    $(gum style --foreground 212 'pgstop')               Stop PostgreSQL post activation\n    $(gum style --foreground 212 'pgrestart')            Restart PostgreSQL post activation\n    $(gum style --foreground 212 'mbrestart')            Restart Metabase post activation\n\n👉  Configuration:\n    $(gum style --foreground 212 'pgconfigure')          Reconfigure PostgreSQL post activation\n\n👉  Connect to PostgreSQL:\n    $(gum style --foreground 212 'psql')                 Connect to PostgreSQL\n\n👉  PostgreSQL Connection Details:\n    PostgreSQL Host:     $(gum style --foreground 212 \"${display_host}\")\n    PostgreSQL Port:     $(gum style --foreground 212 \"${PGPORT}\")\n    PostgreSQL Database: $(gum style --foreground 212 \"${PGDATABASE}\")\n    PostgreSQL User:     $(gum style --foreground 212 \"${PGUSER}\")\n\n👉  Metabase Connection Details:\n    Metabase Host:       $(gum style --foreground 212 \"${display_host}:3000\")\"\n\n    echo \"\"\n}\n\n# it's tautological!\nmain() {\n    first_run_setup\n    \n    postgres_setup\n\n    show_postgres_help\n}\n\n# runnit all\nmain\n"
+    },
+    "profile": {
+      "common": "",
+      "bash": "source \"${FLOX_ENV_CACHE}/postgres.config\" 2>/dev/null || true\npgstart() { flox services start postgres; }\npgstop() { flox services stop postgres; }\npgrestart() { flox services restart postgres; }\nmbrestart() { flox services restart metabase; }\npgconfigure() {\n  flox services stop postgres\n  source \"${FLOX_ENV_CACHE}/postgres.config\" 2>/dev/null || true\n  reconfigure_postgres\n  flox services start postgres\n}\nexport -f pgstart pgstop pgrestart pgconfigure\nunset -f toggle_debug debug_log initialize_postgres create_config_file\nunset -f start_postgres stop_postgres create_database check_first_run\nunset -f load_config prompt_for_config display_postgres_config_ui main\n",
+      "zsh": "source \"${FLOX_ENV_CACHE}/postgres.config\" 2>/dev/null || true\npgstart() { flox services start postgres; }\npgstop() { flox services stop postgres; }\npgrestart() { flox services restart postgres; }\nmbrestart() { flox services restart metabase; }\npgconfigure() {\n  flox services stop postgres\n  source \"${FLOX_ENV_CACHE}/postgres.config\" 2>/dev/null || true\n  reconfigure_postgres\n  flox services start postgres\n}\nexport pgstart pgstop pgrestart pgconfigure\nunset -f \"toggle_debug\" \"debug_log\" \"initialize_postgres\" \"create_config_file\"\nunset -f \"start_postgres\" \"stop_postgres\" \"create_database\" \"check_first_run\"\nunset -f \"load_config\" \"prompt_for_config\" \"display_postgres_config_ui\" \"main\"\n",
+      "fish": "source \"$FLOX_ENV_CACHE/postgres.config\" 2>/dev/null || true\n\nfunction pgstart\n    flox services start postgres\nend\n\nfunction pgstop\n    flox services stop postgres\nend\n\nfunction pgrestart\n    flox services restart postgres\nend\n\nfunction mbrestart\n    flox services restart metabase\nend\n\nfunction pgconfigure\n    flox services stop postgres\n    source \"$FLOX_ENV_CACHE/postgres.config\" 2>/dev/null || true\n    reconfigure_postgres\n    flox services start postgres\nend\n\nfunctions -e toggle_debug debug_log initialize_postgres create_config_file\nfunctions -e start_postgres stop_postgres create_database check_first_run\nfunctions -e load_config prompt_for_config display_postgres_config_ui main\n"
+    },
+    "options": {
+      "systems": [
+        "aarch64-darwin",
+        "aarch64-linux",
+        "x86_64-darwin",
+        "x86_64-linux"
+      ],
+      "allow": {
+        "licenses": []
+      },
+      "semver": {}
+    },
+    "services": {
+      "metabase": {
+        "command": "metabase"
+      },
+      "postgres": {
+        "command": "postgres -D $PGDATA -c unix_socket_directories=$PGHOST -c listen_addresses=$PGHOSTADDR -p $PGPORT"
+      }
+    }
+  },
+  "packages": [
+    {
+      "attr_path": "gum",
+      "broken": false,
+      "derivation": "/nix/store/zvg9sbdqbayggs3n18gd6c8g8lm950ms-gum-0.15.2.drv",
+      "description": "Tasty Bubble Gum for your shell",
+      "install_id": "gum",
+      "license": "MIT",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=73cf49b8ad837ade2de76f87eb53fc85ed5d4680",
+      "name": "gum-0.15.2",
+      "pname": "gum",
+      "rev": "73cf49b8ad837ade2de76f87eb53fc85ed5d4680",
+      "rev_count": 755230,
+      "rev_date": "2025-02-18T08:17:47Z",
+      "scrape_date": "2025-02-20T02:25:42Z",
+      "stabilities": [
+        "stable",
+        "staging",
+        "unstable"
+      ],
+      "unfree": false,
+      "version": "0.15.2",
+      "outputs_to_install": [
+        "out"
+      ],
+      "outputs": {
+        "out": "/nix/store/jklh2l06j8hicjp42pjjzhzc0dkk23v1-gum-0.15.2"
+      },
+      "system": "aarch64-darwin",
+      "group": "toplevel",
+      "priority": 5
+    },
+    {
+      "attr_path": "gum",
+      "broken": false,
+      "derivation": "/nix/store/d1rwvjf5fhqsqqxv0xsasfpgay7r6lag-gum-0.15.2.drv",
+      "description": "Tasty Bubble Gum for your shell",
+      "install_id": "gum",
+      "license": "MIT",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=73cf49b8ad837ade2de76f87eb53fc85ed5d4680",
+      "name": "gum-0.15.2",
+      "pname": "gum",
+      "rev": "73cf49b8ad837ade2de76f87eb53fc85ed5d4680",
+      "rev_count": 755230,
+      "rev_date": "2025-02-18T08:17:47Z",
+      "scrape_date": "2025-02-20T02:25:42Z",
+      "stabilities": [
+        "stable",
+        "staging",
+        "unstable"
+      ],
+      "unfree": false,
+      "version": "0.15.2",
+      "outputs_to_install": [
+        "out"
+      ],
+      "outputs": {
+        "out": "/nix/store/bwdv1p25swi6h7adikmk9zxc87pl9ka4-gum-0.15.2"
+      },
+      "system": "aarch64-linux",
+      "group": "toplevel",
+      "priority": 5
+    },
+    {
+      "attr_path": "gum",
+      "broken": false,
+      "derivation": "/nix/store/4xi02v6f3arwfjavf6vv8j5084mg540y-gum-0.15.2.drv",
+      "description": "Tasty Bubble Gum for your shell",
+      "install_id": "gum",
+      "license": "MIT",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=73cf49b8ad837ade2de76f87eb53fc85ed5d4680",
+      "name": "gum-0.15.2",
+      "pname": "gum",
+      "rev": "73cf49b8ad837ade2de76f87eb53fc85ed5d4680",
+      "rev_count": 755230,
+      "rev_date": "2025-02-18T08:17:47Z",
+      "scrape_date": "2025-02-20T02:25:42Z",
+      "stabilities": [
+        "stable",
+        "staging",
+        "unstable"
+      ],
+      "unfree": false,
+      "version": "0.15.2",
+      "outputs_to_install": [
+        "out"
+      ],
+      "outputs": {
+        "out": "/nix/store/fhwxirvidsx5qn3rvln7cjh1d1q43fvm-gum-0.15.2"
+      },
+      "system": "x86_64-darwin",
+      "group": "toplevel",
+      "priority": 5
+    },
+    {
+      "attr_path": "gum",
+      "broken": false,
+      "derivation": "/nix/store/fz5i7rpam26bia8hffd4a3db0hidr6h2-gum-0.15.2.drv",
+      "description": "Tasty Bubble Gum for your shell",
+      "install_id": "gum",
+      "license": "MIT",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=73cf49b8ad837ade2de76f87eb53fc85ed5d4680",
+      "name": "gum-0.15.2",
+      "pname": "gum",
+      "rev": "73cf49b8ad837ade2de76f87eb53fc85ed5d4680",
+      "rev_count": 755230,
+      "rev_date": "2025-02-18T08:17:47Z",
+      "scrape_date": "2025-02-20T02:25:42Z",
+      "stabilities": [
+        "stable",
+        "staging",
+        "unstable"
+      ],
+      "unfree": false,
+      "version": "0.15.2",
+      "outputs_to_install": [
+        "out"
+      ],
+      "outputs": {
+        "out": "/nix/store/k8irafaaw0qkq4ihsax2lccr6srf1mnx-gum-0.15.2"
+      },
+      "system": "x86_64-linux",
+      "group": "toplevel",
+      "priority": 5
+    },
+    {
+      "attr_path": "metabase",
+      "broken": false,
+      "derivation": "/nix/store/i5qjjgknm25p8844pwcv6ilkgg9kxima-metabase-0.52.8.drv",
+      "description": "Easy, open source way for everyone in your company to ask questions and learn from data",
+      "install_id": "metabase",
+      "license": "AGPL-3.0-only",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=73cf49b8ad837ade2de76f87eb53fc85ed5d4680",
+      "name": "metabase-0.52.8",
+      "pname": "metabase",
+      "rev": "73cf49b8ad837ade2de76f87eb53fc85ed5d4680",
+      "rev_count": 755230,
+      "rev_date": "2025-02-18T08:17:47Z",
+      "scrape_date": "2025-02-20T02:25:42Z",
+      "stabilities": [
+        "stable",
+        "staging",
+        "unstable"
+      ],
+      "unfree": false,
+      "version": "0.52.8",
+      "outputs_to_install": [
+        "out"
+      ],
+      "outputs": {
+        "out": "/nix/store/5jman0l5pgjv1jf5ki08350ilb1hqysv-metabase-0.52.8"
+      },
+      "system": "aarch64-darwin",
+      "group": "toplevel",
+      "priority": 5
+    },
+    {
+      "attr_path": "metabase",
+      "broken": false,
+      "derivation": "/nix/store/m7nfgrl5j42r6b3j0qrh50irqmsn46cx-metabase-0.52.8.drv",
+      "description": "Easy, open source way for everyone in your company to ask questions and learn from data",
+      "install_id": "metabase",
+      "license": "AGPL-3.0-only",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=73cf49b8ad837ade2de76f87eb53fc85ed5d4680",
+      "name": "metabase-0.52.8",
+      "pname": "metabase",
+      "rev": "73cf49b8ad837ade2de76f87eb53fc85ed5d4680",
+      "rev_count": 755230,
+      "rev_date": "2025-02-18T08:17:47Z",
+      "scrape_date": "2025-02-20T02:25:42Z",
+      "stabilities": [
+        "stable",
+        "staging",
+        "unstable"
+      ],
+      "unfree": false,
+      "version": "0.52.8",
+      "outputs_to_install": [
+        "out"
+      ],
+      "outputs": {
+        "out": "/nix/store/8km944zjk6rav3j85avz3qyqz7znm3yw-metabase-0.52.8"
+      },
+      "system": "aarch64-linux",
+      "group": "toplevel",
+      "priority": 5
+    },
+    {
+      "attr_path": "metabase",
+      "broken": false,
+      "derivation": "/nix/store/bxlvada4bi90cilly9mqc101jizh8kpz-metabase-0.52.8.drv",
+      "description": "Easy, open source way for everyone in your company to ask questions and learn from data",
+      "install_id": "metabase",
+      "license": "AGPL-3.0-only",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=73cf49b8ad837ade2de76f87eb53fc85ed5d4680",
+      "name": "metabase-0.52.8",
+      "pname": "metabase",
+      "rev": "73cf49b8ad837ade2de76f87eb53fc85ed5d4680",
+      "rev_count": 755230,
+      "rev_date": "2025-02-18T08:17:47Z",
+      "scrape_date": "2025-02-20T02:25:42Z",
+      "stabilities": [
+        "stable",
+        "staging",
+        "unstable"
+      ],
+      "unfree": false,
+      "version": "0.52.8",
+      "outputs_to_install": [
+        "out"
+      ],
+      "outputs": {
+        "out": "/nix/store/a0madp4yr30j1zxplfv9s0bqis8gx24i-metabase-0.52.8"
+      },
+      "system": "x86_64-darwin",
+      "group": "toplevel",
+      "priority": 5
+    },
+    {
+      "attr_path": "metabase",
+      "broken": false,
+      "derivation": "/nix/store/ybxw89dzx06nw0w1q4m7q1nq0ia0qahn-metabase-0.52.8.drv",
+      "description": "Easy, open source way for everyone in your company to ask questions and learn from data",
+      "install_id": "metabase",
+      "license": "AGPL-3.0-only",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=73cf49b8ad837ade2de76f87eb53fc85ed5d4680",
+      "name": "metabase-0.52.8",
+      "pname": "metabase",
+      "rev": "73cf49b8ad837ade2de76f87eb53fc85ed5d4680",
+      "rev_count": 755230,
+      "rev_date": "2025-02-18T08:17:47Z",
+      "scrape_date": "2025-02-20T02:25:42Z",
+      "stabilities": [
+        "stable",
+        "staging",
+        "unstable"
+      ],
+      "unfree": false,
+      "version": "0.52.8",
+      "outputs_to_install": [
+        "out"
+      ],
+      "outputs": {
+        "out": "/nix/store/08q0nzxc50div16c42kx1n0lszg7n7zk-metabase-0.52.8"
+      },
+      "system": "x86_64-linux",
+      "group": "toplevel",
+      "priority": 5
+    },
+    {
+      "attr_path": "postgresql16Packages.postgis",
+      "broken": false,
+      "derivation": "/nix/store/d5i34br2j8cs8np6zjzyr7990c3crxbm-postgis-3.5.2.drv",
+      "description": "Geographic Objects for PostgreSQL",
+      "install_id": "postgis",
+      "license": "GPL-2.0-or-later",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=73cf49b8ad837ade2de76f87eb53fc85ed5d4680",
+      "name": "postgis-3.5.2",
+      "pname": "postgis",
+      "rev": "73cf49b8ad837ade2de76f87eb53fc85ed5d4680",
+      "rev_count": 755230,
+      "rev_date": "2025-02-18T08:17:47Z",
+      "scrape_date": "2025-02-20T02:25:42Z",
+      "stabilities": [
+        "stable",
+        "staging",
+        "unstable"
+      ],
+      "unfree": false,
+      "version": "3.5.2",
+      "outputs_to_install": [
+        "out"
+      ],
+      "outputs": {
+        "doc": "/nix/store/wjb5c1832j1p6q7ypdd064r3xk8aiymp-postgis-3.5.2-doc",
+        "out": "/nix/store/638p78h2nx6v2z1hi4f5qb0as0bhayhq-postgis-3.5.2"
+      },
+      "system": "aarch64-darwin",
+      "group": "toplevel",
+      "priority": 5
+    },
+    {
+      "attr_path": "postgresql16Packages.postgis",
+      "broken": false,
+      "derivation": "/nix/store/z9n24hr7vpagm1cmxc9i8v34a5g6sihp-postgis-3.5.2.drv",
+      "description": "Geographic Objects for PostgreSQL",
+      "install_id": "postgis",
+      "license": "GPL-2.0-or-later",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=73cf49b8ad837ade2de76f87eb53fc85ed5d4680",
+      "name": "postgis-3.5.2",
+      "pname": "postgis",
+      "rev": "73cf49b8ad837ade2de76f87eb53fc85ed5d4680",
+      "rev_count": 755230,
+      "rev_date": "2025-02-18T08:17:47Z",
+      "scrape_date": "2025-02-20T02:25:42Z",
+      "stabilities": [
+        "stable",
+        "staging",
+        "unstable"
+      ],
+      "unfree": false,
+      "version": "3.5.2",
+      "outputs_to_install": [
+        "out"
+      ],
+      "outputs": {
+        "doc": "/nix/store/hy48jg4vribjzqy0hy59dc2vrwz0cs7c-postgis-3.5.2-doc",
+        "out": "/nix/store/xzw4649qbaik1y8adra1ibj5spw0w352-postgis-3.5.2"
+      },
+      "system": "aarch64-linux",
+      "group": "toplevel",
+      "priority": 5
+    },
+    {
+      "attr_path": "postgresql16Packages.postgis",
+      "broken": false,
+      "derivation": "/nix/store/sfc6an3rk921djhmg9gd47psf07w2kkq-postgis-3.5.2.drv",
+      "description": "Geographic Objects for PostgreSQL",
+      "install_id": "postgis",
+      "license": "GPL-2.0-or-later",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=73cf49b8ad837ade2de76f87eb53fc85ed5d4680",
+      "name": "postgis-3.5.2",
+      "pname": "postgis",
+      "rev": "73cf49b8ad837ade2de76f87eb53fc85ed5d4680",
+      "rev_count": 755230,
+      "rev_date": "2025-02-18T08:17:47Z",
+      "scrape_date": "2025-02-20T02:25:42Z",
+      "stabilities": [
+        "stable",
+        "staging",
+        "unstable"
+      ],
+      "unfree": false,
+      "version": "3.5.2",
+      "outputs_to_install": [
+        "out"
+      ],
+      "outputs": {
+        "doc": "/nix/store/0xcyndwdnd73srm5yma43ckw910wq9wi-postgis-3.5.2-doc",
+        "out": "/nix/store/jdr8sah10rhcsw6glj27nyksgqpppgkh-postgis-3.5.2"
+      },
+      "system": "x86_64-darwin",
+      "group": "toplevel",
+      "priority": 5
+    },
+    {
+      "attr_path": "postgresql16Packages.postgis",
+      "broken": false,
+      "derivation": "/nix/store/l6hiaqg9k0na6zgkml44rg1js88in4zy-postgis-3.5.2.drv",
+      "description": "Geographic Objects for PostgreSQL",
+      "install_id": "postgis",
+      "license": "GPL-2.0-or-later",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=73cf49b8ad837ade2de76f87eb53fc85ed5d4680",
+      "name": "postgis-3.5.2",
+      "pname": "postgis",
+      "rev": "73cf49b8ad837ade2de76f87eb53fc85ed5d4680",
+      "rev_count": 755230,
+      "rev_date": "2025-02-18T08:17:47Z",
+      "scrape_date": "2025-02-20T02:25:42Z",
+      "stabilities": [
+        "stable",
+        "staging",
+        "unstable"
+      ],
+      "unfree": false,
+      "version": "3.5.2",
+      "outputs_to_install": [
+        "out"
+      ],
+      "outputs": {
+        "doc": "/nix/store/lx4ggqn5lp0fcq3xdv9a1r1465bxnrw9-postgis-3.5.2-doc",
+        "out": "/nix/store/pwmx178js0xfcs9fklryn0xb19pil21y-postgis-3.5.2"
+      },
+      "system": "x86_64-linux",
+      "group": "toplevel",
+      "priority": 5
+    },
+    {
+      "attr_path": "postgresql_16",
+      "broken": false,
+      "derivation": "/nix/store/qipiy7xwhpnvw4cy3p2yfi3mdrl2qx2h-postgresql-16.6.drv",
+      "description": "Powerful, open source object-relational database system",
+      "install_id": "postgresql",
+      "license": "PostgreSQL",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=73cf49b8ad837ade2de76f87eb53fc85ed5d4680",
+      "name": "postgresql-16.6",
+      "pname": "postgresql_16",
+      "rev": "73cf49b8ad837ade2de76f87eb53fc85ed5d4680",
+      "rev_count": 755230,
+      "rev_date": "2025-02-18T08:17:47Z",
+      "scrape_date": "2025-02-20T02:25:42Z",
+      "stabilities": [
+        "stable",
+        "staging",
+        "unstable"
+      ],
+      "unfree": false,
+      "version": "16.6",
+      "outputs_to_install": [
+        "man",
+        "out"
+      ],
+      "outputs": {
+        "dev": "/nix/store/wl7ld7qdbfpyzl28z6p5qf1v6wdigal2-postgresql-16.6-dev",
+        "doc": "/nix/store/2gsv0za5k4m0my9vizjpqdh7acs12hmp-postgresql-16.6-doc",
+        "lib": "/nix/store/7vm2d70za7sf83xyxqh409pnrgg9bb6x-postgresql-16.6-lib",
+        "man": "/nix/store/81cyjpy7qyihspmidhacsslb3pzgwyby-postgresql-16.6-man",
+        "out": "/nix/store/nl8iak9bqxrnlwpjqnmhd27m1y0kbh38-postgresql-16.6"
+      },
+      "system": "aarch64-darwin",
+      "group": "toplevel",
+      "priority": 5
+    },
+    {
+      "attr_path": "postgresql_16",
+      "broken": false,
+      "derivation": "/nix/store/k7yx7iqfaiqa57bcidh059jdy9y4i5i8-postgresql-16.6.drv",
+      "description": "Powerful, open source object-relational database system",
+      "install_id": "postgresql",
+      "license": "PostgreSQL",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=73cf49b8ad837ade2de76f87eb53fc85ed5d4680",
+      "name": "postgresql-16.6",
+      "pname": "postgresql_16",
+      "rev": "73cf49b8ad837ade2de76f87eb53fc85ed5d4680",
+      "rev_count": 755230,
+      "rev_date": "2025-02-18T08:17:47Z",
+      "scrape_date": "2025-02-20T02:25:42Z",
+      "stabilities": [
+        "stable",
+        "staging",
+        "unstable"
+      ],
+      "unfree": false,
+      "version": "16.6",
+      "outputs_to_install": [
+        "man",
+        "out"
+      ],
+      "outputs": {
+        "debug": "/nix/store/axzpcirq3942qaamvp9rilz5cglgd5sq-postgresql-16.6-debug",
+        "dev": "/nix/store/wh04fgq5jqysa3z28f81rj8dzqwadvhw-postgresql-16.6-dev",
+        "doc": "/nix/store/xhf4z34ic2q9svqxqcx4xz9hnz1p76wp-postgresql-16.6-doc",
+        "lib": "/nix/store/xw08lasmmss3bfqf5n2r9m587v5mbi8w-postgresql-16.6-lib",
+        "man": "/nix/store/l6bvx4zsd2zibp15dj6q0xx786dyx9gi-postgresql-16.6-man",
+        "out": "/nix/store/iswl1q8nq1v2jcv9s9jngnzvff0dxk29-postgresql-16.6"
+      },
+      "system": "aarch64-linux",
+      "group": "toplevel",
+      "priority": 5
+    },
+    {
+      "attr_path": "postgresql_16",
+      "broken": false,
+      "derivation": "/nix/store/lp4pl1hkp6max95a6hm628pnwc869qpr-postgresql-16.6.drv",
+      "description": "Powerful, open source object-relational database system",
+      "install_id": "postgresql",
+      "license": "PostgreSQL",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=73cf49b8ad837ade2de76f87eb53fc85ed5d4680",
+      "name": "postgresql-16.6",
+      "pname": "postgresql_16",
+      "rev": "73cf49b8ad837ade2de76f87eb53fc85ed5d4680",
+      "rev_count": 755230,
+      "rev_date": "2025-02-18T08:17:47Z",
+      "scrape_date": "2025-02-20T02:25:42Z",
+      "stabilities": [
+        "stable",
+        "staging",
+        "unstable"
+      ],
+      "unfree": false,
+      "version": "16.6",
+      "outputs_to_install": [
+        "man",
+        "out"
+      ],
+      "outputs": {
+        "dev": "/nix/store/gqq7qjn33snr65qs6383givjvzqx6602-postgresql-16.6-dev",
+        "doc": "/nix/store/m3fww354lj8qf7wmm2wx9mid4c8h5w25-postgresql-16.6-doc",
+        "lib": "/nix/store/8mzimjhbfy2zdys7g2bys7z8d2d6f9k3-postgresql-16.6-lib",
+        "man": "/nix/store/ag220f04j0lf1ar80arlvfv4x78kvbkb-postgresql-16.6-man",
+        "out": "/nix/store/8b8qv357nhnrnn19l284bgqpibm71v37-postgresql-16.6"
+      },
+      "system": "x86_64-darwin",
+      "group": "toplevel",
+      "priority": 5
+    },
+    {
+      "attr_path": "postgresql_16",
+      "broken": false,
+      "derivation": "/nix/store/wg8930vw4c9pp6wi04k4639iij4j12qi-postgresql-16.6.drv",
+      "description": "Powerful, open source object-relational database system",
+      "install_id": "postgresql",
+      "license": "PostgreSQL",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=73cf49b8ad837ade2de76f87eb53fc85ed5d4680",
+      "name": "postgresql-16.6",
+      "pname": "postgresql_16",
+      "rev": "73cf49b8ad837ade2de76f87eb53fc85ed5d4680",
+      "rev_count": 755230,
+      "rev_date": "2025-02-18T08:17:47Z",
+      "scrape_date": "2025-02-20T02:25:42Z",
+      "stabilities": [
+        "stable",
+        "staging",
+        "unstable"
+      ],
+      "unfree": false,
+      "version": "16.6",
+      "outputs_to_install": [
+        "man",
+        "out"
+      ],
+      "outputs": {
+        "debug": "/nix/store/hg7sf8ma2hd2fr3r0sqzhn08hvb7br38-postgresql-16.6-debug",
+        "dev": "/nix/store/v684kybj06yaaq178dyaq2973783vi76-postgresql-16.6-dev",
+        "doc": "/nix/store/2gfzyahwdxispcn6b038dixm8hgv602f-postgresql-16.6-doc",
+        "lib": "/nix/store/ayi489v3zwwjzq17fg81yl6ia1zjkr3x-postgresql-16.6-lib",
+        "man": "/nix/store/afwwb0x48lm5ahi9nn1hkxsgifzr658p-postgresql-16.6-man",
+        "out": "/nix/store/l4s04nd47mqnnsbfcrpp3kjzrxgv1v4z-postgresql-16.6"
+      },
+      "system": "x86_64-linux",
+      "group": "toplevel",
+      "priority": 5
+    }
+  ]
+}

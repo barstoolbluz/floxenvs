@@ -1,0 +1,816 @@
+{
+  "lockfile-version": 1,
+  "manifest": {
+    "version": 1,
+    "install": {
+      "alembic": {
+        "pkg-path": "python312Packages.alembic"
+      },
+      "gcc-unwrapped": {
+        "pkg-path": "gcc-unwrapped"
+      },
+      "gum": {
+        "pkg-path": "gum"
+      },
+      "pip": {
+        "pkg-path": "python312Packages.pip"
+      },
+      "sqlalchemy": {
+        "pkg-path": "python312Packages.sqlalchemy"
+      },
+      "zlib": {
+        "pkg-path": "zlib"
+      }
+    },
+    "hook": {
+      "on-activate": "show_venv_help() {\n    # Create the help message with Gum styling\n    gum style \\\n        --border rounded \\\n        --border-foreground 240 \\\n        --padding \"1 2\" \\\n        --margin \"1 0\" \\\n        --width 96 \\\n        \"$(gum style --foreground 141 --bold 'This is a Flox Python 3.12 / PostgreSQL dev environment')\n\n🔨  Environment Management:\n    $(gum style --foreground 212 'mkvenv')       Creates a new virtual environment\n                 Default: creates .venv in current directory\n                 Can specify custom name (e.g., 'project-env')\n                 Handles existing venv conflicts interactively\n\n⚡  Venv Activation:\n    $(gum style --foreground 212 'aktivate')     Finds and activates venvs\n                 Auto-activates if only one venv found\n                 Interactive selection if multiple\n\n📦  Package Management: \n    $(gum style --foreground 212 'pist')         Pip install from requirements.txt\n                 Can specify alternative file\n\n🚪  Session Management:\n    $(gum style --foreground 212 'qwit')         Safely exits the current venv\n                 Deactivates venv while remaining in the Flox subshell\"\n\n    echo \"\"\n}\n\n## one function to run them all\nmain() {\n    show_venv_help\n}\n\n## runnit\nmain\n\n"
+    },
+    "profile": {
+      "bash": "mkvenv() {\n    [ -d \".venv\" ] && case $(gum choose --header \"A virtual environment (.venv) already exists. Choose an action:\" \"Quit\" \"Replace .venv\" \"Create new virtual environment\") in\n        \"Quit\") return 0 ;;\n        \"Replace .venv\") rm -rf .venv ;;\n        \"Create new virtual environment\")\n            name=$(gum input --placeholder \"Enter name\") || return 1\n            [ -z \"$name\" ] && return 1\n            python3 -m venv \"$name\" && source \"$name/bin/activate\"\n            return 0 ;;\n    esac\n    python3 -m venv .venv && source .venv/bin/activate\n}\n\naktivate() {\n    readarray -t venvs < <(find . -name \"activate\" -type f | sed 's|/bin/activate$||')\n    [ ${#venvs[@]} -eq 0 ] && echo \"No virtual environments found.\" && return 1\n    if [ ${#venvs[@]} -eq 1 ]; then\n        [ -n \"$VIRTUAL_ENV\" ] && deactivate\n        source \"${venvs[0]}/bin/activate\"\n        return 0\n    fi\n    venvs+=(\"quit\")\n    selected=$(gum choose --header \"Select environment to activate:\" \"${venvs[@]#./}\") || return 1\n    [ \"$selected\" = \"quit\" ] && return 0\n    [ -n \"$VIRTUAL_ENV\" ] && deactivate\n    source \"$selected/bin/activate\"\n}\n\npist() {\n    readarray -t venvs < <(find . -name \"activate\" -type f | sed 's|/bin/activate$||')\n    [ ${#venvs[@]} -eq 0 ] && mkvenv\n    [[ \"$VIRTUAL_ENV\" ]] || aktivate\n    pip install -r \"${1:-requirements.txt}\"\n}\n\nqwit() {\n    if [ -n \"$VIRTUAL_ENV\" ]; then\n        deactivate\n    else\n        echo \"No active virtual environment found.\"\n    fi\n}\n",
+      "zsh": "mkvenv() {\n    [ -d \".venv\" ] && case $(gum choose --header \"A virtual environment (.venv) already exists. Choose an action:\" \"Quit\" \"Replace .venv\" \"Create new virtual environment\") in\n        \"Quit\") return 0 ;;\n        \"Replace .venv\") rm -rf .venv ;;\n        \"Create new virtual environment\")\n            name=$(gum input --placeholder \"Enter name\") || return 1\n            [ -z \"$name\" ] && return 1\n            python3 -m venv \"$name\" && source \"$name/bin/activate\"\n            return 0 ;;\n    esac\n    python3 -m venv .venv && source .venv/bin/activate\n}\n\naktivate() {\n    readarray -t venvs < <(find . -name \"activate\" -type f | sed 's|/bin/activate$||')\n    [ ${#venvs[@]} -eq 0 ] && echo \"No virtual environments found.\" && return 1\n    if [ ${#venvs[@]} -eq 1 ]; then\n        [ -n \"$VIRTUAL_ENV\" ] && deactivate\n        source \"${venvs[0]}/bin/activate\"\n        return 0\n    fi\n    venvs+=(\"quit\")\n    selected=$(gum choose --header \"Select environment to activate:\" \"${venvs[@]#./}\") || return 1\n    [ \"$selected\" = \"quit\" ] && return 0\n    [ -n \"$VIRTUAL_ENV\" ] && deactivate\n    source \"$selected/bin/activate\"\n}\n\npist() {\n    pip install -r \"${1:-requirements.txt}\"\n}\n\nqwit() {\n    if [ -n \"$VIRTUAL_ENV\" ]; then\n        deactivate\n    else\n        echo \"No active virtual environment found.\"\n    fi\n}\n",
+      "fish": "function mkvenv\n    if test -d \".venv\"\n        set choice (gum choose --header \"A virtual environment (.venv) already exists. Choose an action:\" \"Quit\" \"Replace .venv\" \"Create new virtual environment\")\n        switch $choice\n            case \"Quit\"\n                return 0\n            case \"Replace .venv\"\n                rm -rf .venv\n            case \"Create new virtual environment\"\n                set name (gum input --placeholder \"Enter name\")\n                test $status -ne 0; and return 1\n                test -z \"$name\"; and return 1\n                python3 -m venv \"$name\"; and source \"$name/bin/activate\"\n                return 0\n        end\n    end\n    python3 -m venv .venv; and source .venv/bin/activate\nend\n\nfunction aktivate\n    set -l venvs (find . -name \"activate\" -type f | sed 's|/bin/activate$||')\n    if test (count $venvs) -eq 0\n        echo \"No virtual environments found.\"\n        return 1\n    end\n    if test (count $venvs) -eq 1\n        test -n \"$VIRTUAL_ENV\"; and deactivate\n        source \"$venvs[1]/bin/activate.fish\"\n        return 0\n    end\n    set -a venvs \"quit\"\n    set selected (string replace -a \"./\" \"\" $venvs | gum choose --header \"Select environment to activate:\")\n    or return 1\n    test \"$selected\" = \"quit\"; and return 0\n    test -n \"$VIRTUAL_ENV\"; and deactivate\n    source \"$selected/bin/activate.fish\"\nend\n\nfunction pist\n    pip install -r (test (count $argv) -gt 0 && echo $argv[1] || echo \"requirements.txt\")\nend\n\nfunction qwit\n    if test -n \"$VIRTUAL_ENV\"\n        deactivate\n    else\n        echo \"No active virtual environment found.\"\n    end\nend\n"
+    },
+    "options": {
+      "systems": [
+        "aarch64-darwin",
+        "aarch64-linux",
+        "x86_64-darwin",
+        "x86_64-linux"
+      ],
+      "allow": {
+        "licenses": []
+      },
+      "semver": {}
+    }
+  },
+  "packages": [
+    {
+      "attr_path": "python312Packages.alembic",
+      "broken": false,
+      "derivation": "/nix/store/7w26hffbh6gg0fcdmq45lf3imsazj7pb-python3.12-alembic-1.14.0.drv",
+      "description": "Database migration tool for SQLAlchemy",
+      "install_id": "alembic",
+      "license": "MIT",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=73cf49b8ad837ade2de76f87eb53fc85ed5d4680",
+      "name": "python3.12-alembic-1.14.0",
+      "pname": "alembic",
+      "rev": "73cf49b8ad837ade2de76f87eb53fc85ed5d4680",
+      "rev_count": 755230,
+      "rev_date": "2025-02-18T08:17:47Z",
+      "scrape_date": "2025-02-20T02:25:42Z",
+      "stabilities": [
+        "staging",
+        "unstable"
+      ],
+      "unfree": false,
+      "version": "1.14.0",
+      "outputs_to_install": [
+        "out"
+      ],
+      "outputs": {
+        "dist": "/nix/store/zmg65mp2p77l6vispwiyggs2s1by323d-python3.12-alembic-1.14.0-dist",
+        "out": "/nix/store/v2c3kz072n7fkjkldxy518ih4fr4nr68-python3.12-alembic-1.14.0"
+      },
+      "system": "aarch64-darwin",
+      "group": "toplevel",
+      "priority": 5
+    },
+    {
+      "attr_path": "python312Packages.alembic",
+      "broken": false,
+      "derivation": "/nix/store/x7dghqzkw3klkr3k50d7z6gd1k3x7m96-python3.12-alembic-1.14.0.drv",
+      "description": "Database migration tool for SQLAlchemy",
+      "install_id": "alembic",
+      "license": "MIT",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=73cf49b8ad837ade2de76f87eb53fc85ed5d4680",
+      "name": "python3.12-alembic-1.14.0",
+      "pname": "alembic",
+      "rev": "73cf49b8ad837ade2de76f87eb53fc85ed5d4680",
+      "rev_count": 755230,
+      "rev_date": "2025-02-18T08:17:47Z",
+      "scrape_date": "2025-02-20T02:25:42Z",
+      "stabilities": [
+        "staging",
+        "unstable"
+      ],
+      "unfree": false,
+      "version": "1.14.0",
+      "outputs_to_install": [
+        "out"
+      ],
+      "outputs": {
+        "dist": "/nix/store/g155xgm3lcv4msj8lj7i8wymc86prdh7-python3.12-alembic-1.14.0-dist",
+        "out": "/nix/store/8psh2ivhqiiqkv0cn0j84vcq5zwszfkh-python3.12-alembic-1.14.0"
+      },
+      "system": "aarch64-linux",
+      "group": "toplevel",
+      "priority": 5
+    },
+    {
+      "attr_path": "python312Packages.alembic",
+      "broken": false,
+      "derivation": "/nix/store/yp8h5gvjcxzhb5l4rpw2l8dksfvsqy9v-python3.12-alembic-1.14.0.drv",
+      "description": "Database migration tool for SQLAlchemy",
+      "install_id": "alembic",
+      "license": "MIT",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=73cf49b8ad837ade2de76f87eb53fc85ed5d4680",
+      "name": "python3.12-alembic-1.14.0",
+      "pname": "alembic",
+      "rev": "73cf49b8ad837ade2de76f87eb53fc85ed5d4680",
+      "rev_count": 755230,
+      "rev_date": "2025-02-18T08:17:47Z",
+      "scrape_date": "2025-02-20T02:25:42Z",
+      "stabilities": [
+        "staging",
+        "unstable"
+      ],
+      "unfree": false,
+      "version": "1.14.0",
+      "outputs_to_install": [
+        "out"
+      ],
+      "outputs": {
+        "dist": "/nix/store/3jkdpjf6jnknw9zijvg4hadjwnjbszj5-python3.12-alembic-1.14.0-dist",
+        "out": "/nix/store/qxdmlzlff15xbdiwgg0sfhw5zmklw7iy-python3.12-alembic-1.14.0"
+      },
+      "system": "x86_64-darwin",
+      "group": "toplevel",
+      "priority": 5
+    },
+    {
+      "attr_path": "python312Packages.alembic",
+      "broken": false,
+      "derivation": "/nix/store/skjnm8yd651fcpzfwxzg3qxfbrr6b8m4-python3.12-alembic-1.14.0.drv",
+      "description": "Database migration tool for SQLAlchemy",
+      "install_id": "alembic",
+      "license": "MIT",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=73cf49b8ad837ade2de76f87eb53fc85ed5d4680",
+      "name": "python3.12-alembic-1.14.0",
+      "pname": "alembic",
+      "rev": "73cf49b8ad837ade2de76f87eb53fc85ed5d4680",
+      "rev_count": 755230,
+      "rev_date": "2025-02-18T08:17:47Z",
+      "scrape_date": "2025-02-20T02:25:42Z",
+      "stabilities": [
+        "staging",
+        "unstable"
+      ],
+      "unfree": false,
+      "version": "1.14.0",
+      "outputs_to_install": [
+        "out"
+      ],
+      "outputs": {
+        "dist": "/nix/store/ypa8nh5xz91zrcanmd1qi67y3wsny3x3-python3.12-alembic-1.14.0-dist",
+        "out": "/nix/store/lli1mpk363wvzm23h3krj75ycbj48m1i-python3.12-alembic-1.14.0"
+      },
+      "system": "x86_64-linux",
+      "group": "toplevel",
+      "priority": 5
+    },
+    {
+      "attr_path": "gcc-unwrapped",
+      "broken": false,
+      "derivation": "/nix/store/lbfwlj9sgj7wy3knjwwj2s35ip0nvlnj-gcc-14-20241116.drv",
+      "description": "GNU Compiler Collection, version 14-20241116",
+      "install_id": "gcc-unwrapped",
+      "license": "GPL-3.0-or-later",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=73cf49b8ad837ade2de76f87eb53fc85ed5d4680",
+      "name": "gcc-14-20241116",
+      "pname": "gcc-unwrapped",
+      "rev": "73cf49b8ad837ade2de76f87eb53fc85ed5d4680",
+      "rev_count": 755230,
+      "rev_date": "2025-02-18T08:17:47Z",
+      "scrape_date": "2025-02-20T02:25:42Z",
+      "stabilities": [
+        "staging",
+        "unstable"
+      ],
+      "unfree": false,
+      "version": "14-20241116",
+      "outputs_to_install": [
+        "man",
+        "out"
+      ],
+      "outputs": {
+        "info": "/nix/store/xz09sfy4pijvdgv44yqaj5jqdfmlkwxx-gcc-14-20241116-info",
+        "lib": "/nix/store/l67ds37r61sp9db5zxrzkmckh3221vym-gcc-14-20241116-lib",
+        "man": "/nix/store/3s22md45ns8xngxabx7n5llpk8yfa4sn-gcc-14-20241116-man",
+        "out": "/nix/store/b4x3qm6n655alg9djp8y8vi9nbmjq38d-gcc-14-20241116"
+      },
+      "system": "aarch64-darwin",
+      "group": "toplevel",
+      "priority": 5
+    },
+    {
+      "attr_path": "gcc-unwrapped",
+      "broken": false,
+      "derivation": "/nix/store/d4cg6ln1yd495xgiy5l3ayg25jddklsk-gcc-14-20241116.drv",
+      "description": "GNU Compiler Collection, version 14-20241116",
+      "install_id": "gcc-unwrapped",
+      "license": "GPL-3.0-or-later",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=73cf49b8ad837ade2de76f87eb53fc85ed5d4680",
+      "name": "gcc-14-20241116",
+      "pname": "gcc-unwrapped",
+      "rev": "73cf49b8ad837ade2de76f87eb53fc85ed5d4680",
+      "rev_count": 755230,
+      "rev_date": "2025-02-18T08:17:47Z",
+      "scrape_date": "2025-02-20T02:25:42Z",
+      "stabilities": [
+        "staging",
+        "unstable"
+      ],
+      "unfree": false,
+      "version": "14-20241116",
+      "outputs_to_install": [
+        "man",
+        "out"
+      ],
+      "outputs": {
+        "checksum": "/nix/store/mqgl0d5ayqsyagwixlzv5wb272pi9b8n-gcc-14-20241116-checksum",
+        "info": "/nix/store/6ksmwphahn99vx80xvamyb7l9b0ynya4-gcc-14-20241116-info",
+        "lib": "/nix/store/i60rx2hwqsn3fm64cblfjq36rzk4l18r-gcc-14-20241116-lib",
+        "libgcc": "/nix/store/pb8dsn8wh65ialxqian32i3ps3jkd87b-gcc-14-20241116-libgcc",
+        "man": "/nix/store/v6ralv74lyiiavg9njyxisq0023kmw3d-gcc-14-20241116-man",
+        "out": "/nix/store/x5k7anh2zz9vbdicl0mbxyjd1kw4a8j4-gcc-14-20241116"
+      },
+      "system": "aarch64-linux",
+      "group": "toplevel",
+      "priority": 5
+    },
+    {
+      "attr_path": "gcc-unwrapped",
+      "broken": false,
+      "derivation": "/nix/store/ald78apbff9j7r7xiizw2l25fah2m5j1-gcc-14-20241116.drv",
+      "description": "GNU Compiler Collection, version 14-20241116",
+      "install_id": "gcc-unwrapped",
+      "license": "GPL-3.0-or-later",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=73cf49b8ad837ade2de76f87eb53fc85ed5d4680",
+      "name": "gcc-14-20241116",
+      "pname": "gcc-unwrapped",
+      "rev": "73cf49b8ad837ade2de76f87eb53fc85ed5d4680",
+      "rev_count": 755230,
+      "rev_date": "2025-02-18T08:17:47Z",
+      "scrape_date": "2025-02-20T02:25:42Z",
+      "stabilities": [
+        "staging",
+        "unstable"
+      ],
+      "unfree": false,
+      "version": "14-20241116",
+      "outputs_to_install": [
+        "man",
+        "out"
+      ],
+      "outputs": {
+        "info": "/nix/store/7q57l3nvkhxax7bmfjcml5hnvg28w5nw-gcc-14-20241116-info",
+        "lib": "/nix/store/mcmwdx4xjgcdnrahzyi8ib23862y4nb9-gcc-14-20241116-lib",
+        "man": "/nix/store/i39bhhhpkm43fwc0iwzzyzlb19m47lb6-gcc-14-20241116-man",
+        "out": "/nix/store/1vxrj3x6y3ck86hfvazmh6vs3lqgdw3i-gcc-14-20241116"
+      },
+      "system": "x86_64-darwin",
+      "group": "toplevel",
+      "priority": 5
+    },
+    {
+      "attr_path": "gcc-unwrapped",
+      "broken": false,
+      "derivation": "/nix/store/ngv168954wc9iys9qrk0ddz86p7196qk-gcc-14-20241116.drv",
+      "description": "GNU Compiler Collection, version 14-20241116",
+      "install_id": "gcc-unwrapped",
+      "license": "GPL-3.0-or-later",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=73cf49b8ad837ade2de76f87eb53fc85ed5d4680",
+      "name": "gcc-14-20241116",
+      "pname": "gcc-unwrapped",
+      "rev": "73cf49b8ad837ade2de76f87eb53fc85ed5d4680",
+      "rev_count": 755230,
+      "rev_date": "2025-02-18T08:17:47Z",
+      "scrape_date": "2025-02-20T02:25:42Z",
+      "stabilities": [
+        "staging",
+        "unstable"
+      ],
+      "unfree": false,
+      "version": "14-20241116",
+      "outputs_to_install": [
+        "man",
+        "out"
+      ],
+      "outputs": {
+        "checksum": "/nix/store/agmfrzrpnz8k5l1hkvmrbw9bs2bxybrh-gcc-14-20241116-checksum",
+        "info": "/nix/store/cx3d30zsfiykb9yijq8il26mq56ih1q6-gcc-14-20241116-info",
+        "lib": "/nix/store/ggqfrwgzpr3v3dkvh4cnmhymnvf6cqja-gcc-14-20241116-lib",
+        "libgcc": "/nix/store/qjg34af79vcz9k2x386wjg6pk905cs42-gcc-14-20241116-libgcc",
+        "man": "/nix/store/l43mf6aydfl1jrwk6j830s0b13i5nyd7-gcc-14-20241116-man",
+        "out": "/nix/store/zs2gq6fkglrd28g1nxlb8waqq37cdc2z-gcc-14-20241116"
+      },
+      "system": "x86_64-linux",
+      "group": "toplevel",
+      "priority": 5
+    },
+    {
+      "attr_path": "gum",
+      "broken": false,
+      "derivation": "/nix/store/zvg9sbdqbayggs3n18gd6c8g8lm950ms-gum-0.15.2.drv",
+      "description": "Tasty Bubble Gum for your shell",
+      "install_id": "gum",
+      "license": "MIT",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=73cf49b8ad837ade2de76f87eb53fc85ed5d4680",
+      "name": "gum-0.15.2",
+      "pname": "gum",
+      "rev": "73cf49b8ad837ade2de76f87eb53fc85ed5d4680",
+      "rev_count": 755230,
+      "rev_date": "2025-02-18T08:17:47Z",
+      "scrape_date": "2025-02-20T02:25:42Z",
+      "stabilities": [
+        "staging",
+        "unstable"
+      ],
+      "unfree": false,
+      "version": "0.15.2",
+      "outputs_to_install": [
+        "out"
+      ],
+      "outputs": {
+        "out": "/nix/store/jklh2l06j8hicjp42pjjzhzc0dkk23v1-gum-0.15.2"
+      },
+      "system": "aarch64-darwin",
+      "group": "toplevel",
+      "priority": 5
+    },
+    {
+      "attr_path": "gum",
+      "broken": false,
+      "derivation": "/nix/store/d1rwvjf5fhqsqqxv0xsasfpgay7r6lag-gum-0.15.2.drv",
+      "description": "Tasty Bubble Gum for your shell",
+      "install_id": "gum",
+      "license": "MIT",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=73cf49b8ad837ade2de76f87eb53fc85ed5d4680",
+      "name": "gum-0.15.2",
+      "pname": "gum",
+      "rev": "73cf49b8ad837ade2de76f87eb53fc85ed5d4680",
+      "rev_count": 755230,
+      "rev_date": "2025-02-18T08:17:47Z",
+      "scrape_date": "2025-02-20T02:25:42Z",
+      "stabilities": [
+        "staging",
+        "unstable"
+      ],
+      "unfree": false,
+      "version": "0.15.2",
+      "outputs_to_install": [
+        "out"
+      ],
+      "outputs": {
+        "out": "/nix/store/bwdv1p25swi6h7adikmk9zxc87pl9ka4-gum-0.15.2"
+      },
+      "system": "aarch64-linux",
+      "group": "toplevel",
+      "priority": 5
+    },
+    {
+      "attr_path": "gum",
+      "broken": false,
+      "derivation": "/nix/store/4xi02v6f3arwfjavf6vv8j5084mg540y-gum-0.15.2.drv",
+      "description": "Tasty Bubble Gum for your shell",
+      "install_id": "gum",
+      "license": "MIT",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=73cf49b8ad837ade2de76f87eb53fc85ed5d4680",
+      "name": "gum-0.15.2",
+      "pname": "gum",
+      "rev": "73cf49b8ad837ade2de76f87eb53fc85ed5d4680",
+      "rev_count": 755230,
+      "rev_date": "2025-02-18T08:17:47Z",
+      "scrape_date": "2025-02-20T02:25:42Z",
+      "stabilities": [
+        "staging",
+        "unstable"
+      ],
+      "unfree": false,
+      "version": "0.15.2",
+      "outputs_to_install": [
+        "out"
+      ],
+      "outputs": {
+        "out": "/nix/store/fhwxirvidsx5qn3rvln7cjh1d1q43fvm-gum-0.15.2"
+      },
+      "system": "x86_64-darwin",
+      "group": "toplevel",
+      "priority": 5
+    },
+    {
+      "attr_path": "gum",
+      "broken": false,
+      "derivation": "/nix/store/fz5i7rpam26bia8hffd4a3db0hidr6h2-gum-0.15.2.drv",
+      "description": "Tasty Bubble Gum for your shell",
+      "install_id": "gum",
+      "license": "MIT",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=73cf49b8ad837ade2de76f87eb53fc85ed5d4680",
+      "name": "gum-0.15.2",
+      "pname": "gum",
+      "rev": "73cf49b8ad837ade2de76f87eb53fc85ed5d4680",
+      "rev_count": 755230,
+      "rev_date": "2025-02-18T08:17:47Z",
+      "scrape_date": "2025-02-20T02:25:42Z",
+      "stabilities": [
+        "staging",
+        "unstable"
+      ],
+      "unfree": false,
+      "version": "0.15.2",
+      "outputs_to_install": [
+        "out"
+      ],
+      "outputs": {
+        "out": "/nix/store/k8irafaaw0qkq4ihsax2lccr6srf1mnx-gum-0.15.2"
+      },
+      "system": "x86_64-linux",
+      "group": "toplevel",
+      "priority": 5
+    },
+    {
+      "attr_path": "python312Packages.pip",
+      "broken": false,
+      "derivation": "/nix/store/hqwg16bchqvwg4l5xyb9bmv03y8hg48m-python3.12-pip-24.0.drv",
+      "description": "PyPA recommended tool for installing Python packages",
+      "install_id": "pip",
+      "license": "[ MIT ]",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=73cf49b8ad837ade2de76f87eb53fc85ed5d4680",
+      "name": "python3.12-pip-24.0",
+      "pname": "pip",
+      "rev": "73cf49b8ad837ade2de76f87eb53fc85ed5d4680",
+      "rev_count": 755230,
+      "rev_date": "2025-02-18T08:17:47Z",
+      "scrape_date": "2025-02-20T02:25:42Z",
+      "stabilities": [
+        "staging",
+        "unstable"
+      ],
+      "unfree": false,
+      "version": "24.0",
+      "outputs_to_install": [
+        "man",
+        "out"
+      ],
+      "outputs": {
+        "dist": "/nix/store/5ngb1jckwbvyis7g58gic4ipax1jrds0-python3.12-pip-24.0-dist",
+        "man": "/nix/store/m9gs9bms20h4qidgsss1d3f6by8l1i8p-python3.12-pip-24.0-man",
+        "out": "/nix/store/96p1dn4b5pm20ffvg9wr8vsmcbf4y7d8-python3.12-pip-24.0"
+      },
+      "system": "aarch64-darwin",
+      "group": "toplevel",
+      "priority": 5
+    },
+    {
+      "attr_path": "python312Packages.pip",
+      "broken": false,
+      "derivation": "/nix/store/81ffbv9hmicmk820xyx9jh2as6w577zr-python3.12-pip-24.0.drv",
+      "description": "PyPA recommended tool for installing Python packages",
+      "install_id": "pip",
+      "license": "[ MIT ]",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=73cf49b8ad837ade2de76f87eb53fc85ed5d4680",
+      "name": "python3.12-pip-24.0",
+      "pname": "pip",
+      "rev": "73cf49b8ad837ade2de76f87eb53fc85ed5d4680",
+      "rev_count": 755230,
+      "rev_date": "2025-02-18T08:17:47Z",
+      "scrape_date": "2025-02-20T02:25:42Z",
+      "stabilities": [
+        "staging",
+        "unstable"
+      ],
+      "unfree": false,
+      "version": "24.0",
+      "outputs_to_install": [
+        "man",
+        "out"
+      ],
+      "outputs": {
+        "dist": "/nix/store/jqf0k9lvvh3f29aqzljbxm7272792aa1-python3.12-pip-24.0-dist",
+        "man": "/nix/store/1i6pcdlryq1bbq0zalblcxnmxpczc66l-python3.12-pip-24.0-man",
+        "out": "/nix/store/rxvlk8yms2jprgyzqbd4kp19i893dc5y-python3.12-pip-24.0"
+      },
+      "system": "aarch64-linux",
+      "group": "toplevel",
+      "priority": 5
+    },
+    {
+      "attr_path": "python312Packages.pip",
+      "broken": false,
+      "derivation": "/nix/store/222bil5ddg48ll1f6cgwwiizw7xl35n1-python3.12-pip-24.0.drv",
+      "description": "PyPA recommended tool for installing Python packages",
+      "install_id": "pip",
+      "license": "[ MIT ]",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=73cf49b8ad837ade2de76f87eb53fc85ed5d4680",
+      "name": "python3.12-pip-24.0",
+      "pname": "pip",
+      "rev": "73cf49b8ad837ade2de76f87eb53fc85ed5d4680",
+      "rev_count": 755230,
+      "rev_date": "2025-02-18T08:17:47Z",
+      "scrape_date": "2025-02-20T02:25:42Z",
+      "stabilities": [
+        "staging",
+        "unstable"
+      ],
+      "unfree": false,
+      "version": "24.0",
+      "outputs_to_install": [
+        "man",
+        "out"
+      ],
+      "outputs": {
+        "dist": "/nix/store/25dyg5pvwvnqnb0l4kmrl1m2r1inahs4-python3.12-pip-24.0-dist",
+        "man": "/nix/store/xal94cvwjvcwkrfb6n1p40l5m3d53ilm-python3.12-pip-24.0-man",
+        "out": "/nix/store/9j2b91dy5rilhmrkzq6fjx56x35k31pf-python3.12-pip-24.0"
+      },
+      "system": "x86_64-darwin",
+      "group": "toplevel",
+      "priority": 5
+    },
+    {
+      "attr_path": "python312Packages.pip",
+      "broken": false,
+      "derivation": "/nix/store/sz65q3r8c534dymbq06h4mk1lk5yl92y-python3.12-pip-24.0.drv",
+      "description": "PyPA recommended tool for installing Python packages",
+      "install_id": "pip",
+      "license": "[ MIT ]",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=73cf49b8ad837ade2de76f87eb53fc85ed5d4680",
+      "name": "python3.12-pip-24.0",
+      "pname": "pip",
+      "rev": "73cf49b8ad837ade2de76f87eb53fc85ed5d4680",
+      "rev_count": 755230,
+      "rev_date": "2025-02-18T08:17:47Z",
+      "scrape_date": "2025-02-20T02:25:42Z",
+      "stabilities": [
+        "staging",
+        "unstable"
+      ],
+      "unfree": false,
+      "version": "24.0",
+      "outputs_to_install": [
+        "man",
+        "out"
+      ],
+      "outputs": {
+        "dist": "/nix/store/dpr8gpwddyin57kl7sbhy0i7dlnns8hf-python3.12-pip-24.0-dist",
+        "man": "/nix/store/9rvirlg49jxq31jc8d9905dvawvvxrsl-python3.12-pip-24.0-man",
+        "out": "/nix/store/hf2va81vrk93qgsj30wg10yapgv815qd-python3.12-pip-24.0"
+      },
+      "system": "x86_64-linux",
+      "group": "toplevel",
+      "priority": 5
+    },
+    {
+      "attr_path": "python312Packages.sqlalchemy",
+      "broken": false,
+      "derivation": "/nix/store/g6vxs8550kpy9f3bf6k9mzs4xwyx5m2b-python3.12-sqlalchemy-2.0.37.drv",
+      "description": "Python SQL toolkit and Object Relational Mapper",
+      "install_id": "sqlalchemy",
+      "license": "MIT",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=73cf49b8ad837ade2de76f87eb53fc85ed5d4680",
+      "name": "python3.12-sqlalchemy-2.0.37",
+      "pname": "sqlalchemy",
+      "rev": "73cf49b8ad837ade2de76f87eb53fc85ed5d4680",
+      "rev_count": 755230,
+      "rev_date": "2025-02-18T08:17:47Z",
+      "scrape_date": "2025-02-20T02:25:42Z",
+      "stabilities": [
+        "staging",
+        "unstable"
+      ],
+      "unfree": false,
+      "version": "2.0.37",
+      "outputs_to_install": [
+        "out"
+      ],
+      "outputs": {
+        "dist": "/nix/store/dvjyzrldiw9z0gmn9gxff4hax3l1ik36-python3.12-sqlalchemy-2.0.37-dist",
+        "out": "/nix/store/7ggly0yck6wqlqnc2n4xd5khi7c0gjlx-python3.12-sqlalchemy-2.0.37"
+      },
+      "system": "aarch64-darwin",
+      "group": "toplevel",
+      "priority": 5
+    },
+    {
+      "attr_path": "python312Packages.sqlalchemy",
+      "broken": false,
+      "derivation": "/nix/store/bwvgd4rz6zimr6wxa4wq76hbfc0nf9gz-python3.12-sqlalchemy-2.0.37.drv",
+      "description": "Python SQL toolkit and Object Relational Mapper",
+      "install_id": "sqlalchemy",
+      "license": "MIT",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=73cf49b8ad837ade2de76f87eb53fc85ed5d4680",
+      "name": "python3.12-sqlalchemy-2.0.37",
+      "pname": "sqlalchemy",
+      "rev": "73cf49b8ad837ade2de76f87eb53fc85ed5d4680",
+      "rev_count": 755230,
+      "rev_date": "2025-02-18T08:17:47Z",
+      "scrape_date": "2025-02-20T02:25:42Z",
+      "stabilities": [
+        "staging",
+        "unstable"
+      ],
+      "unfree": false,
+      "version": "2.0.37",
+      "outputs_to_install": [
+        "out"
+      ],
+      "outputs": {
+        "dist": "/nix/store/r20h80d4nhmmdxw88p2d4f9wy8gmdilq-python3.12-sqlalchemy-2.0.37-dist",
+        "out": "/nix/store/ggq4di3n8av5vc3lyg5cnir3bnz5prn6-python3.12-sqlalchemy-2.0.37"
+      },
+      "system": "aarch64-linux",
+      "group": "toplevel",
+      "priority": 5
+    },
+    {
+      "attr_path": "python312Packages.sqlalchemy",
+      "broken": false,
+      "derivation": "/nix/store/03bq95knjhb5fd9czg40687czy8kjc01-python3.12-sqlalchemy-2.0.37.drv",
+      "description": "Python SQL toolkit and Object Relational Mapper",
+      "install_id": "sqlalchemy",
+      "license": "MIT",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=73cf49b8ad837ade2de76f87eb53fc85ed5d4680",
+      "name": "python3.12-sqlalchemy-2.0.37",
+      "pname": "sqlalchemy",
+      "rev": "73cf49b8ad837ade2de76f87eb53fc85ed5d4680",
+      "rev_count": 755230,
+      "rev_date": "2025-02-18T08:17:47Z",
+      "scrape_date": "2025-02-20T02:25:42Z",
+      "stabilities": [
+        "staging",
+        "unstable"
+      ],
+      "unfree": false,
+      "version": "2.0.37",
+      "outputs_to_install": [
+        "out"
+      ],
+      "outputs": {
+        "dist": "/nix/store/3h3gdy3p8jxl37pv4npyz6vw8wdnbj1k-python3.12-sqlalchemy-2.0.37-dist",
+        "out": "/nix/store/dspdx2ndl9s1w5r6hrgdj2qsjcwqis48-python3.12-sqlalchemy-2.0.37"
+      },
+      "system": "x86_64-darwin",
+      "group": "toplevel",
+      "priority": 5
+    },
+    {
+      "attr_path": "python312Packages.sqlalchemy",
+      "broken": false,
+      "derivation": "/nix/store/f39b7wzn32rw8s2rwafavc4b2dk8grrg-python3.12-sqlalchemy-2.0.37.drv",
+      "description": "Python SQL toolkit and Object Relational Mapper",
+      "install_id": "sqlalchemy",
+      "license": "MIT",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=73cf49b8ad837ade2de76f87eb53fc85ed5d4680",
+      "name": "python3.12-sqlalchemy-2.0.37",
+      "pname": "sqlalchemy",
+      "rev": "73cf49b8ad837ade2de76f87eb53fc85ed5d4680",
+      "rev_count": 755230,
+      "rev_date": "2025-02-18T08:17:47Z",
+      "scrape_date": "2025-02-20T02:25:42Z",
+      "stabilities": [
+        "staging",
+        "unstable"
+      ],
+      "unfree": false,
+      "version": "2.0.37",
+      "outputs_to_install": [
+        "out"
+      ],
+      "outputs": {
+        "dist": "/nix/store/8hi5z9p4ls0b50y6fksmhnswgx6rbsh3-python3.12-sqlalchemy-2.0.37-dist",
+        "out": "/nix/store/1j2jr8p5g3dv271d07nfddd0cz58x81m-python3.12-sqlalchemy-2.0.37"
+      },
+      "system": "x86_64-linux",
+      "group": "toplevel",
+      "priority": 5
+    },
+    {
+      "attr_path": "zlib",
+      "broken": false,
+      "derivation": "/nix/store/5skl576ixs56r7bw7w39sl50r9ll090v-zlib-1.3.1.drv",
+      "description": "Lossless data-compression library",
+      "install_id": "zlib",
+      "license": "Zlib",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=73cf49b8ad837ade2de76f87eb53fc85ed5d4680",
+      "name": "zlib-1.3.1",
+      "pname": "zlib",
+      "rev": "73cf49b8ad837ade2de76f87eb53fc85ed5d4680",
+      "rev_count": 755230,
+      "rev_date": "2025-02-18T08:17:47Z",
+      "scrape_date": "2025-02-20T02:25:42Z",
+      "stabilities": [
+        "staging",
+        "unstable"
+      ],
+      "unfree": false,
+      "version": "1.3.1",
+      "outputs_to_install": [
+        "out"
+      ],
+      "outputs": {
+        "dev": "/nix/store/xdi5lrllrkyzgb8d73hsid44a822ml5x-zlib-1.3.1-dev",
+        "out": "/nix/store/hzq48n4hmcwsgccab7djxxxj2m8h4cxb-zlib-1.3.1",
+        "static": "/nix/store/3cixwjm6nqrc0xb93nlp8hbgc74r8mws-zlib-1.3.1-static"
+      },
+      "system": "aarch64-darwin",
+      "group": "toplevel",
+      "priority": 5
+    },
+    {
+      "attr_path": "zlib",
+      "broken": false,
+      "derivation": "/nix/store/jajcf6fwjpib2ri0caa2ggj389dw5fh4-zlib-1.3.1.drv",
+      "description": "Lossless data-compression library",
+      "install_id": "zlib",
+      "license": "Zlib",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=73cf49b8ad837ade2de76f87eb53fc85ed5d4680",
+      "name": "zlib-1.3.1",
+      "pname": "zlib",
+      "rev": "73cf49b8ad837ade2de76f87eb53fc85ed5d4680",
+      "rev_count": 755230,
+      "rev_date": "2025-02-18T08:17:47Z",
+      "scrape_date": "2025-02-20T02:25:42Z",
+      "stabilities": [
+        "staging",
+        "unstable"
+      ],
+      "unfree": false,
+      "version": "1.3.1",
+      "outputs_to_install": [
+        "out"
+      ],
+      "outputs": {
+        "dev": "/nix/store/vjs0jqq7w99lsmbkk68q23v8qzkzr9ms-zlib-1.3.1-dev",
+        "out": "/nix/store/y6vlbaplzsx9m95zn0h071afi8i5gw58-zlib-1.3.1",
+        "static": "/nix/store/dn8lhy8hgcc5cpycirkj82vjlmjjn91j-zlib-1.3.1-static"
+      },
+      "system": "aarch64-linux",
+      "group": "toplevel",
+      "priority": 5
+    },
+    {
+      "attr_path": "zlib",
+      "broken": false,
+      "derivation": "/nix/store/ihrrll2gspz42lmnwaj87v3ha0ci9mpj-zlib-1.3.1.drv",
+      "description": "Lossless data-compression library",
+      "install_id": "zlib",
+      "license": "Zlib",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=73cf49b8ad837ade2de76f87eb53fc85ed5d4680",
+      "name": "zlib-1.3.1",
+      "pname": "zlib",
+      "rev": "73cf49b8ad837ade2de76f87eb53fc85ed5d4680",
+      "rev_count": 755230,
+      "rev_date": "2025-02-18T08:17:47Z",
+      "scrape_date": "2025-02-20T02:25:42Z",
+      "stabilities": [
+        "staging",
+        "unstable"
+      ],
+      "unfree": false,
+      "version": "1.3.1",
+      "outputs_to_install": [
+        "out"
+      ],
+      "outputs": {
+        "dev": "/nix/store/p0fp3nq3qkrxvrgq05wxak8nq636ghjh-zlib-1.3.1-dev",
+        "out": "/nix/store/0r10n174pvyrll572gnbb3haqxy0gn27-zlib-1.3.1",
+        "static": "/nix/store/rc4y2z20xvkfc4zgm4kxjvckw93v64rw-zlib-1.3.1-static"
+      },
+      "system": "x86_64-darwin",
+      "group": "toplevel",
+      "priority": 5
+    },
+    {
+      "attr_path": "zlib",
+      "broken": false,
+      "derivation": "/nix/store/zpwdb0j0y2168w2d880f2wlbjxc41hji-zlib-1.3.1.drv",
+      "description": "Lossless data-compression library",
+      "install_id": "zlib",
+      "license": "Zlib",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=73cf49b8ad837ade2de76f87eb53fc85ed5d4680",
+      "name": "zlib-1.3.1",
+      "pname": "zlib",
+      "rev": "73cf49b8ad837ade2de76f87eb53fc85ed5d4680",
+      "rev_count": 755230,
+      "rev_date": "2025-02-18T08:17:47Z",
+      "scrape_date": "2025-02-20T02:25:42Z",
+      "stabilities": [
+        "staging",
+        "unstable"
+      ],
+      "unfree": false,
+      "version": "1.3.1",
+      "outputs_to_install": [
+        "out"
+      ],
+      "outputs": {
+        "dev": "/nix/store/wvz2wwp4pkm550i9a33yqwmzj4mkqbk4-zlib-1.3.1-dev",
+        "out": "/nix/store/jb442jir0a2x7zsk0d63xb6rh8p280ai-zlib-1.3.1",
+        "static": "/nix/store/bhrjmz1sfjd14s3gkaik639w1wxvynn1-zlib-1.3.1-static"
+      },
+      "system": "x86_64-linux",
+      "group": "toplevel",
+      "priority": 5
+    }
+  ]
+}

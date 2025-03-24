@@ -1,0 +1,463 @@
+## Flox Environment Manifest -----------------------------------------
+##
+##   _Everything_ you need to know about the _manifest_ is here:
+##
+##               https://flox.dev/docs/concepts/manifest
+##
+## -------------------------------------------------------------------
+# Flox manifest version managed by Flox CLI
+version = 1
+
+
+## Install Packages --------------------------------------------------
+##  $ flox install gum  <- puts a package in [install] section below
+##  $ flox search gum   <- search for a package
+##  $ flox show gum     <- show all versions of a package
+## -------------------------------------------------------------------
+[install]
+harlequin.pkg-path = "harlequin"
+gum.pkg-path = "gum"
+harlequin-postgres.pkg-path = "python312Packages.harlequin-postgres"
+glibcLocalesUtf8.pkg-path = "glibcLocalesUtf8"
+glibcLocalesUtf8.systems = ["aarch64-linux", "x86_64-linux"]
+# gum.pkg-path = "gum"
+# gum.version = "^0.14.5"
+
+
+## Environment Variables ---------------------------------------------
+##  ... available for use in the activated environment
+##      as well as [hook], [profile] scripts and [services] below.
+## -------------------------------------------------------------------
+[vars]
+#LANG = "en_US.UTF-8"
+#LC_ALL = "en_US.UTF-8"
+PYTHON = "python3"
+#LOCALE_ARCHIVE = "${pkgs.glibcLocalesUtf8}/lib/locale/locale-archive"
+
+## Activation Hook ---------------------------------------------------
+##  ... run by _bash_ shell when you run 'flox activate'.
+## -------------------------------------------------------------------
+[hook]
+on-activate = '''
+export LANG=en_US.UTF-8
+export LC_ALL=en_US.UTF-8
+
+# this is where we look for valid postgres.config and harlequin.env files
+if [[ -n "${DEFAULT_PGDIR}" ]]; then
+    PG_ENV_DIR="$(dirname "${DEFAULT_PGDIR}")"
+    export PG_CONFIG="${PG_ENV_DIR}/postgres.config"
+    export HARLEQUIN_CONFIG="${PG_ENV_DIR}/harlequin.env"
+elif [[ -n "${PGDIR}" ]]; then
+    export PG_CONFIG="${PGDIR}/postgres.config"
+    export HARLEQUIN_CONFIG="${PGDIR}/harlequin.env"
+else
+    export PG_CONFIG="$(pwd)/postgres.config"
+    export HARLEQUIN_CONFIG="$(pwd)/harlequin.env"
+fi
+
+# env vars for default config
+DEFAULT_HARLEQUIN_HOST="localhost"
+DEFAULT_HARLEQUIN_PORT="5432"
+DEFAULT_HARLEQUIN_USER="postgres"
+DEFAULT_HARLEQUIN_PASSWORD=""
+DEFAULT_HARLEQUIN_DATABASE="postgres"
+
+# are / are not postgres env vars exported and available
+check_postgres_env() {
+    [[ -n "${PGHOSTADDR}" ]] || return 1
+    [[ -n "${PGPORT}" ]] || return 1
+    [[ -n "${PGUSER}" ]] || return 1
+    [[ -n "${PGPASS}" ]] || return 1
+    [[ -n "${PGDATABASE}" ]] || return 1
+    return 0
+}
+
+# does postgres.config exist? is / is not valid?
+check_postgres_config_file() {
+    [[ -f "${PG_CONFIG}" ]] || return 1
+    
+    local pg_exports
+    pg_exports=$(grep -E '^export PG(HOSTADDR|PORT|USER|PASS|DATABASE)=' "${PG_CONFIG}" | grep -v '\$PG' | head -n 5)
+    
+    (eval "$pg_exports" 2>/dev/null) || return 1
+    eval "$pg_exports"
+    
+    [[ -n "${PGHOSTADDR}" ]] || return 1
+    [[ -n "${PGPORT}" ]] || return 1
+    [[ -n "${PGUSER}" ]] || return 1
+    [[ -n "${PGPASS}" ]] || return 1
+    [[ -n "${PGDATABASE}" ]] || return 1
+    
+    return 0
+}
+
+# does harlequin config exist? is / is not valid?
+check_harlequin_config() {
+    [[ -f "${HARLEQUIN_CONFIG}" ]] || return 1
+    source "${HARLEQUIN_CONFIG}" 2>/dev/null || return 1
+    
+    [[ -n "${HARLEQUIN_HOST}" ]] || return 1
+    [[ -n "${HARLEQUIN_PORT}" ]] || return 1
+    [[ -n "${HARLEQUIN_USER}" ]] || return 1
+    [[ -n "${HARLEQUIN_DATABASE}" ]] || return 1
+    
+    return 0
+}
+
+# bootstrap harlequin config
+configure_harlequin() {
+    clear
+    
+    gum style \
+        --border rounded \
+        --border-foreground 240 \
+        --padding "1 2" \
+        --margin "1 0" \
+        --width 70 \
+        "$(gum style --foreground 27 --bold 'Harlequin Configuration')
+        
+$(gum style --foreground 240 'First-time setup for your SQL development environment')"
+    
+    if gum confirm "$(gum style --foreground 240 'Would you like to customize your Harlequin configuration?')" --default=false; then
+        echo ""
+        gum style --border double --border-foreground 141 --margin "1 2" --padding "1 2" \
+            "$(gum style --foreground 212 --bold 'Database Connection Details')"
+        echo ""
+        
+        HARLEQUIN_HOST=$(gum input --placeholder "$DEFAULT_HARLEQUIN_HOST" --value "$DEFAULT_HARLEQUIN_HOST" --prompt "Host Address: ")
+        HARLEQUIN_PORT=$(gum input --placeholder "$DEFAULT_HARLEQUIN_PORT" --value "$DEFAULT_HARLEQUIN_PORT" --prompt "Port: ")
+        HARLEQUIN_USER=$(gum input --placeholder "$DEFAULT_HARLEQUIN_USER" --value "$DEFAULT_HARLEQUIN_USER" --prompt "Username: ")
+        HARLEQUIN_PASSWORD=$(gum input --placeholder "$DEFAULT_HARLEQUIN_PASSWORD" --value "$DEFAULT_HARLEQUIN_PASSWORD" --prompt "Password: " --password)
+        HARLEQUIN_DATABASE=$(gum input --placeholder "$DEFAULT_HARLEQUIN_DATABASE" --value "$DEFAULT_HARLEQUIN_DATABASE" --prompt "Database: ")
+    else
+        HARLEQUIN_HOST="$DEFAULT_HARLEQUIN_HOST"
+        HARLEQUIN_PORT="$DEFAULT_HARLEQUIN_PORT"
+        HARLEQUIN_USER="$DEFAULT_HARLEQUIN_USER"
+        HARLEQUIN_PASSWORD="$DEFAULT_HARLEQUIN_PASSWORD"
+        HARLEQUIN_DATABASE="$DEFAULT_HARLEQUIN_DATABASE"
+    fi
+    
+    export HARLEQUIN_HOST HARLEQUIN_PORT HARLEQUIN_USER HARLEQUIN_PASSWORD HARLEQUIN_DATABASE
+    save_harlequin_config
+}
+
+# save harlequin config
+save_harlequin_config() {
+    cat > "${HARLEQUIN_CONFIG}" << EOF
+# Harlequin configuration - Generated on $(date)
+export HARLEQUIN_HOST="${HARLEQUIN_HOST}"
+export HARLEQUIN_PORT="${HARLEQUIN_PORT}"
+export HARLEQUIN_USER="${HARLEQUIN_USER}"
+export HARLEQUIN_PASSWORD="${HARLEQUIN_PASSWORD}"
+export HARLEQUIN_DATABASE="${HARLEQUIN_DATABASE}"
+EOF
+    chmod 600 "${HARLEQUIN_CONFIG}"
+}
+
+# set up env vars for harlequin
+setup_harlequin_vars() {
+    if check_postgres_env; then
+        export HARLEQUIN_HOST="${PGHOSTADDR}"
+        export HARLEQUIN_PORT="${PGPORT}"
+        export HARLEQUIN_USER="${PGUSER}"
+        export HARLEQUIN_PASSWORD="${PGPASS}"
+        export HARLEQUIN_DATABASE="${PGDATABASE}"
+        save_harlequin_config
+        return 0
+    fi
+    
+    if check_postgres_config_file; then
+        export HARLEQUIN_HOST="${PGHOSTADDR}"
+        export HARLEQUIN_PORT="${PGPORT}"
+        export HARLEQUIN_USER="${PGUSER}"
+        export HARLEQUIN_PASSWORD="${PGPASS}"
+        export HARLEQUIN_DATABASE="${PGDATABASE}"
+        save_harlequin_config
+        return 0
+    fi
+    
+    if check_harlequin_config; then
+        return 0
+    fi
+
+    configure_harlequin
+    return 0
+}
+
+show_harlequin_help() {
+    # Determine display host
+    local display_host
+    if [[ "$HARLEQUIN_HOST" == "0.0.0.0" ]]; then
+        display_host="localhost"
+    else
+        display_host="$HARLEQUIN_HOST"
+    fi
+    
+    # Create the help message with Gum styling
+    gum style \
+        --border rounded \
+        --border-foreground 240 \
+        --padding "1 2" \
+        --margin "1 0" \
+        --width 70 \
+        "$(gum style --foreground 141 --bold 'This is a  F l o x  Harlequin SQL query env for PostgreSQL')
+
+👉  Run Harlequin:
+    $(gum style --foreground 212 'harlequin')
+
+👉  Modify Harlequin Config:
+    $(gum style --foreground 212 'editconf')
+
+👉  Environment-Specific Commands:
+    $(gum style --foreground 212 'hqtest')      Test Harlequin database connection
+    $(gum style --foreground 212 'pgtest')      Test PostgreSQL connection
+    $(gum style --foreground 212 'dbinfo')      Show database information
+    $(gum style --foreground 212 'hqsync')      Sync Harlequin settings from PostgreSQL
+    $(gum style --foreground 212 'hqreset')     Reset Harlequin configuration
+    $(gum style --foreground 212 'hqvalidate')  Validate connection string
+
+👉  Connection Details:
+    Host:     $(gum style --foreground 212 "${display_host}")
+    Port:     $(gum style --foreground 212 "${HARLEQUIN_PORT}")
+    Database: $(gum style --foreground 212 "${HARLEQUIN_DATABASE}")
+    User:     $(gum style --foreground 212 "${HARLEQUIN_USER}")"
+
+    echo ""
+}
+
+# runnit
+setup_harlequin_vars
+show_harlequin_help
+
+# uncomment to run harlequin automatically
+#harlequin
+'''
+
+
+## Profile script ----------------------------------------------------
+## ... sourced by _your shell_ when you run 'flox activate'.
+## -------------------------------------------------------------------
+[profile]
+# common = '''
+#   gum style \
+#   --foreground 212 --border-foreground 212 --border double \
+#   --align center --width 50 --margin "1 2" --padding "2 4" \
+#     $INTRO_MESSAGE
+# '''
+## Shell specific profiles go here:
+bash = '''
+
+harlequin() {
+    harlequin="$(which harlequin)"
+    "${harlequin}" --adapter postgres "postgresql://${HARLEQUIN_USER}:${HARLEQUIN_PASSWORD}@${HARLEQUIN_HOST}:${HARLEQUIN_PORT}/${HARLEQUIN_DATABASE}"
+}
+
+editconf() {
+  local file="$HARLEQUIN_CONFIG"
+  [ -f "$file" ] || return
+  local editor="${EDITOR:-$(command -v nano || command -v code || command -v vim || command -v emacs)}"
+  [ -n "$editor" ] && "$editor" "$file" && source "$file"
+}
+
+# Test PostgreSQL connection
+pgtest() {
+    echo "Testing PostgreSQL connection..."
+    local result
+    if PGPASSWORD="$PGPASS" psql -h "$PGHOSTADDR" -p "$PGPORT" -U "$PGUSER" -d "$PGDATABASE" -c "SELECT 1" >/dev/null 2>&1; then
+        result="$(gum style --foreground 82 "✓ Connection successful to PostgreSQL at $PGHOSTADDR:$PGPORT")"
+        gum style \
+            --border rounded \
+            --border-foreground 240 \
+            --padding "1 2" \
+            --margin "1 0" \
+            "$result"
+        return 0
+    else
+        result="$(gum style --foreground 196 "✗ Connection failed to PostgreSQL at $PGHOSTADDR:$PGPORT")"
+        gum style \
+            --border rounded \
+            --border-foreground 240 \
+            --padding "1 2" \
+            --margin "1 0" \
+            "$result"
+        return 1
+    fi
+}
+
+# Test Harlequin connection
+hqtest() {
+    echo "Testing Harlequin database connection..."
+    local result
+    if PGPASSWORD="$HARLEQUIN_PASSWORD" psql -h "$HARLEQUIN_HOST" -p "$HARLEQUIN_PORT" -U "$HARLEQUIN_USER" -d "$HARLEQUIN_DATABASE" -c "SELECT 1" >/dev/null 2>&1; then
+        result="$(gum style --foreground 82 "✓ Connection successful to database at $HARLEQUIN_HOST:$HARLEQUIN_PORT")"
+        gum style \
+            --border rounded \
+            --border-foreground 240 \
+            --padding "1 2" \
+            --margin "1 0" \
+            "$result"
+        return 0
+    else
+        result="$(gum style --foreground 196 "✗ Connection failed to database at $HARLEQUIN_HOST:$HARLEQUIN_PORT")"
+        gum style \
+            --border rounded \
+            --border-foreground 240 \
+            --padding "1 2" \
+            --margin "1 0" \
+            "$result"
+        return 1
+    fi
+}
+
+# Sync Harlequin config from PostgreSQL config
+hqsync() {
+    gum confirm "Sync Harlequin configuration from PostgreSQL?" || return 1
+    
+    local result
+    if check_postgres_env || check_postgres_config_file; then
+        export HARLEQUIN_HOST="${PGHOSTADDR}"
+        export HARLEQUIN_PORT="${PGPORT}"
+        export HARLEQUIN_USER="${PGUSER}"
+        export HARLEQUIN_PASSWORD="${PGPASS}"
+        export HARLEQUIN_DATABASE="${PGDATABASE}"
+        save_harlequin_config
+        
+        result="$(gum style --foreground 82 "✓ Harlequin configuration synchronized from PostgreSQL")"
+        gum style \
+            --border rounded \
+            --border-foreground 240 \
+            --padding "1 2" \
+            --margin "1 0" \
+            "$result"
+        return 0
+    else
+        result="$(gum style --foreground 196 "✗ PostgreSQL configuration not found or invalid")"
+        gum style \
+            --border rounded \
+            --border-foreground 240 \
+            --padding "1 2" \
+            --margin "1 0" \
+            "$result"
+        return 1
+    fi
+}
+
+# Quick database information
+dbinfo() {
+    echo "Gathering database information..."
+    local info
+    if ! info=$(PGPASSWORD="$HARLEQUIN_PASSWORD" psql -h "$HARLEQUIN_HOST" -p "$HARLEQUIN_PORT" -U "$HARLEQUIN_USER" -d "$HARLEQUIN_DATABASE" -c "
+SELECT
+  current_database() as current_db,
+  version() as version,
+  (SELECT count(*) FROM pg_catalog.pg_tables WHERE schemaname = 'public') as tables,
+  pg_size_pretty(pg_database_size(current_database())) as db_size;" -t 2>/dev/null); then
+        local result="$(gum style --foreground 196 "✗ Could not connect to database")"
+        gum style \
+            --border rounded \
+            --border-foreground 240 \
+            --padding "1 2" \
+            --margin "1 0" \
+            "$result"
+        return 1
+    fi
+    
+    local db=$(echo "$info" | sed -n 1p | xargs)
+    local version=$(echo "$info" | sed -n 2p | xargs)
+    local tables=$(echo "$info" | sed -n 3p | xargs)
+    local size=$(echo "$info" | sed -n 4p | xargs)
+    
+    gum style \
+        --border rounded \
+        --border-foreground 240 \
+        --padding "1 2" \
+        --margin "1 0" \
+        "$(gum style --foreground 141 --bold "Database Information")
+
+$(gum style --foreground 69 "Database:") $db
+$(gum style --foreground 69 "Version:") $version
+$(gum style --foreground 69 "Tables:") $tables
+$(gum style --foreground 69 "Size:") $size"
+}
+
+# Reset Harlequin configuration
+hqreset() {
+    gum confirm "$(gum style --foreground 196 'Reset Harlequin configuration to defaults?')" || return 1
+    
+    export HARLEQUIN_HOST="$DEFAULT_HARLEQUIN_HOST"
+    export HARLEQUIN_PORT="$DEFAULT_HARLEQUIN_PORT"
+    export HARLEQUIN_USER="$DEFAULT_HARLEQUIN_USER"
+    export HARLEQUIN_PASSWORD="$DEFAULT_HARLEQUIN_PASSWORD"
+    export HARLEQUIN_DATABASE="$DEFAULT_HARLEQUIN_DATABASE"
+    
+    save_harlequin_config
+    
+    local result="$(gum style --foreground 82 "✓ Harlequin configuration reset to defaults")"
+    gum style \
+        --border rounded \
+        --border-foreground 240 \
+        --padding "1 2" \
+        --margin "1 0" \
+        "$result"
+}
+
+# Validate connection string
+hqvalidate() {
+    local conn_string="postgresql://${HARLEQUIN_USER}:${HARLEQUIN_PASSWORD}@${HARLEQUIN_HOST}:${HARLEQUIN_PORT}/${HARLEQUIN_DATABASE}"
+    
+    # Mask password for display
+    local display_string
+    if [[ -n "$HARLEQUIN_PASSWORD" ]]; then
+        display_string="postgresql://${HARLEQUIN_USER}:****@${HARLEQUIN_HOST}:${HARLEQUIN_PORT}/${HARLEQUIN_DATABASE}"
+    else
+        display_string="$conn_string"
+    fi
+    
+    local result
+    local status
+    
+    echo "Validating connection..."
+    if PGPASSWORD="$HARLEQUIN_PASSWORD" psql -h "$HARLEQUIN_HOST" -p "$HARLEQUIN_PORT" -U "$HARLEQUIN_USER" -d "$HARLEQUIN_DATABASE" -c "SELECT 1" >/dev/null 2>&1; then
+        status="$(gum style --foreground 82 "✓ Connection string is valid")"
+        result="Connection: $display_string
+
+$status"
+    else
+        status="$(gum style --foreground 196 "✗ Connection string is invalid")"
+        result="Connection: $display_string
+
+$status"
+    fi
+    
+    gum style \
+        --border rounded \
+        --border-foreground 240 \
+        --padding "1 2" \
+        --margin "1 0" \
+        "$result"
+}
+'''
+# zsh  = ...
+# fish = ...
+
+
+## Services ----------------------------------------------------------
+##  $ flox services start             <- Starts all services
+##  $ flox services status            <- Status of running services
+##  $ flox activate --start-services  <- Activates & starts all
+## -------------------------------------------------------------------
+[services]
+# myservice.command = "python3 -m http.server"
+
+
+## Other Environment Options -----------------------------------------
+[options]
+# Systems that environment is compatible with
+systems = [
+  "aarch64-darwin",
+  "aarch64-linux",
+  "x86_64-darwin",
+  "x86_64-linux",
+]
+# Uncomment to disable CUDA detection.
+# cuda-detection = false

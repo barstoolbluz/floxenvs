@@ -1,0 +1,473 @@
+{
+  "lockfile-version": 1,
+  "manifest": {
+    "version": 1,
+    "install": {
+      "glibcLocalesUtf8": {
+        "pkg-path": "glibcLocalesUtf8",
+        "systems": [
+          "aarch64-linux",
+          "x86_64-linux"
+        ]
+      },
+      "gum": {
+        "pkg-path": "gum"
+      },
+      "harlequin": {
+        "pkg-path": "harlequin"
+      },
+      "harlequin-postgres": {
+        "pkg-path": "python312Packages.harlequin-postgres"
+      }
+    },
+    "vars": {
+      "PYTHON": "python3"
+    },
+    "hook": {
+      "on-activate": "export LANG=en_US.UTF-8\nexport LC_ALL=en_US.UTF-8\n\n# this is where we look for valid postgres.config and harlequin.env files\nif [[ -n \"${DEFAULT_PGDIR}\" ]]; then\n    PG_ENV_DIR=\"$(dirname \"${DEFAULT_PGDIR}\")\"\n    export PG_CONFIG=\"${PG_ENV_DIR}/postgres.config\"\n    export HARLEQUIN_CONFIG=\"${PG_ENV_DIR}/harlequin.env\"\nelif [[ -n \"${PGDIR}\" ]]; then\n    export PG_CONFIG=\"${PGDIR}/postgres.config\"\n    export HARLEQUIN_CONFIG=\"${PGDIR}/harlequin.env\"\nelse\n    export PG_CONFIG=\"$(pwd)/postgres.config\"\n    export HARLEQUIN_CONFIG=\"$(pwd)/harlequin.env\"\nfi\n\n# env vars for default config\nDEFAULT_HARLEQUIN_HOST=\"localhost\"\nDEFAULT_HARLEQUIN_PORT=\"5432\"\nDEFAULT_HARLEQUIN_USER=\"postgres\"\nDEFAULT_HARLEQUIN_PASSWORD=\"\"\nDEFAULT_HARLEQUIN_DATABASE=\"postgres\"\n\n# are / are not postgres env vars exported and available\ncheck_postgres_env() {\n    [[ -n \"${PGHOSTADDR}\" ]] || return 1\n    [[ -n \"${PGPORT}\" ]] || return 1\n    [[ -n \"${PGUSER}\" ]] || return 1\n    [[ -n \"${PGPASS}\" ]] || return 1\n    [[ -n \"${PGDATABASE}\" ]] || return 1\n    return 0\n}\n\n# does postgres.config exist? is / is not valid?\ncheck_postgres_config_file() {\n    [[ -f \"${PG_CONFIG}\" ]] || return 1\n    \n    local pg_exports\n    pg_exports=$(grep -E '^export PG(HOSTADDR|PORT|USER|PASS|DATABASE)=' \"${PG_CONFIG}\" | grep -v '\\$PG' | head -n 5)\n    \n    (eval \"$pg_exports\" 2>/dev/null) || return 1\n    eval \"$pg_exports\"\n    \n    [[ -n \"${PGHOSTADDR}\" ]] || return 1\n    [[ -n \"${PGPORT}\" ]] || return 1\n    [[ -n \"${PGUSER}\" ]] || return 1\n    [[ -n \"${PGPASS}\" ]] || return 1\n    [[ -n \"${PGDATABASE}\" ]] || return 1\n    \n    return 0\n}\n\n# does harlequin config exist? is / is not valid?\ncheck_harlequin_config() {\n    [[ -f \"${HARLEQUIN_CONFIG}\" ]] || return 1\n    source \"${HARLEQUIN_CONFIG}\" 2>/dev/null || return 1\n    \n    [[ -n \"${HARLEQUIN_HOST}\" ]] || return 1\n    [[ -n \"${HARLEQUIN_PORT}\" ]] || return 1\n    [[ -n \"${HARLEQUIN_USER}\" ]] || return 1\n    [[ -n \"${HARLEQUIN_DATABASE}\" ]] || return 1\n    \n    return 0\n}\n\n# bootstrap harlequin config\nconfigure_harlequin() {\n    clear\n    \n    gum style \\\n        --border rounded \\\n        --border-foreground 240 \\\n        --padding \"1 2\" \\\n        --margin \"1 0\" \\\n        --width 70 \\\n        \"$(gum style --foreground 27 --bold 'Harlequin Configuration')\n        \n$(gum style --foreground 240 'First-time setup for your SQL development environment')\"\n    \n    if gum confirm \"$(gum style --foreground 240 'Would you like to customize your Harlequin configuration?')\" --default=false; then\n        echo \"\"\n        gum style --border double --border-foreground 141 --margin \"1 2\" --padding \"1 2\" \\\n            \"$(gum style --foreground 212 --bold 'Database Connection Details')\"\n        echo \"\"\n        \n        HARLEQUIN_HOST=$(gum input --placeholder \"$DEFAULT_HARLEQUIN_HOST\" --value \"$DEFAULT_HARLEQUIN_HOST\" --prompt \"Host Address: \")\n        HARLEQUIN_PORT=$(gum input --placeholder \"$DEFAULT_HARLEQUIN_PORT\" --value \"$DEFAULT_HARLEQUIN_PORT\" --prompt \"Port: \")\n        HARLEQUIN_USER=$(gum input --placeholder \"$DEFAULT_HARLEQUIN_USER\" --value \"$DEFAULT_HARLEQUIN_USER\" --prompt \"Username: \")\n        HARLEQUIN_PASSWORD=$(gum input --placeholder \"$DEFAULT_HARLEQUIN_PASSWORD\" --value \"$DEFAULT_HARLEQUIN_PASSWORD\" --prompt \"Password: \" --password)\n        HARLEQUIN_DATABASE=$(gum input --placeholder \"$DEFAULT_HARLEQUIN_DATABASE\" --value \"$DEFAULT_HARLEQUIN_DATABASE\" --prompt \"Database: \")\n    else\n        HARLEQUIN_HOST=\"$DEFAULT_HARLEQUIN_HOST\"\n        HARLEQUIN_PORT=\"$DEFAULT_HARLEQUIN_PORT\"\n        HARLEQUIN_USER=\"$DEFAULT_HARLEQUIN_USER\"\n        HARLEQUIN_PASSWORD=\"$DEFAULT_HARLEQUIN_PASSWORD\"\n        HARLEQUIN_DATABASE=\"$DEFAULT_HARLEQUIN_DATABASE\"\n    fi\n    \n    export HARLEQUIN_HOST HARLEQUIN_PORT HARLEQUIN_USER HARLEQUIN_PASSWORD HARLEQUIN_DATABASE\n    save_harlequin_config\n}\n\n# save harlequin config\nsave_harlequin_config() {\n    cat > \"${HARLEQUIN_CONFIG}\" << EOF\n# Harlequin configuration - Generated on $(date)\nexport HARLEQUIN_HOST=\"${HARLEQUIN_HOST}\"\nexport HARLEQUIN_PORT=\"${HARLEQUIN_PORT}\"\nexport HARLEQUIN_USER=\"${HARLEQUIN_USER}\"\nexport HARLEQUIN_PASSWORD=\"${HARLEQUIN_PASSWORD}\"\nexport HARLEQUIN_DATABASE=\"${HARLEQUIN_DATABASE}\"\nEOF\n    chmod 600 \"${HARLEQUIN_CONFIG}\"\n}\n\n# set up env vars for harlequin\nsetup_harlequin_vars() {\n    if check_postgres_env; then\n        export HARLEQUIN_HOST=\"${PGHOSTADDR}\"\n        export HARLEQUIN_PORT=\"${PGPORT}\"\n        export HARLEQUIN_USER=\"${PGUSER}\"\n        export HARLEQUIN_PASSWORD=\"${PGPASS}\"\n        export HARLEQUIN_DATABASE=\"${PGDATABASE}\"\n        save_harlequin_config\n        return 0\n    fi\n    \n    if check_postgres_config_file; then\n        export HARLEQUIN_HOST=\"${PGHOSTADDR}\"\n        export HARLEQUIN_PORT=\"${PGPORT}\"\n        export HARLEQUIN_USER=\"${PGUSER}\"\n        export HARLEQUIN_PASSWORD=\"${PGPASS}\"\n        export HARLEQUIN_DATABASE=\"${PGDATABASE}\"\n        save_harlequin_config\n        return 0\n    fi\n    \n    if check_harlequin_config; then\n        return 0\n    fi\n\n    configure_harlequin\n    return 0\n}\n\nshow_harlequin_help() {\n    # Determine display host\n    local display_host\n    if [[ \"$HARLEQUIN_HOST\" == \"0.0.0.0\" ]]; then\n        display_host=\"localhost\"\n    else\n        display_host=\"$HARLEQUIN_HOST\"\n    fi\n    \n    # Create the help message with Gum styling\n    gum style \\\n        --border rounded \\\n        --border-foreground 240 \\\n        --padding \"1 2\" \\\n        --margin \"1 0\" \\\n        --width 70 \\\n        \"$(gum style --foreground 141 --bold 'This is a  F l o x  Harlequin SQL query env for PostgreSQL')\n\n👉  Run Harlequin:\n    $(gum style --foreground 212 'harlequin')\n\n👉  Modify Harlequin Config:\n    $(gum style --foreground 212 'editconf')\n\n👉  Environment-Specific Commands:\n    $(gum style --foreground 212 'hqtest')      Test Harlequin database connection\n    $(gum style --foreground 212 'pgtest')      Test PostgreSQL connection\n    $(gum style --foreground 212 'dbinfo')      Show database information\n    $(gum style --foreground 212 'hqsync')      Sync Harlequin settings from PostgreSQL\n    $(gum style --foreground 212 'hqreset')     Reset Harlequin configuration\n    $(gum style --foreground 212 'hqvalidate')  Validate connection string\n\n👉  Connection Details:\n    Host:     $(gum style --foreground 212 \"${display_host}\")\n    Port:     $(gum style --foreground 212 \"${HARLEQUIN_PORT}\")\n    Database: $(gum style --foreground 212 \"${HARLEQUIN_DATABASE}\")\n    User:     $(gum style --foreground 212 \"${HARLEQUIN_USER}\")\"\n\n    echo \"\"\n}\n\n# runnit\nsetup_harlequin_vars\nshow_harlequin_help\n\n# uncomment to run harlequin automatically\n#harlequin\n"
+    },
+    "profile": {
+      "bash": "\nharlequin() {\n    harlequin=\"$(which harlequin)\"\n    \"${harlequin}\" --adapter postgres \"postgresql://${HARLEQUIN_USER}:${HARLEQUIN_PASSWORD}@${HARLEQUIN_HOST}:${HARLEQUIN_PORT}/${HARLEQUIN_DATABASE}\"\n}\n\neditconf() {\n  local file=\"$HARLEQUIN_CONFIG\"\n  [ -f \"$file\" ] || return\n  local editor=\"${EDITOR:-$(command -v nano || command -v code || command -v vim || command -v emacs)}\"\n  [ -n \"$editor\" ] && \"$editor\" \"$file\" && source \"$file\"\n}\n\n# Test PostgreSQL connection\npgtest() {\n    echo \"Testing PostgreSQL connection...\"\n    local result\n    if PGPASSWORD=\"$PGPASS\" psql -h \"$PGHOSTADDR\" -p \"$PGPORT\" -U \"$PGUSER\" -d \"$PGDATABASE\" -c \"SELECT 1\" >/dev/null 2>&1; then\n        result=\"$(gum style --foreground 82 \"✓ Connection successful to PostgreSQL at $PGHOSTADDR:$PGPORT\")\"\n        gum style \\\n            --border rounded \\\n            --border-foreground 240 \\\n            --padding \"1 2\" \\\n            --margin \"1 0\" \\\n            \"$result\"\n        return 0\n    else\n        result=\"$(gum style --foreground 196 \"✗ Connection failed to PostgreSQL at $PGHOSTADDR:$PGPORT\")\"\n        gum style \\\n            --border rounded \\\n            --border-foreground 240 \\\n            --padding \"1 2\" \\\n            --margin \"1 0\" \\\n            \"$result\"\n        return 1\n    fi\n}\n\n# Test Harlequin connection\nhqtest() {\n    echo \"Testing Harlequin database connection...\"\n    local result\n    if PGPASSWORD=\"$HARLEQUIN_PASSWORD\" psql -h \"$HARLEQUIN_HOST\" -p \"$HARLEQUIN_PORT\" -U \"$HARLEQUIN_USER\" -d \"$HARLEQUIN_DATABASE\" -c \"SELECT 1\" >/dev/null 2>&1; then\n        result=\"$(gum style --foreground 82 \"✓ Connection successful to database at $HARLEQUIN_HOST:$HARLEQUIN_PORT\")\"\n        gum style \\\n            --border rounded \\\n            --border-foreground 240 \\\n            --padding \"1 2\" \\\n            --margin \"1 0\" \\\n            \"$result\"\n        return 0\n    else\n        result=\"$(gum style --foreground 196 \"✗ Connection failed to database at $HARLEQUIN_HOST:$HARLEQUIN_PORT\")\"\n        gum style \\\n            --border rounded \\\n            --border-foreground 240 \\\n            --padding \"1 2\" \\\n            --margin \"1 0\" \\\n            \"$result\"\n        return 1\n    fi\n}\n\n# Sync Harlequin config from PostgreSQL config\nhqsync() {\n    gum confirm \"Sync Harlequin configuration from PostgreSQL?\" || return 1\n    \n    local result\n    if check_postgres_env || check_postgres_config_file; then\n        export HARLEQUIN_HOST=\"${PGHOSTADDR}\"\n        export HARLEQUIN_PORT=\"${PGPORT}\"\n        export HARLEQUIN_USER=\"${PGUSER}\"\n        export HARLEQUIN_PASSWORD=\"${PGPASS}\"\n        export HARLEQUIN_DATABASE=\"${PGDATABASE}\"\n        save_harlequin_config\n        \n        result=\"$(gum style --foreground 82 \"✓ Harlequin configuration synchronized from PostgreSQL\")\"\n        gum style \\\n            --border rounded \\\n            --border-foreground 240 \\\n            --padding \"1 2\" \\\n            --margin \"1 0\" \\\n            \"$result\"\n        return 0\n    else\n        result=\"$(gum style --foreground 196 \"✗ PostgreSQL configuration not found or invalid\")\"\n        gum style \\\n            --border rounded \\\n            --border-foreground 240 \\\n            --padding \"1 2\" \\\n            --margin \"1 0\" \\\n            \"$result\"\n        return 1\n    fi\n}\n\n# Quick database information\ndbinfo() {\n    echo \"Gathering database information...\"\n    local info\n    if ! info=$(PGPASSWORD=\"$HARLEQUIN_PASSWORD\" psql -h \"$HARLEQUIN_HOST\" -p \"$HARLEQUIN_PORT\" -U \"$HARLEQUIN_USER\" -d \"$HARLEQUIN_DATABASE\" -c \"\nSELECT\n  current_database() as current_db,\n  version() as version,\n  (SELECT count(*) FROM pg_catalog.pg_tables WHERE schemaname = 'public') as tables,\n  pg_size_pretty(pg_database_size(current_database())) as db_size;\" -t 2>/dev/null); then\n        local result=\"$(gum style --foreground 196 \"✗ Could not connect to database\")\"\n        gum style \\\n            --border rounded \\\n            --border-foreground 240 \\\n            --padding \"1 2\" \\\n            --margin \"1 0\" \\\n            \"$result\"\n        return 1\n    fi\n    \n    local db=$(echo \"$info\" | sed -n 1p | xargs)\n    local version=$(echo \"$info\" | sed -n 2p | xargs)\n    local tables=$(echo \"$info\" | sed -n 3p | xargs)\n    local size=$(echo \"$info\" | sed -n 4p | xargs)\n    \n    gum style \\\n        --border rounded \\\n        --border-foreground 240 \\\n        --padding \"1 2\" \\\n        --margin \"1 0\" \\\n        \"$(gum style --foreground 141 --bold \"Database Information\")\n\n$(gum style --foreground 69 \"Database:\") $db\n$(gum style --foreground 69 \"Version:\") $version\n$(gum style --foreground 69 \"Tables:\") $tables\n$(gum style --foreground 69 \"Size:\") $size\"\n}\n\n# Reset Harlequin configuration\nhqreset() {\n    gum confirm \"$(gum style --foreground 196 'Reset Harlequin configuration to defaults?')\" || return 1\n    \n    export HARLEQUIN_HOST=\"$DEFAULT_HARLEQUIN_HOST\"\n    export HARLEQUIN_PORT=\"$DEFAULT_HARLEQUIN_PORT\"\n    export HARLEQUIN_USER=\"$DEFAULT_HARLEQUIN_USER\"\n    export HARLEQUIN_PASSWORD=\"$DEFAULT_HARLEQUIN_PASSWORD\"\n    export HARLEQUIN_DATABASE=\"$DEFAULT_HARLEQUIN_DATABASE\"\n    \n    save_harlequin_config\n    \n    local result=\"$(gum style --foreground 82 \"✓ Harlequin configuration reset to defaults\")\"\n    gum style \\\n        --border rounded \\\n        --border-foreground 240 \\\n        --padding \"1 2\" \\\n        --margin \"1 0\" \\\n        \"$result\"\n}\n\n# Validate connection string\nhqvalidate() {\n    local conn_string=\"postgresql://${HARLEQUIN_USER}:${HARLEQUIN_PASSWORD}@${HARLEQUIN_HOST}:${HARLEQUIN_PORT}/${HARLEQUIN_DATABASE}\"\n    \n    # Mask password for display\n    local display_string\n    if [[ -n \"$HARLEQUIN_PASSWORD\" ]]; then\n        display_string=\"postgresql://${HARLEQUIN_USER}:****@${HARLEQUIN_HOST}:${HARLEQUIN_PORT}/${HARLEQUIN_DATABASE}\"\n    else\n        display_string=\"$conn_string\"\n    fi\n    \n    local result\n    local status\n    \n    echo \"Validating connection...\"\n    if PGPASSWORD=\"$HARLEQUIN_PASSWORD\" psql -h \"$HARLEQUIN_HOST\" -p \"$HARLEQUIN_PORT\" -U \"$HARLEQUIN_USER\" -d \"$HARLEQUIN_DATABASE\" -c \"SELECT 1\" >/dev/null 2>&1; then\n        status=\"$(gum style --foreground 82 \"✓ Connection string is valid\")\"\n        result=\"Connection: $display_string\n\n$status\"\n    else\n        status=\"$(gum style --foreground 196 \"✗ Connection string is invalid\")\"\n        result=\"Connection: $display_string\n\n$status\"\n    fi\n    \n    gum style \\\n        --border rounded \\\n        --border-foreground 240 \\\n        --padding \"1 2\" \\\n        --margin \"1 0\" \\\n        \"$result\"\n}\n"
+    },
+    "options": {
+      "systems": [
+        "aarch64-darwin",
+        "aarch64-linux",
+        "x86_64-darwin",
+        "x86_64-linux"
+      ],
+      "allow": {
+        "licenses": []
+      },
+      "semver": {}
+    }
+  },
+  "packages": [
+    {
+      "attr_path": "glibcLocalesUtf8",
+      "broken": false,
+      "derivation": "/nix/store/gwwpfwqr9n2gw198ad5f3rl3j7dkwpsb-glibc-locales-2.40-66.drv",
+      "description": "Locale information for the GNU C Library",
+      "install_id": "glibcLocalesUtf8",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=73cf49b8ad837ade2de76f87eb53fc85ed5d4680",
+      "name": "glibc-locales-2.40-66",
+      "pname": "glibcLocalesUtf8",
+      "rev": "73cf49b8ad837ade2de76f87eb53fc85ed5d4680",
+      "rev_count": 755230,
+      "rev_date": "2025-02-18T08:17:47Z",
+      "scrape_date": "2025-02-20T02:25:42Z",
+      "stabilities": [
+        "staging",
+        "unstable"
+      ],
+      "unfree": false,
+      "version": "2.40-66",
+      "outputs_to_install": [
+        "out"
+      ],
+      "outputs": {
+        "out": "/nix/store/ywws5rbfs39g6mb24540swa622sp5qk3-glibc-locales-2.40-66"
+      },
+      "system": "aarch64-linux",
+      "group": "toplevel",
+      "priority": 5
+    },
+    {
+      "attr_path": "glibcLocalesUtf8",
+      "broken": false,
+      "derivation": "/nix/store/5xivlyfzsnqqrx6133a6j1xym3lxz4c9-glibc-locales-2.40-66.drv",
+      "description": "Locale information for the GNU C Library",
+      "install_id": "glibcLocalesUtf8",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=73cf49b8ad837ade2de76f87eb53fc85ed5d4680",
+      "name": "glibc-locales-2.40-66",
+      "pname": "glibcLocalesUtf8",
+      "rev": "73cf49b8ad837ade2de76f87eb53fc85ed5d4680",
+      "rev_count": 755230,
+      "rev_date": "2025-02-18T08:17:47Z",
+      "scrape_date": "2025-02-20T02:25:42Z",
+      "stabilities": [
+        "staging",
+        "unstable"
+      ],
+      "unfree": false,
+      "version": "2.40-66",
+      "outputs_to_install": [
+        "out"
+      ],
+      "outputs": {
+        "out": "/nix/store/mdqcp49cqf8fcb1jq3y4v8hn3lc8zm71-glibc-locales-2.40-66"
+      },
+      "system": "x86_64-linux",
+      "group": "toplevel",
+      "priority": 5
+    },
+    {
+      "attr_path": "gum",
+      "broken": false,
+      "derivation": "/nix/store/zvg9sbdqbayggs3n18gd6c8g8lm950ms-gum-0.15.2.drv",
+      "description": "Tasty Bubble Gum for your shell",
+      "install_id": "gum",
+      "license": "MIT",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=73cf49b8ad837ade2de76f87eb53fc85ed5d4680",
+      "name": "gum-0.15.2",
+      "pname": "gum",
+      "rev": "73cf49b8ad837ade2de76f87eb53fc85ed5d4680",
+      "rev_count": 755230,
+      "rev_date": "2025-02-18T08:17:47Z",
+      "scrape_date": "2025-02-20T02:25:42Z",
+      "stabilities": [
+        "staging",
+        "unstable"
+      ],
+      "unfree": false,
+      "version": "0.15.2",
+      "outputs_to_install": [
+        "out"
+      ],
+      "outputs": {
+        "out": "/nix/store/jklh2l06j8hicjp42pjjzhzc0dkk23v1-gum-0.15.2"
+      },
+      "system": "aarch64-darwin",
+      "group": "toplevel",
+      "priority": 5
+    },
+    {
+      "attr_path": "gum",
+      "broken": false,
+      "derivation": "/nix/store/d1rwvjf5fhqsqqxv0xsasfpgay7r6lag-gum-0.15.2.drv",
+      "description": "Tasty Bubble Gum for your shell",
+      "install_id": "gum",
+      "license": "MIT",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=73cf49b8ad837ade2de76f87eb53fc85ed5d4680",
+      "name": "gum-0.15.2",
+      "pname": "gum",
+      "rev": "73cf49b8ad837ade2de76f87eb53fc85ed5d4680",
+      "rev_count": 755230,
+      "rev_date": "2025-02-18T08:17:47Z",
+      "scrape_date": "2025-02-20T02:25:42Z",
+      "stabilities": [
+        "staging",
+        "unstable"
+      ],
+      "unfree": false,
+      "version": "0.15.2",
+      "outputs_to_install": [
+        "out"
+      ],
+      "outputs": {
+        "out": "/nix/store/bwdv1p25swi6h7adikmk9zxc87pl9ka4-gum-0.15.2"
+      },
+      "system": "aarch64-linux",
+      "group": "toplevel",
+      "priority": 5
+    },
+    {
+      "attr_path": "gum",
+      "broken": false,
+      "derivation": "/nix/store/4xi02v6f3arwfjavf6vv8j5084mg540y-gum-0.15.2.drv",
+      "description": "Tasty Bubble Gum for your shell",
+      "install_id": "gum",
+      "license": "MIT",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=73cf49b8ad837ade2de76f87eb53fc85ed5d4680",
+      "name": "gum-0.15.2",
+      "pname": "gum",
+      "rev": "73cf49b8ad837ade2de76f87eb53fc85ed5d4680",
+      "rev_count": 755230,
+      "rev_date": "2025-02-18T08:17:47Z",
+      "scrape_date": "2025-02-20T02:25:42Z",
+      "stabilities": [
+        "staging",
+        "unstable"
+      ],
+      "unfree": false,
+      "version": "0.15.2",
+      "outputs_to_install": [
+        "out"
+      ],
+      "outputs": {
+        "out": "/nix/store/fhwxirvidsx5qn3rvln7cjh1d1q43fvm-gum-0.15.2"
+      },
+      "system": "x86_64-darwin",
+      "group": "toplevel",
+      "priority": 5
+    },
+    {
+      "attr_path": "gum",
+      "broken": false,
+      "derivation": "/nix/store/fz5i7rpam26bia8hffd4a3db0hidr6h2-gum-0.15.2.drv",
+      "description": "Tasty Bubble Gum for your shell",
+      "install_id": "gum",
+      "license": "MIT",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=73cf49b8ad837ade2de76f87eb53fc85ed5d4680",
+      "name": "gum-0.15.2",
+      "pname": "gum",
+      "rev": "73cf49b8ad837ade2de76f87eb53fc85ed5d4680",
+      "rev_count": 755230,
+      "rev_date": "2025-02-18T08:17:47Z",
+      "scrape_date": "2025-02-20T02:25:42Z",
+      "stabilities": [
+        "staging",
+        "unstable"
+      ],
+      "unfree": false,
+      "version": "0.15.2",
+      "outputs_to_install": [
+        "out"
+      ],
+      "outputs": {
+        "out": "/nix/store/k8irafaaw0qkq4ihsax2lccr6srf1mnx-gum-0.15.2"
+      },
+      "system": "x86_64-linux",
+      "group": "toplevel",
+      "priority": 5
+    },
+    {
+      "attr_path": "harlequin",
+      "broken": false,
+      "derivation": "/nix/store/0gcg8fyab0j27jxzzwc71b8kc7n1ha0l-harlequin-2.0.0.drv",
+      "description": "The SQL IDE for Your Terminal",
+      "install_id": "harlequin",
+      "license": "MIT",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=73cf49b8ad837ade2de76f87eb53fc85ed5d4680",
+      "name": "harlequin-2.0.0",
+      "pname": "harlequin",
+      "rev": "73cf49b8ad837ade2de76f87eb53fc85ed5d4680",
+      "rev_count": 755230,
+      "rev_date": "2025-02-18T08:17:47Z",
+      "scrape_date": "2025-02-20T02:25:42Z",
+      "stabilities": [
+        "staging",
+        "unstable"
+      ],
+      "unfree": false,
+      "version": "2.0.0",
+      "outputs_to_install": [
+        "out"
+      ],
+      "outputs": {
+        "dist": "/nix/store/w4fmc4wq2fpyka386n9pzxqyn76hhpmd-harlequin-2.0.0-dist",
+        "out": "/nix/store/nalqzxplzmi3zswsw9qzjg903ihw3pf4-harlequin-2.0.0"
+      },
+      "system": "aarch64-darwin",
+      "group": "toplevel",
+      "priority": 5
+    },
+    {
+      "attr_path": "harlequin",
+      "broken": false,
+      "derivation": "/nix/store/43n77gr82hp3zqnyd63ff4si499ln5yq-harlequin-2.0.0.drv",
+      "description": "The SQL IDE for Your Terminal",
+      "install_id": "harlequin",
+      "license": "MIT",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=73cf49b8ad837ade2de76f87eb53fc85ed5d4680",
+      "name": "harlequin-2.0.0",
+      "pname": "harlequin",
+      "rev": "73cf49b8ad837ade2de76f87eb53fc85ed5d4680",
+      "rev_count": 755230,
+      "rev_date": "2025-02-18T08:17:47Z",
+      "scrape_date": "2025-02-20T02:25:42Z",
+      "stabilities": [
+        "staging",
+        "unstable"
+      ],
+      "unfree": false,
+      "version": "2.0.0",
+      "outputs_to_install": [
+        "out"
+      ],
+      "outputs": {
+        "dist": "/nix/store/2lkxphfg43k9hhp5zzpcl69yn3784b65-harlequin-2.0.0-dist",
+        "out": "/nix/store/gkvwig98g231wqhgk01xydy7ss3vhaw5-harlequin-2.0.0"
+      },
+      "system": "aarch64-linux",
+      "group": "toplevel",
+      "priority": 5
+    },
+    {
+      "attr_path": "harlequin",
+      "broken": false,
+      "derivation": "/nix/store/k1g6fyc5l34kjvwy9gn2k848kws9b3d0-harlequin-2.0.0.drv",
+      "description": "The SQL IDE for Your Terminal",
+      "install_id": "harlequin",
+      "license": "MIT",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=73cf49b8ad837ade2de76f87eb53fc85ed5d4680",
+      "name": "harlequin-2.0.0",
+      "pname": "harlequin",
+      "rev": "73cf49b8ad837ade2de76f87eb53fc85ed5d4680",
+      "rev_count": 755230,
+      "rev_date": "2025-02-18T08:17:47Z",
+      "scrape_date": "2025-02-20T02:25:42Z",
+      "stabilities": [
+        "staging",
+        "unstable"
+      ],
+      "unfree": false,
+      "version": "2.0.0",
+      "outputs_to_install": [
+        "out"
+      ],
+      "outputs": {
+        "dist": "/nix/store/j3v3jr1w8v68gqlhnsjwjsyj6sk3qra1-harlequin-2.0.0-dist",
+        "out": "/nix/store/6qd1iv9km16g7iim00hzsacvkr7i4k8q-harlequin-2.0.0"
+      },
+      "system": "x86_64-darwin",
+      "group": "toplevel",
+      "priority": 5
+    },
+    {
+      "attr_path": "harlequin",
+      "broken": false,
+      "derivation": "/nix/store/cy2kaavc77ws0f2qsx23nmk7f718mv0f-harlequin-2.0.0.drv",
+      "description": "The SQL IDE for Your Terminal",
+      "install_id": "harlequin",
+      "license": "MIT",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=73cf49b8ad837ade2de76f87eb53fc85ed5d4680",
+      "name": "harlequin-2.0.0",
+      "pname": "harlequin",
+      "rev": "73cf49b8ad837ade2de76f87eb53fc85ed5d4680",
+      "rev_count": 755230,
+      "rev_date": "2025-02-18T08:17:47Z",
+      "scrape_date": "2025-02-20T02:25:42Z",
+      "stabilities": [
+        "staging",
+        "unstable"
+      ],
+      "unfree": false,
+      "version": "2.0.0",
+      "outputs_to_install": [
+        "out"
+      ],
+      "outputs": {
+        "dist": "/nix/store/3y1ny1dba4blj7i6fslzidq7dc2h1dic-harlequin-2.0.0-dist",
+        "out": "/nix/store/svp0wfrp0pzbxzw3gmcm2vg7az04llcy-harlequin-2.0.0"
+      },
+      "system": "x86_64-linux",
+      "group": "toplevel",
+      "priority": 5
+    },
+    {
+      "attr_path": "python312Packages.harlequin-postgres",
+      "broken": false,
+      "derivation": "/nix/store/mya381zc0i0qbd8karn0mrmy1b127w79-python3.12-harlequin-postgres-1.0.0.drv",
+      "description": "A Harlequin adapter for Postgres",
+      "install_id": "harlequin-postgres",
+      "license": "MIT",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=73cf49b8ad837ade2de76f87eb53fc85ed5d4680",
+      "name": "python3.12-harlequin-postgres-1.0.0",
+      "pname": "harlequin-postgres",
+      "rev": "73cf49b8ad837ade2de76f87eb53fc85ed5d4680",
+      "rev_count": 755230,
+      "rev_date": "2025-02-18T08:17:47Z",
+      "scrape_date": "2025-02-20T02:25:42Z",
+      "stabilities": [
+        "staging",
+        "unstable"
+      ],
+      "unfree": false,
+      "version": "1.0.0",
+      "outputs_to_install": [
+        "out"
+      ],
+      "outputs": {
+        "dist": "/nix/store/ba9xqyp2swdf9ma5xvcikpqg82ikfdv1-python3.12-harlequin-postgres-1.0.0-dist",
+        "out": "/nix/store/657gdvwya238sd7hggqw63angys8xw98-python3.12-harlequin-postgres-1.0.0"
+      },
+      "system": "aarch64-darwin",
+      "group": "toplevel",
+      "priority": 5
+    },
+    {
+      "attr_path": "python312Packages.harlequin-postgres",
+      "broken": false,
+      "derivation": "/nix/store/7w8gck2ld4j5lbl7p07lijv8ydsfi9sb-python3.12-harlequin-postgres-1.0.0.drv",
+      "description": "A Harlequin adapter for Postgres",
+      "install_id": "harlequin-postgres",
+      "license": "MIT",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=73cf49b8ad837ade2de76f87eb53fc85ed5d4680",
+      "name": "python3.12-harlequin-postgres-1.0.0",
+      "pname": "harlequin-postgres",
+      "rev": "73cf49b8ad837ade2de76f87eb53fc85ed5d4680",
+      "rev_count": 755230,
+      "rev_date": "2025-02-18T08:17:47Z",
+      "scrape_date": "2025-02-20T02:25:42Z",
+      "stabilities": [
+        "staging",
+        "unstable"
+      ],
+      "unfree": false,
+      "version": "1.0.0",
+      "outputs_to_install": [
+        "out"
+      ],
+      "outputs": {
+        "dist": "/nix/store/0r96ncdqpwkbddgw83m0dbwz28bphrmn-python3.12-harlequin-postgres-1.0.0-dist",
+        "out": "/nix/store/lnbwxzjbxijm299xaw9dssv19bq7cmxs-python3.12-harlequin-postgres-1.0.0"
+      },
+      "system": "aarch64-linux",
+      "group": "toplevel",
+      "priority": 5
+    },
+    {
+      "attr_path": "python312Packages.harlequin-postgres",
+      "broken": false,
+      "derivation": "/nix/store/h5m23p7c3d2mc8i7ra5bv2hwq7ggirjn-python3.12-harlequin-postgres-1.0.0.drv",
+      "description": "A Harlequin adapter for Postgres",
+      "install_id": "harlequin-postgres",
+      "license": "MIT",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=73cf49b8ad837ade2de76f87eb53fc85ed5d4680",
+      "name": "python3.12-harlequin-postgres-1.0.0",
+      "pname": "harlequin-postgres",
+      "rev": "73cf49b8ad837ade2de76f87eb53fc85ed5d4680",
+      "rev_count": 755230,
+      "rev_date": "2025-02-18T08:17:47Z",
+      "scrape_date": "2025-02-20T02:25:42Z",
+      "stabilities": [
+        "staging",
+        "unstable"
+      ],
+      "unfree": false,
+      "version": "1.0.0",
+      "outputs_to_install": [
+        "out"
+      ],
+      "outputs": {
+        "dist": "/nix/store/c2hvl498wfl3ridcvydlmbl2pvs48hzc-python3.12-harlequin-postgres-1.0.0-dist",
+        "out": "/nix/store/q8j52pij161pdjdzwpq9nwgb9wd3s32j-python3.12-harlequin-postgres-1.0.0"
+      },
+      "system": "x86_64-darwin",
+      "group": "toplevel",
+      "priority": 5
+    },
+    {
+      "attr_path": "python312Packages.harlequin-postgres",
+      "broken": false,
+      "derivation": "/nix/store/i1by7scgl4yfla3k2zwq2smapc3zr0g6-python3.12-harlequin-postgres-1.0.0.drv",
+      "description": "A Harlequin adapter for Postgres",
+      "install_id": "harlequin-postgres",
+      "license": "MIT",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=73cf49b8ad837ade2de76f87eb53fc85ed5d4680",
+      "name": "python3.12-harlequin-postgres-1.0.0",
+      "pname": "harlequin-postgres",
+      "rev": "73cf49b8ad837ade2de76f87eb53fc85ed5d4680",
+      "rev_count": 755230,
+      "rev_date": "2025-02-18T08:17:47Z",
+      "scrape_date": "2025-02-20T02:25:42Z",
+      "stabilities": [
+        "staging",
+        "unstable"
+      ],
+      "unfree": false,
+      "version": "1.0.0",
+      "outputs_to_install": [
+        "out"
+      ],
+      "outputs": {
+        "dist": "/nix/store/f6wlyfd2dfhmw4xzfjxlahp4hm8rkqll-python3.12-harlequin-postgres-1.0.0-dist",
+        "out": "/nix/store/f6vfqwmik8pxnln6jj08xd0x7wlh3xbb-python3.12-harlequin-postgres-1.0.0"
+      },
+      "system": "x86_64-linux",
+      "group": "toplevel",
+      "priority": 5
+    }
+  ]
+}
