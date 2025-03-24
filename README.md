@@ -22,7 +22,7 @@ This repo contains pre-configured [Flox](https://flox.dev/docs) environments for
 
 ### Database Environments
 
-- [**postgresql**](./postgres) - PostgreSQL 16 with PostGIS
+- [**postgresql**](./postgres) - PostgreSQL with PostGIS
 - [**neo4j**](./neo4j) - Neo4j graph database
 - [**harlequin**](./harlequin-postgres) - PostgreSQL + Harlequin terminal SQL IDE
 
