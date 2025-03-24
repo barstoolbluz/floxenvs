@@ -1,4 +1,4 @@
-# 🔧 FloxEnvs: Ready-to-Use Development Environments
+# 🔧 FloxEnvs: Ready-to-Use Dev Environments
 
 A collection of useful Flox environments that just work. Pick an environment, activate it, and get to work—no complex setup, no dependency conflicts, no hermetic isolation in Docker containers or VMs.
 
