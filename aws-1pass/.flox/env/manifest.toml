@@ -440,12 +440,54 @@ main
 # taken to ensure compatibility with all shells, after which exactly one of
 # `profile.{bash,fish,tcsh,zsh}` is sourced by the corresponding shell.
 [profile]
-common = '''
+bash = '''
 # Source the 1password-aws.session file
 [[ -f $HOME/.config/op/1password-aws.session ]] && source $HOME/.config/op/1password-aws.session
 
 # AWS CLI alias
 alias aws='op run --session "${OP_SESSION_TOKEN}" --env-file <(printf "%s\n" AWS_ACCESS_KEY_ID=op://${OP_VAULT}/${OP_AWS_CREDENTIALS}/${OP_AWS_USERNAME_FIELD} AWS_SECRET_ACCESS_KEY=op://${OP_VAULT}/${OP_AWS_CREDENTIALS}/${OP_AWS_CREDENTIALS_FIELD}) -- aws'
+
+readme() {
+  if [[ "$1" == "--refresh" ]] || [ ! -s "$FLOX_ENV_PROJECT/README.md" ]; then
+    curl -sL "https://raw.githubusercontent.com/barstoolbluz/floxenvs/main/aws-1pass/README.md" > "$FLOX_ENV_PROJECT/README.md" 2>/dev/null
+    echo "README updated from GitHub."
+  fi
+  bat --language markdown "$FLOX_ENV_PROJECT/README.md" 2>/dev/null
+}
+'''
+
+zsh = '''
+# Source the 1password-aws.session file
+[[ -f $HOME/.config/op/1password-aws.session ]] && source $HOME/.config/op/1password-aws.session
+
+# AWS CLI alias
+alias aws='op run --session "${OP_SESSION_TOKEN}" --env-file <(printf "%s\n" AWS_ACCESS_KEY_ID=op://${OP_VAULT}/${OP_AWS_CREDENTIALS}/${OP_AWS_USERNAME_FIELD} AWS_SECRET_ACCESS_KEY=op://${OP_VAULT}/${OP_AWS_CREDENTIALS}/${OP_AWS_CREDENTIALS_FIELD}) -- aws'
+
+readme() {
+  if [[ "$1" == "--refresh" ]] || [ ! -s "$FLOX_ENV_PROJECT/README.md" ]; then
+    curl -sL "https://raw.githubusercontent.com/barstoolbluz/floxenvs/main/aws-1pass/README.md" > "$FLOX_ENV_PROJECT/README.md" 2>/dev/null
+    echo "README updated from GitHub."
+  fi
+  bat --language markdown "$FLOX_ENV_PROJECT/README.md" 2>/dev/null
+}
+'''
+
+fish = '''
+# Source the 1password-aws.session file
+test -f $HOME/.config/op/1password-aws.session; and source $HOME/.config/op/1password-aws.session
+
+# AWS CLI alias
+function aws
+    op run --session "$OP_SESSION_TOKEN" --env-file (printf "%s\n" AWS_ACCESS_KEY_ID=op://$OP_VAULT/$OP_AWS_CREDENTIALS/$OP_AWS_USERNAME_FIELD AWS_SECRET_ACCESS_KEY=op://$OP_VAULT/$OP_AWS_CREDENTIALS/$OP_AWS_CREDENTIALS_FIELD | psub) -- aws $argv
+end
+
+function readme
+    if test "$argv[1]" = "--refresh"; or test ! -s "$FLOX_ENV_PROJECT/README.md"
+        curl -sL "https://raw.githubusercontent.com/barstoolbluz/floxenvs/main/aws-1pass/README.md" > "$FLOX_ENV_PROJECT/README.md" 2>/dev/null
+        echo "README updated from GitHub."
+    end
+    bat --language markdown "$FLOX_ENV_PROJECT/README.md" 2>/dev/null
+end
 '''
 
 # Additional options can be set in the `[options]` section. Refer to
