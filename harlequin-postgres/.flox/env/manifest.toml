@@ -436,6 +436,14 @@ $status"
         --margin "1 0" \
         "$result"
 }
+
+readme() {
+  if [[ "$1" == "--refresh" ]] || [ ! -s "$FLOX_ENV_PROJECT/README.md" ]; then
+    curl -sL "https://raw.githubusercontent.com/barstoolbluz/floxenvs/main/harlequin-postgres/README.md" > "$FLOX_ENV_PROJECT/README.md" 2>/dev/null
+    echo "README updated from GitHub."
+  fi
+  bat --language markdown "$FLOX_ENV_PROJECT/README.md" 2>/dev/null
+}
 '''
 # zsh  = ...
 # fish = ...
