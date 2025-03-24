@@ -77,13 +77,13 @@ psql
 This environment:
 1. Creates an isolated data directory in `$FLOX_ENV_CACHE/postgres`
 2. Initializes PostgreSQL with UTF-8 encoding and proper permissions
-3. Configures a custom port (default: 15432) to avoid conflicts
-4. Uses Unix sockets for maximum performance
+3. Spins up a terminal wizard you can use to configure custom port, username, password, database, and path
+4. Uses Unix sockets for better performance
 5. Provides service management through Flox
 
 ### Data Persistence
 
-Your database exists at `$FLOX_ENV_CACHE/postgres/data` and persists between environment activations. It's yours - back it up, move it, or nuke it when you're done.
+By default, your database exists at `$FLOX_ENV_CACHE/postgres/data` and persists between environment activations. The terminal bootstrapping wizard gives you a way to change this path.
 
 ### Configuration Files
 
@@ -116,10 +116,9 @@ Runs on:
 
 ## 🔍 Power User Tips
 
-- Edit `manifest.toml` to switch PostgreSQL versions
-- The default port (15432) avoids conflicts with standard PostgreSQL installations
-- To access from external tools, set the host to `0.0.0.0` during configuration
-- PostGIS is ready to use - just run `CREATE EXTENSION postgis;` in your database
+- Run `flox edit` to switch PostgreSQL versions, add PostgreSQL extensions, etc.
+- To access your local PostgreSQL instance from the network, set the host to `0.0.0.0` during configuration
+- PostGIS is ready to use - just run `CREATE EXTENSION postgis;` in your database. The Flox Catalog has all popular PostgreSQL extensions. You can use `flox search <keyword>` to discover them.
 
 ## About Flox
 
