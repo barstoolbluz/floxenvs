@@ -90,7 +90,7 @@ Flox uses declarative configuration to create reproducible environments with:
 Want to add a new environment? Create a PR with:
 
 1. A new directory for your environment
-2. A complete `manifest.toml` file
+2. A complete Flox environment with `manifest.toml` and `manifest.lock` files located in `.flox/env/`
 3. A README following our template
 
 ## 🔗 Key Features of Flox
