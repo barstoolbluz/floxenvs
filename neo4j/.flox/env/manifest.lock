@@ -1,0 +1,347 @@
+{
+  "lockfile-version": 1,
+  "manifest": {
+    "version": 1,
+    "install": {
+      "firefox": {
+        "pkg-path": "firefox",
+        "systems": [
+          "aarch64-linux",
+          "x86_64-linux"
+        ]
+      },
+      "gum": {
+        "pkg-path": "gum"
+      },
+      "neo4j": {
+        "pkg-path": "neo4j"
+      }
+    },
+    "hook": {
+      "on-activate": "# Set up initial defaults\nexport NEO4J_DIR=\"${FLOX_ENV_CACHE}/neo4j\"\nexport CONFIG_FILE=\"${FLOX_ENV_CACHE}/neo4j.config\"\n\n# Default values\nDEFAULT_NEO4J_HOST=\"localhost\"\nDEFAULT_NEO4J_PORT=\"7687\"\nDEFAULT_NEO4J_HTTP_PORT=\"7474\"\nDEFAULT_NEO4J_USER=\"neo4j\"\nDEFAULT_NEO4J_PASSWORD=\"neo4jpass\"\nDEFAULT_NEO4J_DIR=\"${FLOX_ENV_CACHE}/neo4j\"\n\n# Initialize with defaults\nexport NEO4J_HOST=\"${NEO4J_HOST:-$DEFAULT_NEO4J_HOST}\"\nexport NEO4J_PORT=\"${NEO4J_PORT:-$DEFAULT_NEO4J_PORT}\"\nexport NEO4J_HTTP_PORT=\"${NEO4J_HTTP_PORT:-$DEFAULT_NEO4J_HTTP_PORT}\"\nexport NEO4J_USER=\"${NEO4J_USER:-$DEFAULT_NEO4J_USER}\"\nexport NEO4J_PASSWORD=\"${NEO4J_PASSWORD:-$DEFAULT_NEO4J_PASSWORD}\"\nexport NEO4J_DIR=\"${NEO4J_DIR:-$DEFAULT_NEO4J_DIR}\"\nexport NEO4J_AUTH=\"${NEO4J_USER}/${NEO4J_PASSWORD}\"\n\n# Debug flag\nexport NEO4J_DEBUG=\"false\"\n\n# Check if this is first run\ncheck_first_run() {\n    if [[ ! -f \"$CONFIG_FILE\" ]]; then\n        return 0 # True, first run\n    else\n        return 1 # False, not first run\n    fi\n}\n\n# Load existing config\nload_config() {\n    if [[ -f \"$CONFIG_FILE\" ]]; then\n        source \"$CONFIG_FILE\"\n    else\n        # Set defaults if no config exists\n        export NEO4J_HOST=\"$DEFAULT_NEO4J_HOST\"\n        export NEO4J_PORT=\"$DEFAULT_NEO4J_PORT\"\n        export NEO4J_HTTP_PORT=\"$DEFAULT_NEO4J_HTTP_PORT\"\n        export NEO4J_USER=\"$DEFAULT_NEO4J_USER\"\n        export NEO4J_PASSWORD=\"$DEFAULT_NEO4J_PASSWORD\"\n        export NEO4J_DIR=\"$DEFAULT_NEO4J_DIR\"\n        export NEO4J_AUTH=\"${NEO4J_USER}/${NEO4J_PASSWORD}\"\n    fi\n}\n\n# Save configuration\nsave_config() {\n    mkdir -p \"$(dirname \"$CONFIG_FILE\")\"\n    cat > \"$CONFIG_FILE\" << EOF\n# Neo4j configuration - Generated on $(date)\nexport NEO4J_HOST=\"$NEO4J_HOST\"\nexport NEO4J_PORT=\"$NEO4J_PORT\"\nexport NEO4J_HTTP_PORT=\"$NEO4J_HTTP_PORT\"\nexport NEO4J_USER=\"$NEO4J_USER\"\nexport NEO4J_PASSWORD=\"$NEO4J_PASSWORD\"\nexport NEO4J_DIR=\"$NEO4J_DIR\"\nexport NEO4J_AUTH=\"${NEO4J_USER}/${NEO4J_PASSWORD}\"\nexport NEO4J_DEBUG=\"$NEO4J_DEBUG\"\n\n## BEGIN ACTIVATION HOOK ##\n$(declare -f debug_log)\n$(declare -f check_first_run)\n$(declare -f load_config)\n$(declare -f save_config)\n$(declare -f prompt_for_config)\n$(declare -f update_dependent_vars)\n$(declare -f initialize_neo4j)\n$(declare -f create_config_file)\n$(declare -f start_neo4j)\n$(declare -f stop_neo4j)\n$(declare -f reconfigure_neo4j)\n$(declare -f first_run_setup)\n$(declare -f display_neo4j_config_ui)\n$(declare -f neo4j_setup)\n$(declare -f show_neo4j_help)\n$(declare -f main)\n## END ACTIVATION HOOK ##\nEOF\n    chmod 644 \"$CONFIG_FILE\"\n}\n\n# Configuration prompt\nprompt_for_config() {\n    # Ensure defaults are set\n    DEFAULT_NEO4J_HOST=\"localhost\"\n    DEFAULT_NEO4J_PORT=\"7687\"\n    DEFAULT_NEO4J_HTTP_PORT=\"7474\"\n    DEFAULT_NEO4J_USER=\"neo4j\"\n    DEFAULT_NEO4J_PASSWORD=\"neo4jpass\"\n    DEFAULT_NEO4J_DIR=\"${FLOX_ENV_CACHE}/neo4j\"\n\n    echo \"\"\n    if gum confirm \"$(gum style --foreground 240 'Would you like to customize your Neo4j configuration?')\" --default=false; then\n        echo \"$(gum style --foreground 240 'Press Enter to accept the default values shown in [brackets]')\"\n        echo \"\"\n        NEO4J_HOST=$(gum input --placeholder \"[${DEFAULT_NEO4J_HOST}]\" --value \"$DEFAULT_NEO4J_HOST\" --prompt \"Host: \")\n        NEO4J_PORT=$(gum input --placeholder \"[${DEFAULT_NEO4J_PORT}] (Bolt protocol)\" --value \"$DEFAULT_NEO4J_PORT\" --prompt \"Bolt Port: \")\n        NEO4J_HTTP_PORT=$(gum input --placeholder \"[${DEFAULT_NEO4J_HTTP_PORT}] (Browser interface)\" --value \"$DEFAULT_NEO4J_HTTP_PORT\" --prompt \"HTTP Port: \")\n        NEO4J_USER=$(gum input --placeholder \"[${DEFAULT_NEO4J_USER}]\" --value \"$DEFAULT_NEO4J_USER\" --prompt \"Username: \")\n        NEO4J_PASSWORD=$(gum input --placeholder \"[${DEFAULT_NEO4J_PASSWORD}]\" --value \"$DEFAULT_NEO4J_PASSWORD\" --prompt \"Password: \" --password)\n        \n        if gum confirm \"Use default directory for Neo4j data?\" --default=true; then\n            NEO4J_DIR=\"$DEFAULT_NEO4J_DIR\"\n        else\n            NEO4J_DIR=$(gum input --placeholder \"[${DEFAULT_NEO4J_DIR}]\" --value \"$DEFAULT_NEO4J_DIR\" --prompt \"Neo4j Data Directory: \")\n        fi\n    else\n        echo \"$(gum style --foreground 240 'Using default configuration:')\"\n        echo \"$(gum style --foreground 240 \"  Host: ${DEFAULT_NEO4J_HOST}\")\"\n        echo \"$(gum style --foreground 240 \"  Bolt Port: ${DEFAULT_NEO4J_PORT}\")\"\n        echo \"$(gum style --foreground 240 \"  HTTP Port: ${DEFAULT_NEO4J_HTTP_PORT}\")\"\n        echo \"$(gum style --foreground 240 \"  Username: ${DEFAULT_NEO4J_USER}\")\"\n        echo \"$(gum style --foreground 240 \"  Password: ${DEFAULT_NEO4J_PASSWORD}\")\"\n        echo \"$(gum style --foreground 240 \"  Data Directory: ${DEFAULT_NEO4J_DIR}\")\"\n        echo \"\"\n        \n        NEO4J_HOST=\"$DEFAULT_NEO4J_HOST\"\n        NEO4J_PORT=\"$DEFAULT_NEO4J_PORT\"\n        NEO4J_HTTP_PORT=\"$DEFAULT_NEO4J_HTTP_PORT\"\n        NEO4J_USER=\"$DEFAULT_NEO4J_USER\"\n        NEO4J_PASSWORD=\"$DEFAULT_NEO4J_PASSWORD\"\n        NEO4J_DIR=\"$DEFAULT_NEO4J_DIR\"\n    fi\n    \n    export NEO4J_HOST NEO4J_PORT NEO4J_HTTP_PORT NEO4J_USER NEO4J_PASSWORD NEO4J_DIR\n    export NEO4J_AUTH=\"${NEO4J_USER}/${NEO4J_PASSWORD}\"\n    \n    save_config\n}\n\n# Debug logging\ndebug_log() {\n    if [[ \"$NEO4J_DEBUG\" == \"true\" ]]; then\n        echo \"$@\"\n    fi\n}\n\n# Update dependent variables\nupdate_dependent_vars() {\n    if [[ ! \"$NEO4J_DIR\" = /* ]]; then\n        NEO4J_DIR=\"$(pwd)/$NEO4J_DIR\"\n        export NEO4J_DIR\n    fi\n    \n    export NEO4J_DATA=\"$NEO4J_DIR/data\"\n    export NEO4J_LOGS=\"$NEO4J_DIR/logs\"\n    export NEO4J_CONF=\"$NEO4J_DIR/conf\"\n    export NEO4J_RUN=\"$NEO4J_DIR/run\"\n    \n    debug_log \"Configuration paths:\"\n    debug_log \"  NEO4J_DIR: $NEO4J_DIR\"\n    debug_log \"  NEO4J_DATA: $NEO4J_DATA\"\n    debug_log \"  NEO4J_CONF: $NEO4J_CONF\"\n}\n\n# Initialize Neo4j\ninitialize_neo4j() {\n    mkdir -p \"$NEO4J_DATA\" \"$NEO4J_LOGS\" \"$NEO4J_CONF\" \"$NEO4J_RUN\"\n    chmod 700 \"$NEO4J_DATA\" \"$NEO4J_LOGS\" \"$NEO4J_CONF\" \"$NEO4J_RUN\"\n    \n    return 0\n}\n\n# Create Neo4j config file\ncreate_config_file() {\n    cat > \"$NEO4J_CONF/neo4j.conf\" << EOF\ndbms.default_listen_address=0.0.0.0\ndbms.connector.bolt.listen_address=:${NEO4J_PORT}\ndbms.connector.http.listen_address=:${NEO4J_HTTP_PORT}\ndbms.directories.data=$NEO4J_DATA\ndbms.directories.logs=$NEO4J_LOGS\ndbms.security.auth_enabled=true\nEOF\n    return 0\n}\n\n# Start Neo4j\nstart_neo4j() {\n    NEO4J_HOME=\"$NEO4J_DIR\" neo4j start\n    return $?\n}\n\n# Stop Neo4j\nstop_neo4j() {\n    NEO4J_HOME=\"$NEO4J_DIR\" neo4j stop\n    return $?\n}\n\n# Reconfigure Neo4j\nreconfigure_neo4j() {\n    rm -f \"$CONFIG_FILE\"\n    first_run_setup\n    neo4j_setup\n}\n\n# First run setup\nfirst_run_setup() {\n    if check_first_run; then\n        display_neo4j_config_ui\n    else\n        load_config\n    fi\n    \n    update_dependent_vars\n}\n\n# Display configuration UI\ndisplay_neo4j_config_ui() {\n    clear\n    \n    gum style \\\n        --border rounded \\\n        --border-foreground 240 \\\n        --padding \"1 2\" \\\n        --margin \"1 0\" \\\n        --width 70 \\\n        \"$(gum style --foreground 27 --bold 'Neo4j Configuration')\n        \n$(gum style --foreground 240 'First-time setup for your Neo4j graph database')\"\n    \n    prompt_for_config\n}\n\n# Neo4j setup\nneo4j_setup() {\n    debug_log \"Setting up Neo4j...\"\n    \n    initialize_neo4j || { echo \"Failed to initialize Neo4j\"; return 1; }\n    create_config_file || { echo \"Failed to create configuration file\"; return 1; }\n    \n    debug_log \"Neo4j setup completed successfully\"\n    return 0\n}\n\n# Help message\nshow_neo4j_help() {\n    # Determine display host\n    local display_host\n    if [[ \"$NEO4J_HOST\" == \"0.0.0.0\" ]]; then\n        display_host=\"localhost\"\n    else\n        display_host=\"$NEO4J_HOST\"\n    fi\n    \n    # Format the URL\n    local url=\"http://${display_host}:${NEO4J_HTTP_PORT}\"\n    \n    # Option 1: Using gum format with gum join for the box\n    # Create the border box first\n    gum style \\\n        --border rounded \\\n        --border-foreground 240 \\\n        --padding \"1 2\" \\\n        --margin \"1 0\" \\\n        --width 70 \\\n        \"$(gum style --foreground 141 --bold 'This is a  F l o x  Neo4j Environment')\n\nStart Neo4j at activation:\n👉  $(gum style --foreground 212 'flox activate -s')\n\nStart Neo4j post activation:\n👉  $(gum style --foreground 212 'neo4jstart')\n\nStop Neo4j post activation:\n👉  $(gum style --foreground 212 'neo4jstop')\n\nRestart Neo4j post activation:\n👉  $(gum style --foreground 212 'neo4jrestart')\n\nReconfigure Neo4j post activation:\n👉  $(gum style --foreground 212 'neo4jconfigure')\n\nConnect to Neo4j (Browser):\n👉  $(gum style --foreground 212 \"$url\")\"\n\n    echo \"\"\n}\n\n# Main function\nmain() {\n    first_run_setup\n    neo4j_setup\n    show_neo4j_help\n}\n\n# Run main\nmain\n"
+    },
+    "profile": {
+      "bash": "source \"${FLOX_ENV_CACHE}/neo4j.config\" 2>/dev/null || true\nneo4jstart() { flox services start neo4j; }\nneo4jstop() { flox services stop neo4j; }\nneo4jrestart() { flox services restart neo4j; }\nneo4jconfigure() {\n  flox services stop neo4j\n  source \"${FLOX_ENV_CACHE}/neo4j.config\" 2>/dev/null || true\n  reconfigure_neo4j\n  flox services start neo4j\n}\nexport -f neo4jstart neo4jstop neo4jrestart neo4jconfigure\nunset -f debug_log check_first_run load_config save_config prompt_for_config\nunset -f update_dependent_vars initialize_neo4j create_config_file\nunset -f start_neo4j stop_neo4j create_database display_neo4j_config_ui\nunset -f first_run_setup neo4j_setup show_neo4j_help main\n",
+      "zsh": "source \"${FLOX_ENV_CACHE}/neo4j.config\" 2>/dev/null || true\n\"neo4jstart() { flox services start neo4j; }\"\n\"neo4jstop() { flox services stop neo4j; }\"\n\"neo4jrestart() { flox services restart neo4j; }\"\n\"neo4jconfigure() {\n  flox services stop neo4j\n  source \"${FLOX_ENV_CACHE}/neo4j.config\" 2>/dev/null || true\n  reconfigure_neo4j\n  flox services start neo4j\n}\"\nexport neo4jstart neo4jstop neo4jrestart neo4jconfigure\nunset \"debug_log\" \"check_first_run\" \"load_config\" \"save_config\" \"prompt_for_config\"\nunset \"update_dependent_vars\" \"initialize_neo4j\" \"create_config_file\"\nunset \"start_neo4j\" \"stop_neo4j\" \"create_database\" \"display_neo4j_config_ui\"\nunset \"first_run_setup\" \"neo4j_setup\" \"show_neo4j_help\" \"main\"\n"
+    },
+    "options": {
+      "systems": [
+        "aarch64-darwin",
+        "aarch64-linux",
+        "x86_64-darwin",
+        "x86_64-linux"
+      ],
+      "allow": {
+        "licenses": []
+      },
+      "semver": {}
+    },
+    "services": {
+      "neo4j": {
+        "command": "NEO4J_HOME=$NEO4J_DIR neo4j console"
+      }
+    }
+  },
+  "packages": [
+    {
+      "attr_path": "firefox",
+      "broken": false,
+      "derivation": "/nix/store/790zdd4zhka5zlp4q45lgsrk0170vx5l-firefox-135.0.drv",
+      "description": "Web browser built from Firefox source tree",
+      "install_id": "firefox",
+      "license": "MPL-2.0",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=73cf49b8ad837ade2de76f87eb53fc85ed5d4680",
+      "name": "firefox-135.0",
+      "pname": "firefox",
+      "rev": "73cf49b8ad837ade2de76f87eb53fc85ed5d4680",
+      "rev_count": 755230,
+      "rev_date": "2025-02-18T08:17:47Z",
+      "scrape_date": "2025-02-20T02:25:42Z",
+      "stabilities": [
+        "staging",
+        "unstable"
+      ],
+      "unfree": false,
+      "version": "135.0",
+      "outputs_to_install": [
+        "out"
+      ],
+      "outputs": {
+        "out": "/nix/store/13nkd4v39rm6s1m2cimiwg9javw1nkw3-firefox-135.0"
+      },
+      "system": "aarch64-linux",
+      "group": "toplevel",
+      "priority": 5
+    },
+    {
+      "attr_path": "firefox",
+      "broken": false,
+      "derivation": "/nix/store/4myxzhmxrb7w9nm4mwdx976y77s236wr-firefox-135.0.drv",
+      "description": "Web browser built from Firefox source tree",
+      "install_id": "firefox",
+      "license": "MPL-2.0",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=73cf49b8ad837ade2de76f87eb53fc85ed5d4680",
+      "name": "firefox-135.0",
+      "pname": "firefox",
+      "rev": "73cf49b8ad837ade2de76f87eb53fc85ed5d4680",
+      "rev_count": 755230,
+      "rev_date": "2025-02-18T08:17:47Z",
+      "scrape_date": "2025-02-20T02:25:42Z",
+      "stabilities": [
+        "staging",
+        "unstable"
+      ],
+      "unfree": false,
+      "version": "135.0",
+      "outputs_to_install": [
+        "out"
+      ],
+      "outputs": {
+        "out": "/nix/store/b3kcrgpmlxm54143zd11n2qd4p1lygb1-firefox-135.0"
+      },
+      "system": "x86_64-linux",
+      "group": "toplevel",
+      "priority": 5
+    },
+    {
+      "attr_path": "gum",
+      "broken": false,
+      "derivation": "/nix/store/zvg9sbdqbayggs3n18gd6c8g8lm950ms-gum-0.15.2.drv",
+      "description": "Tasty Bubble Gum for your shell",
+      "install_id": "gum",
+      "license": "MIT",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=73cf49b8ad837ade2de76f87eb53fc85ed5d4680",
+      "name": "gum-0.15.2",
+      "pname": "gum",
+      "rev": "73cf49b8ad837ade2de76f87eb53fc85ed5d4680",
+      "rev_count": 755230,
+      "rev_date": "2025-02-18T08:17:47Z",
+      "scrape_date": "2025-02-20T02:25:42Z",
+      "stabilities": [
+        "staging",
+        "unstable"
+      ],
+      "unfree": false,
+      "version": "0.15.2",
+      "outputs_to_install": [
+        "out"
+      ],
+      "outputs": {
+        "out": "/nix/store/jklh2l06j8hicjp42pjjzhzc0dkk23v1-gum-0.15.2"
+      },
+      "system": "aarch64-darwin",
+      "group": "toplevel",
+      "priority": 5
+    },
+    {
+      "attr_path": "gum",
+      "broken": false,
+      "derivation": "/nix/store/d1rwvjf5fhqsqqxv0xsasfpgay7r6lag-gum-0.15.2.drv",
+      "description": "Tasty Bubble Gum for your shell",
+      "install_id": "gum",
+      "license": "MIT",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=73cf49b8ad837ade2de76f87eb53fc85ed5d4680",
+      "name": "gum-0.15.2",
+      "pname": "gum",
+      "rev": "73cf49b8ad837ade2de76f87eb53fc85ed5d4680",
+      "rev_count": 755230,
+      "rev_date": "2025-02-18T08:17:47Z",
+      "scrape_date": "2025-02-20T02:25:42Z",
+      "stabilities": [
+        "staging",
+        "unstable"
+      ],
+      "unfree": false,
+      "version": "0.15.2",
+      "outputs_to_install": [
+        "out"
+      ],
+      "outputs": {
+        "out": "/nix/store/bwdv1p25swi6h7adikmk9zxc87pl9ka4-gum-0.15.2"
+      },
+      "system": "aarch64-linux",
+      "group": "toplevel",
+      "priority": 5
+    },
+    {
+      "attr_path": "gum",
+      "broken": false,
+      "derivation": "/nix/store/4xi02v6f3arwfjavf6vv8j5084mg540y-gum-0.15.2.drv",
+      "description": "Tasty Bubble Gum for your shell",
+      "install_id": "gum",
+      "license": "MIT",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=73cf49b8ad837ade2de76f87eb53fc85ed5d4680",
+      "name": "gum-0.15.2",
+      "pname": "gum",
+      "rev": "73cf49b8ad837ade2de76f87eb53fc85ed5d4680",
+      "rev_count": 755230,
+      "rev_date": "2025-02-18T08:17:47Z",
+      "scrape_date": "2025-02-20T02:25:42Z",
+      "stabilities": [
+        "staging",
+        "unstable"
+      ],
+      "unfree": false,
+      "version": "0.15.2",
+      "outputs_to_install": [
+        "out"
+      ],
+      "outputs": {
+        "out": "/nix/store/fhwxirvidsx5qn3rvln7cjh1d1q43fvm-gum-0.15.2"
+      },
+      "system": "x86_64-darwin",
+      "group": "toplevel",
+      "priority": 5
+    },
+    {
+      "attr_path": "gum",
+      "broken": false,
+      "derivation": "/nix/store/fz5i7rpam26bia8hffd4a3db0hidr6h2-gum-0.15.2.drv",
+      "description": "Tasty Bubble Gum for your shell",
+      "install_id": "gum",
+      "license": "MIT",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=73cf49b8ad837ade2de76f87eb53fc85ed5d4680",
+      "name": "gum-0.15.2",
+      "pname": "gum",
+      "rev": "73cf49b8ad837ade2de76f87eb53fc85ed5d4680",
+      "rev_count": 755230,
+      "rev_date": "2025-02-18T08:17:47Z",
+      "scrape_date": "2025-02-20T02:25:42Z",
+      "stabilities": [
+        "staging",
+        "unstable"
+      ],
+      "unfree": false,
+      "version": "0.15.2",
+      "outputs_to_install": [
+        "out"
+      ],
+      "outputs": {
+        "out": "/nix/store/k8irafaaw0qkq4ihsax2lccr6srf1mnx-gum-0.15.2"
+      },
+      "system": "x86_64-linux",
+      "group": "toplevel",
+      "priority": 5
+    },
+    {
+      "attr_path": "neo4j",
+      "broken": false,
+      "derivation": "/nix/store/xgc2ywx9cgdgmwpxp11wi4789cgjjb2p-neo4j-5.26.1.drv",
+      "description": "Highly scalable, robust (fully ACID) native graph database",
+      "install_id": "neo4j",
+      "license": "GPL-3.0",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=73cf49b8ad837ade2de76f87eb53fc85ed5d4680",
+      "name": "neo4j-5.26.1",
+      "pname": "neo4j",
+      "rev": "73cf49b8ad837ade2de76f87eb53fc85ed5d4680",
+      "rev_count": 755230,
+      "rev_date": "2025-02-18T08:17:47Z",
+      "scrape_date": "2025-02-20T02:25:42Z",
+      "stabilities": [
+        "staging",
+        "unstable"
+      ],
+      "unfree": false,
+      "version": "5.26.1",
+      "outputs_to_install": [
+        "out"
+      ],
+      "outputs": {
+        "out": "/nix/store/z5p0xz98nk40pghwals36ff8xpzp87hx-neo4j-5.26.1"
+      },
+      "system": "aarch64-darwin",
+      "group": "toplevel",
+      "priority": 5
+    },
+    {
+      "attr_path": "neo4j",
+      "broken": false,
+      "derivation": "/nix/store/w8vinrcxnnp1906cc66n6wrqlyfw1q93-neo4j-5.26.1.drv",
+      "description": "Highly scalable, robust (fully ACID) native graph database",
+      "install_id": "neo4j",
+      "license": "GPL-3.0",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=73cf49b8ad837ade2de76f87eb53fc85ed5d4680",
+      "name": "neo4j-5.26.1",
+      "pname": "neo4j",
+      "rev": "73cf49b8ad837ade2de76f87eb53fc85ed5d4680",
+      "rev_count": 755230,
+      "rev_date": "2025-02-18T08:17:47Z",
+      "scrape_date": "2025-02-20T02:25:42Z",
+      "stabilities": [
+        "staging",
+        "unstable"
+      ],
+      "unfree": false,
+      "version": "5.26.1",
+      "outputs_to_install": [
+        "out"
+      ],
+      "outputs": {
+        "out": "/nix/store/k8glqz19w0jz0p0bfkj9i285ls0nrrhw-neo4j-5.26.1"
+      },
+      "system": "aarch64-linux",
+      "group": "toplevel",
+      "priority": 5
+    },
+    {
+      "attr_path": "neo4j",
+      "broken": false,
+      "derivation": "/nix/store/7p93bzpwhpmdygiywvqkz0m4af94pyf6-neo4j-5.26.1.drv",
+      "description": "Highly scalable, robust (fully ACID) native graph database",
+      "install_id": "neo4j",
+      "license": "GPL-3.0",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=73cf49b8ad837ade2de76f87eb53fc85ed5d4680",
+      "name": "neo4j-5.26.1",
+      "pname": "neo4j",
+      "rev": "73cf49b8ad837ade2de76f87eb53fc85ed5d4680",
+      "rev_count": 755230,
+      "rev_date": "2025-02-18T08:17:47Z",
+      "scrape_date": "2025-02-20T02:25:42Z",
+      "stabilities": [
+        "staging",
+        "unstable"
+      ],
+      "unfree": false,
+      "version": "5.26.1",
+      "outputs_to_install": [
+        "out"
+      ],
+      "outputs": {
+        "out": "/nix/store/6phwaqly6xdff2ixziw0sqij7kydis3a-neo4j-5.26.1"
+      },
+      "system": "x86_64-darwin",
+      "group": "toplevel",
+      "priority": 5
+    },
+    {
+      "attr_path": "neo4j",
+      "broken": false,
+      "derivation": "/nix/store/y10p08ahrar0m4jnbwgg2hw01h1fna78-neo4j-5.26.1.drv",
+      "description": "Highly scalable, robust (fully ACID) native graph database",
+      "install_id": "neo4j",
+      "license": "GPL-3.0",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=73cf49b8ad837ade2de76f87eb53fc85ed5d4680",
+      "name": "neo4j-5.26.1",
+      "pname": "neo4j",
+      "rev": "73cf49b8ad837ade2de76f87eb53fc85ed5d4680",
+      "rev_count": 755230,
+      "rev_date": "2025-02-18T08:17:47Z",
+      "scrape_date": "2025-02-20T02:25:42Z",
+      "stabilities": [
+        "staging",
+        "unstable"
+      ],
+      "unfree": false,
+      "version": "5.26.1",
+      "outputs_to_install": [
+        "out"
+      ],
+      "outputs": {
+        "out": "/nix/store/wb2avhwm3362hak0vwdvmmam4gysf5i9-neo4j-5.26.1"
+      },
+      "system": "x86_64-linux",
+      "group": "toplevel",
+      "priority": 5
+    }
+  ]
+}

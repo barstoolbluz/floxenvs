@@ -1,0 +1,422 @@
+{
+  "lockfile-version": 1,
+  "manifest": {
+    "version": 1,
+    "install": {
+      "gum": {
+        "pkg-path": "gum"
+      },
+      "pip": {
+        "pkg-path": "python313Packages.pip"
+      },
+      "zlib": {
+        "pkg-path": "zlib"
+      }
+    },
+    "vars": {
+      "PYTHON": "python3"
+    },
+    "hook": {
+      "on-activate": "show_venv_help() {\n    # Create the help message with Gum styling\n    gum style \\\n        --border rounded \\\n        --border-foreground 240 \\\n        --padding \"1 2\" \\\n        --margin \"1 0\" \\\n        --width 96 \\\n        \"$(gum style --foreground 141 --bold 'This is a  F l o x  Python 3.13 dev environment')\n\n🏗️  Stuff for environment management:\n    $(gum style --foreground 212 'mkvenv')         Creates a new virtual environment\n    $(gum style --foreground 212 'aktivate')       Finds and activates venvs\n    $(gum style --foreground 212 'qwit')           Safely exits the current venv\n    $(gum style --foreground 212 'mkprojekt')      Creates and sets up a complete project\n\n📦  Stuff for package management:\n    $(gum style --foreground 212 'pist')           Pip install from requirements.txt\n    $(gum style --foreground 212 'freezereqs')     Save installed packages to requirements.txt\n    $(gum style --foreground 212 'chkupdates')     Check for and update outdated packages\n\n🛠️  Development Tools:\n    $(gum style --foreground 212 'lint')           Run code quality checks (black, flake8, isort)\n    $(gum style --foreground 212 'run')            Smart-run Python files (auto-finds main.py/app.py)\n\n💡  Tip: Most functions include interactive prompts to guide you through options.\"\n\n    echo \"\"\n}\n\n## one function to run them all\nmain() {\n    show_venv_help\n}\n\n## runnit\nmain\n"
+    },
+    "profile": {
+      "bash": "mkvenv() {\n    [ -d \".venv\" ] && case $(gum choose --header \"A virtual environment (.venv) already exists. Choose an action:\" \"Quit\" \"Replace .venv\" \"Create new virtual environment\") in\n        \"Quit\") return 0 ;;\n        \"Replace .venv\") rm -rf .venv ;;\n        \"Create new virtual environment\") \n            name=$(gum input --placeholder \"Enter name\") || return 1\n            [ -z \"$name\" ] && return 1\n            python3 -m venv \"$name\" && source \"$name/bin/activate\"\n            return 0 ;;\n    esac\n    python3 -m venv .venv && source .venv/bin/activate\n}\n\naktivate() {\n    readarray -t venvs < <(find . -name \"activate\" -type f | sed 's|/bin/activate$||')\n    [ ${#venvs[@]} -eq 0 ] && echo \"No virtual environments found.\" && return 1\n    if [ ${#venvs[@]} -eq 1 ]; then\n        [ -n \"$VIRTUAL_ENV\" ] && deactivate\n        source \"${venvs[0]}/bin/activate\"\n        return 0\n    fi\n    venvs+=(\"quit\")\n    selected=$(gum choose --header \"Select environment to activate:\" \"${venvs[@]#./}\") || return 1\n    [ \"$selected\" = \"quit\" ] && return 0\n    [ -n \"$VIRTUAL_ENV\" ] && deactivate\n    source \"$selected/bin/activate\"\n}\n\npist() {\n    readarray -t venvs < <(find . -name \"activate\" -type f | sed 's|/bin/activate$||')\n    [ ${#venvs[@]} -eq 0 ] && mkvenv\n    [[ \"$VIRTUAL_ENV\" ]] || aktivate\n    pip install -r \"${1:-requirements.txt}\"\n}\n\nqwit() {\n    if [ -n \"$VIRTUAL_ENV\" ]; then\n        deactivate\n    else\n        echo \"No active virtual environment found.\"\n    fi\n}\n\nfreezereqs() {\n    [[ \"$VIRTUAL_ENV\" ]] || { echo \"No active virtual environment found.\"; return 1; }\n    local output_file=\"${1:-requirements.txt}\"\n    [[ -f \"$output_file\" ]] && gum confirm \"File $output_file already exists. Overwrite?\" || return 1\n    pip freeze > \"$output_file\" && echo \"$(gum style --foreground 82 \"✓\") Requirements saved to $output_file\"\n}\n\nmkprojekt() {\n    local project_name=$(gum input --placeholder \"Project name\") || return 1\n    [[ -z \"$project_name\" ]] && return 1\n    [[ -d \"$project_name\" ]] && gum confirm \"Directory $project_name already exists. Use it anyway?\" || mkdir -p \"$project_name\"\n    cd \"$project_name\" || return 1\n    gum confirm \"Create a virtual environment in $project_name?\" || return 0\n    python3 -m venv .venv && source .venv/bin/activate\n\n    if gum confirm \"Install common development packages?\"; then\n        local packages=$(gum choose --no-limit --header \"Select packages to install:\" \\\n            \"pytest\" \"black\" \"flake8\" \"mypy\" \"isort\" \"pylint\" \"pre-commit\" \"ipython\" \"jupyter\" \"requests\" \"pydantic\" \"fastapi\" \"flask\" \"django\" \"sqlalchemy\" \"numpy\" \"pandas\" \"matplotlib\")\n        [[ -n \"$packages\" ]] && pip install $packages && freezereqs\n    fi\n\n    if gum confirm \"Initialize Git repository?\"; then\n        git init\n        cat > .gitignore << 'EOF'\n# Python\n__pycache__/\n*.py[cod]\n*$py.class\n*.so\n.Python\n.venv/\nvenv/\nENV/\nenv/\n.env\n*.log\n# Distribution / packaging\ndist/\nbuild/\n*.egg-info/\n# Unit test / coverage\n.coverage\nhtmlcov/\n.pytest_cache/\n# IDE\n.idea/\n.vscode/\n*.swp\n*.swo\nEOF\n        echo \"$(gum style --foreground 82 \"✓\") Git repository initialized with Python .gitignore\"\n    fi\n    echo \"$(gum style --foreground 82 \"✓\") Project $project_name set up successfully\"\n}\n\nchkupdates() {\n    [[ \"$VIRTUAL_ENV\" ]] || aktivate\n    local outdated=$(pip list --outdated --format=columns)\n    [[ -z \"$outdated\" ]] && echo \"$(gum style --foreground 82 \"✓\") All packages are up to date.\" && return 0\n    \n    echo \"Outdated packages:\"\n    echo \"$outdated\"\n    \n    if gum confirm \"Update all outdated packages?\"; then\n        pip list --outdated --format=json | python -c \"import json, sys; print(' '.join([pkg['name'] for pkg in json.load(sys.stdin)]))\" | xargs -n1 pip install -U\n        echo \"$(gum style --foreground 82 \"✓\") Packages updated successfully.\"\n    fi\n}\n\nlint() {\n    [[ \"$VIRTUAL_ENV\" ]] || aktivate\n    local files=()\n    \n    if [[ $# -eq 0 ]]; then\n        # Use null-terminated output with find to handle filenames with spaces\n        while IFS= read -rd $'\\0' file; do\n            files+=(\"$file\")\n        done < <(find . -name \"*.py\" -not -path \"*/\\.*\" -not -path \"*/venv/*\" -not -path \"*/.venv/*\" -print0)\n    else\n        # If arguments were provided, use them as is\n        files=(\"$@\")\n    fi\n    \n    local missing_tools=()\n    pip list | grep -q \"black\" || missing_tools+=(\"black\")\n    pip list | grep -q \"flake8\" || missing_tools+=(\"flake8\")\n    pip list | grep -q \"isort\" || missing_tools+=(\"isort\")\n    \n    [[ ${#missing_tools[@]} -gt 0 ]] && echo \"Some linting tools are missing. Install them now?\" && \\\n        gum confirm && pip install \"${missing_tools[@]}\"\n    \n    [[ ${#files[@]} -eq 0 ]] && echo \"No Python files found to lint.\" && return 0\n    \n    pip list | grep -q \"black\" && echo \"Running black...\" && black --check \"${files[@]}\"\n    pip list | grep -q \"flake8\" && echo \"Running flake8...\" && flake8 \"${files[@]}\"\n    pip list | grep -q \"isort\" && echo \"Running isort...\" && isort --check \"${files[@]}\"\n    echo \"Linting complete.\"\n}\n\nrun() {\n    [[ \"$VIRTUAL_ENV\" ]] || aktivate\n    \n    # If a file is specified, run it directly with proper quoting\n    if [[ -n \"$1\" ]]; then\n        if [[ -f \"$1\" ]]; then\n            python \"$1\"\n            return\n        else\n            echo \"File '$1' not found.\"\n            return 1\n        fi\n    fi\n    \n    # Auto-detect runnable Python files\n    local pyfiles=(\"main.py\" \"app.py\" \"run.py\" \"server.py\" \"manage.py\")\n    for pyfile in \"${pyfiles[@]}\"; do\n        if [[ -f \"$pyfile\" ]]; then\n            echo \"Running $pyfile...\"\n            python \"$pyfile\"\n            return\n        fi\n    done\n    \n    echo \"No runnable Python file found. Specify a file or create main.py/app.py.\"\n}\n",
+      "zsh": "mkvenv() {\n    [[ -d \".venv\" ]] && case $(gum choose --header \"A virtual environment (.venv) already exists. Choose an action:\" \"Quit\" \"Replace .venv\" \"Create new virtual environment\") in\n        \"Quit\") return 0 ;;\n        \"Replace .venv\") rm -rf .venv ;;\n        \"Create new virtual environment\") \n            name=$(gum input --placeholder \"Enter name\") || return 1\n            [[ -z \"$name\" ]] && return 1\n            python3 -m venv \"$name\" && source \"$name/bin/activate\"\n            return 0 ;;\n    esac\n    python3 -m venv .venv && source .venv/bin/activate\n}\n\naktivate() {\n    local venvs=(\"${(@f)$(find . -name \"activate\" -type f | sed 's|/bin/activate$||')}\")\n    [[ ${#venvs} -eq 0 ]] && echo \"No virtual environments found.\" && return 1\n    if [[ ${#venvs} -eq 1 ]]; then\n        [[ -n \"$VIRTUAL_ENV\" ]] && deactivate\n        source \"${venvs[1]}/bin/activate\"\n        return 0\n    fi\n    venvs+=(\"quit\")\n    selected=$(gum choose --header \"Select environment to activate:\" \"${(@)venvs#./}\") || return 1\n    [[ \"$selected\" = \"quit\" ]] && return 0\n    [[ -n \"$VIRTUAL_ENV\" ]] && deactivate\n    source \"$selected/bin/activate\"\n}\n\npist() {\n    local venvs=(\"${(@f)$(find . -name \"activate\" -type f | sed 's|/bin/activate$||')}\")\n    [[ ${#venvs} -eq 0 ]] && mkvenv\n    [[ \"$VIRTUAL_ENV\" ]] || aktivate\n    pip install -r \"${1:-requirements.txt}\"\n}\n\nqwit() {\n    if [[ -n \"$VIRTUAL_ENV\" ]]; then\n        deactivate\n    else\n        echo \"No active virtual environment found.\"\n    fi\n}\n\nfreezereqs() {\n    [[ \"$VIRTUAL_ENV\" ]] || { echo \"No active virtual environment found.\"; return 1; }\n    local output_file=\"${1:-requirements.txt}\"\n    [[ -f \"$output_file\" ]] && gum confirm \"File $output_file already exists. Overwrite?\" || return 1\n    pip freeze > \"$output_file\" && echo \"$(gum style --foreground 82 \"✓\") Requirements saved to $output_file\"\n}\n\nmkprojekt() {\n    local project_name=$(gum input --placeholder \"Project name\") || return 1\n    [[ -z \"$project_name\" ]] && return 1\n    [[ -d \"$project_name\" ]] && gum confirm \"Directory $project_name already exists. Use it anyway?\" || mkdir -p \"$project_name\"\n    cd \"$project_name\" || return 1\n    gum confirm \"Create a virtual environment in $project_name?\" || return 0\n    python3 -m venv .venv && source .venv/bin/activate\n\n    if gum confirm \"Install common development packages?\"; then\n        local packages=$(gum choose --no-limit --header \"Select packages to install:\" \\\n            \"pytest\" \"black\" \"flake8\" \"mypy\" \"isort\" \"pylint\" \"pre-commit\" \"ipython\" \"jupyter\" \"requests\" \"pydantic\" \"fastapi\" \"flask\" \"django\" \"sqlalchemy\" \"numpy\" \"pandas\" \"matplotlib\")\n        [[ -n \"$packages\" ]] && pip install $packages && freezereqs\n    fi\n\n    if gum confirm \"Initialize Git repository?\"; then\n        git init\n        cat > .gitignore << 'EOF'\n# Python\n__pycache__/\n*.py[cod]\n*$py.class\n*.so\n.Python\n.venv/\nvenv/\nENV/\nenv/\n.env\n*.log\n# Distribution / packaging\ndist/\nbuild/\n*.egg-info/\n# Unit test / coverage\n.coverage\nhtmlcov/\n.pytest_cache/\n# IDE\n.idea/\n.vscode/\n*.swp\n*.swo\nEOF\n        echo \"$(gum style --foreground 82 \"✓\") Git repository initialized with Python .gitignore\"\n    fi\n    echo \"$(gum style --foreground 82 \"✓\") Project $project_name set up successfully\"\n}\n\nchkupdates() {\n    [[ \"$VIRTUAL_ENV\" ]] || aktivate\n    local outdated=$(pip list --outdated --format=columns)\n    [[ -z \"$outdated\" ]] && echo \"$(gum style --foreground 82 \"✓\") All packages are up to date.\" && return 0\n    \n    echo \"Outdated packages:\"\n    echo \"$outdated\"\n    \n    if gum confirm \"Update all outdated packages?\"; then\n        pip list --outdated --format=json | python -c \"import json, sys; print(' '.join([pkg['name'] for pkg in json.load(sys.stdin)]))\" | xargs -n1 pip install -U\n        echo \"$(gum style --foreground 82 \"✓\") Packages updated successfully.\"\n    fi\n}\n\nlint() {\n    [[ \"$VIRTUAL_ENV\" ]] || aktivate\n    local files=()\n    \n    if [[ $# -eq 0 ]]; then\n        # Use null-terminated output with find to handle filenames with spaces\n        while IFS= read -rd $'\\0' file; do\n            files+=(\"$file\")\n        done < <(find . -name \"*.py\" -not -path \"*/\\.*\" -not -path \"*/venv/*\" -not -path \"*/.venv/*\" -print0)\n    else\n        # If arguments were provided, use them as is\n        files=(\"$@\")\n    fi\n    \n    local missing_tools=()\n    pip list | grep -q \"black\" || missing_tools+=(\"black\")\n    pip list | grep -q \"flake8\" || missing_tools+=(\"flake8\")\n    pip list | grep -q \"isort\" || missing_tools+=(\"isort\")\n    \n    [[ ${#missing_tools} -gt 0 ]] && echo \"Some linting tools are missing. Install them now?\" && \\\n        gum confirm && pip install \"${missing_tools[@]}\"\n    \n    [[ ${#files} -eq 0 ]] && echo \"No Python files found to lint.\" && return 0\n    \n    pip list | grep -q \"black\" && echo \"Running black...\" && black --check \"${files[@]}\"\n    pip list | grep -q \"flake8\" && echo \"Running flake8...\" && flake8 \"${files[@]}\"\n    pip list | grep -q \"isort\" && echo \"Running isort...\" && isort --check \"${files[@]}\"\n    echo \"Linting complete.\"\n}\n\nrun() {\n    [[ \"$VIRTUAL_ENV\" ]] || aktivate\n    \n    # If a file is specified, run it directly with proper quoting\n    if [[ -n \"$1\" ]]; then\n        if [[ -f \"$1\" ]]; then\n            python \"$1\"\n            return\n        else\n            echo \"File '$1' not found.\"\n            return 1\n        fi\n    fi\n    \n    # Auto-detect runnable Python files\n    local pyfiles=(\"main.py\" \"app.py\" \"run.py\" \"server.py\" \"manage.py\")\n    for pyfile in \"${pyfiles[@]}\"; do\n        if [[ -f \"$pyfile\" ]]; then\n            echo \"Running $pyfile...\"\n            python \"$pyfile\"\n            return\n        fi\n    done\n    \n    echo \"No runnable Python file found. Specify a file or create main.py/app.py.\"\n}\n",
+      "fish": "function mkvenv\n    if test -d \".venv\"\n        set choice (gum choose --header \"A virtual environment (.venv) already exists. Choose an action:\" \"Quit\" \"Replace .venv\" \"Create new virtual environment\")\n        switch $choice\n            case \"Quit\"; return 0\n            case \"Replace .venv\"; rm -rf .venv\n            case \"Create new virtual environment\"\n                set name (gum input --placeholder \"Enter name\"); or return 1\n                test -z \"$name\"; and return 1\n                python3 -m venv \"$name\"; and source \"$name/bin/activate.fish\"\n                return 0\n        end\n    end\n    python3 -m venv .venv; and source .venv/bin/activate.fish\nend\n\nfunction aktivate\n    set venvs (find . -name \"activate.fish\" -type f | sed 's|/bin/activate.fish$||')\n    test (count $venvs) -eq 0; and echo \"No virtual environments found.\"; and return 1\n    if test (count $venvs) -eq 1\n        set -q VIRTUAL_ENV; and deactivate\n        source \"$venvs[1]/bin/activate.fish\"\n        return 0\n    end\n    set -a venvs \"quit\"\n    set venvs_display (string replace -a \"./\" \"\" $venvs)\n    set selected (gum choose --header \"Select environment to activate:\" $venvs_display); or return 1\n    test \"$selected\" = \"quit\"; and return 0\n    set -q VIRTUAL_ENV; and deactivate\n    for i in (seq (count $venvs))\n        if test (string replace -a \"./\" \"\" $venvs[$i]) = \"$selected\"\n            source \"$venvs[$i]/bin/activate.fish\"\n            break\n        end\n    end\nend\n\nfunction pist\n    set venvs (find . -name \"activate.fish\" -type f | sed 's|/bin/activate.fish$||')\n    test (count $venvs) -eq 0; and mkvenv\n    set -q VIRTUAL_ENV; or aktivate\n    pip install -r \"$argv[1]\"\nend\n\nfunction qwit\n    set -q VIRTUAL_ENV; and deactivate; or echo \"No active virtual environment found.\"\nend\n\nfunction freezereqs\n    set -q VIRTUAL_ENV; or echo \"No active virtual environment found.\"; and return 1\n    set output_file $argv[1]; or set output_file \"requirements.txt\"\n    test -f \"$output_file\"; and gum confirm \"File $output_file already exists. Overwrite?\"; or return 1\n    pip freeze > \"$output_file\"; and echo (gum style --foreground 82 \"✓\") \"Requirements saved to $output_file\"\nend\n\nfunction mkprojekt\n    set project_name (gum input --placeholder \"Project name\"); or return 1\n    test -z \"$project_name\"; and return 1\n    test -d \"$project_name\"; and gum confirm \"Directory $project_name already exists. Use it anyway?\"; or mkdir -p \"$project_name\"\n    cd \"$project_name\"; or return 1\n    gum confirm \"Create a virtual environment in $project_name?\"; or return 0\n    python3 -m venv .venv; and source .venv/bin/activate.fish\n    if gum confirm \"Install common development packages?\"\n        set packages (gum choose --no-limit --header \"Select packages to install:\" \"pytest\" \"black\" \"flake8\" \"mypy\" \"isort\" \"pylint\" \"pre-commit\" \"ipython\" \"jupyter\" \"requests\" \"pydantic\" \"fastapi\" \"flask\" \"django\" \"sqlalchemy\" \"numpy\" \"pandas\" \"matplotlib\")\n        if test -n \"$packages\"\n            for pkg in $packages; pip install \"$pkg\"; end\n            freezereqs\n        end\n    end\n    if gum confirm \"Initialize Git repository?\"\n        git init\n        echo '# Python\n__pycache__/\n*.py[cod]\n*$py.class\n*.so\n.Python\n.venv/\nvenv/\nENV/\nenv/\n.env\n*.log\n# Distribution / packaging\ndist/\nbuild/\n*.egg-info/\n# Unit test / coverage\n.coverage\nhtmlcov/\n.pytest_cache/\n# IDE\n.idea/\n.vscode/\n*.swp\n*.swo' > .gitignore\n        echo (gum style --foreground 82 \"✓\") \"Git repository initialized with Python .gitignore\"\n    end\n    echo (gum style --foreground 82 \"✓\") \"Project $project_name set up successfully\"\nend\n\nfunction checkupdates\n    set -q VIRTUAL_ENV; or aktivate\n    set outdated (pip list --outdated --format=columns)\n    test -z \"$outdated\"; and echo (gum style --foreground 82 \"✓\") \"All packages are up to date.\"; and return 0\n    echo \"Outdated packages:\"; echo \"$outdated\"\n    gum confirm \"Update all outdated packages?\"; and begin\n        for pkg in (pip list --outdated --format=json | python -c \"import json, sys; print('\\n'.join([pkg['name'] for pkg in json.load(sys.stdin)]))\")\n            pip install -U \"$pkg\"\n        end\n        echo (gum style --foreground 82 \"✓\") \"Packages updated successfully.\"\n    end\nend\n\nfunction lint\n    set -q VIRTUAL_ENV; or aktivate\n    set files\n    test (count $argv) -eq 0; and set files (find . -name \"*.py\" -not -path \"*/\\.*\" -not -path \"*/venv/*\" -not -path \"*/.venv/*\"); or set files $argv\n    set missing_tools\n    pip list | grep -q \"black\"; or set -a missing_tools \"black\"\n    pip list | grep -q \"flake8\"; or set -a missing_tools \"flake8\"\n    pip list | grep -q \"isort\"; or set -a missing_tools \"isort\"\n    if test (count $missing_tools) -gt 0\n        echo \"Some linting tools are missing. Install them now?\"; and gum confirm; and for tool in $missing_tools; pip install \"$tool\"; end\n    end\n    test (count $files) -eq 0; and echo \"No Python files found to lint.\"; and return 0\n    pip list | grep -q \"black\"; and echo \"Running black...\"; and for file in $files; black --check \"$file\"; end\n    pip list | grep -q \"flake8\"; and echo \"Running flake8...\"; and for file in $files; flake8 \"$file\"; end\n    pip list | grep -q \"isort\"; and echo \"Running isort...\"; and for file in $files; isort --check \"$file\"; end\n    echo \"Linting complete.\"\nend\n\nfunction run\n    set -q VIRTUAL_ENV; or aktivate\n    if test (count $argv) -gt 0\n        test -f \"$argv[1]\"; and python \"$argv[1]\"; and return; or echo \"File '$argv[1]' not found.\"; and return 1\n    end\n    for pyfile in \"main.py\" \"app.py\" \"run.py\" \"server.py\" \"manage.py\"\n        if test -f \"$pyfile\"\n            echo \"Running $pyfile...\"; and python \"$pyfile\"; and return\n        end\n    end\n    echo \"No runnable Python file found. Specify a file or create main.py/app.py.\"\nend\n"
+    },
+    "options": {
+      "systems": [
+        "aarch64-darwin",
+        "aarch64-linux",
+        "x86_64-darwin",
+        "x86_64-linux"
+      ],
+      "allow": {
+        "licenses": []
+      },
+      "semver": {}
+    }
+  },
+  "packages": [
+    {
+      "attr_path": "gum",
+      "broken": false,
+      "derivation": "/nix/store/zvg9sbdqbayggs3n18gd6c8g8lm950ms-gum-0.15.2.drv",
+      "description": "Tasty Bubble Gum for your shell",
+      "install_id": "gum",
+      "license": "MIT",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=73cf49b8ad837ade2de76f87eb53fc85ed5d4680",
+      "name": "gum-0.15.2",
+      "pname": "gum",
+      "rev": "73cf49b8ad837ade2de76f87eb53fc85ed5d4680",
+      "rev_count": 755230,
+      "rev_date": "2025-02-18T08:17:47Z",
+      "scrape_date": "2025-02-20T02:25:42Z",
+      "stabilities": [
+        "staging",
+        "unstable"
+      ],
+      "unfree": false,
+      "version": "0.15.2",
+      "outputs_to_install": [
+        "out"
+      ],
+      "outputs": {
+        "out": "/nix/store/jklh2l06j8hicjp42pjjzhzc0dkk23v1-gum-0.15.2"
+      },
+      "system": "aarch64-darwin",
+      "group": "toplevel",
+      "priority": 5
+    },
+    {
+      "attr_path": "gum",
+      "broken": false,
+      "derivation": "/nix/store/d1rwvjf5fhqsqqxv0xsasfpgay7r6lag-gum-0.15.2.drv",
+      "description": "Tasty Bubble Gum for your shell",
+      "install_id": "gum",
+      "license": "MIT",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=73cf49b8ad837ade2de76f87eb53fc85ed5d4680",
+      "name": "gum-0.15.2",
+      "pname": "gum",
+      "rev": "73cf49b8ad837ade2de76f87eb53fc85ed5d4680",
+      "rev_count": 755230,
+      "rev_date": "2025-02-18T08:17:47Z",
+      "scrape_date": "2025-02-20T02:25:42Z",
+      "stabilities": [
+        "staging",
+        "unstable"
+      ],
+      "unfree": false,
+      "version": "0.15.2",
+      "outputs_to_install": [
+        "out"
+      ],
+      "outputs": {
+        "out": "/nix/store/bwdv1p25swi6h7adikmk9zxc87pl9ka4-gum-0.15.2"
+      },
+      "system": "aarch64-linux",
+      "group": "toplevel",
+      "priority": 5
+    },
+    {
+      "attr_path": "gum",
+      "broken": false,
+      "derivation": "/nix/store/4xi02v6f3arwfjavf6vv8j5084mg540y-gum-0.15.2.drv",
+      "description": "Tasty Bubble Gum for your shell",
+      "install_id": "gum",
+      "license": "MIT",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=73cf49b8ad837ade2de76f87eb53fc85ed5d4680",
+      "name": "gum-0.15.2",
+      "pname": "gum",
+      "rev": "73cf49b8ad837ade2de76f87eb53fc85ed5d4680",
+      "rev_count": 755230,
+      "rev_date": "2025-02-18T08:17:47Z",
+      "scrape_date": "2025-02-20T02:25:42Z",
+      "stabilities": [
+        "staging",
+        "unstable"
+      ],
+      "unfree": false,
+      "version": "0.15.2",
+      "outputs_to_install": [
+        "out"
+      ],
+      "outputs": {
+        "out": "/nix/store/fhwxirvidsx5qn3rvln7cjh1d1q43fvm-gum-0.15.2"
+      },
+      "system": "x86_64-darwin",
+      "group": "toplevel",
+      "priority": 5
+    },
+    {
+      "attr_path": "gum",
+      "broken": false,
+      "derivation": "/nix/store/fz5i7rpam26bia8hffd4a3db0hidr6h2-gum-0.15.2.drv",
+      "description": "Tasty Bubble Gum for your shell",
+      "install_id": "gum",
+      "license": "MIT",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=73cf49b8ad837ade2de76f87eb53fc85ed5d4680",
+      "name": "gum-0.15.2",
+      "pname": "gum",
+      "rev": "73cf49b8ad837ade2de76f87eb53fc85ed5d4680",
+      "rev_count": 755230,
+      "rev_date": "2025-02-18T08:17:47Z",
+      "scrape_date": "2025-02-20T02:25:42Z",
+      "stabilities": [
+        "staging",
+        "unstable"
+      ],
+      "unfree": false,
+      "version": "0.15.2",
+      "outputs_to_install": [
+        "out"
+      ],
+      "outputs": {
+        "out": "/nix/store/k8irafaaw0qkq4ihsax2lccr6srf1mnx-gum-0.15.2"
+      },
+      "system": "x86_64-linux",
+      "group": "toplevel",
+      "priority": 5
+    },
+    {
+      "attr_path": "python313Packages.pip",
+      "broken": false,
+      "derivation": "/nix/store/rsgqx1jjk66az5j6sbkzsmr7cjphpw8l-python3.13-pip-24.0.drv",
+      "description": "PyPA recommended tool for installing Python packages",
+      "install_id": "pip",
+      "license": "[ MIT ]",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=73cf49b8ad837ade2de76f87eb53fc85ed5d4680",
+      "name": "python3.13-pip-24.0",
+      "pname": "pip",
+      "rev": "73cf49b8ad837ade2de76f87eb53fc85ed5d4680",
+      "rev_count": 755230,
+      "rev_date": "2025-02-18T08:17:47Z",
+      "scrape_date": "2025-02-20T02:25:42Z",
+      "stabilities": [
+        "staging",
+        "unstable"
+      ],
+      "unfree": false,
+      "version": "24.0",
+      "outputs_to_install": [
+        "man",
+        "out"
+      ],
+      "outputs": {
+        "dist": "/nix/store/shnn1lzwrvqi4ag15p6g67jbabncj2lm-python3.13-pip-24.0-dist",
+        "man": "/nix/store/74s2jbay4c2amwqlcmp5yddf4pcjxbm3-python3.13-pip-24.0-man",
+        "out": "/nix/store/dd8rfqbphi15bmp30xsrlr68sa46xd6x-python3.13-pip-24.0"
+      },
+      "system": "aarch64-darwin",
+      "group": "toplevel",
+      "priority": 5
+    },
+    {
+      "attr_path": "python313Packages.pip",
+      "broken": false,
+      "derivation": "/nix/store/iqy86cb9j618c77v78x7gnlvjadjjxgr-python3.13-pip-24.0.drv",
+      "description": "PyPA recommended tool for installing Python packages",
+      "install_id": "pip",
+      "license": "[ MIT ]",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=73cf49b8ad837ade2de76f87eb53fc85ed5d4680",
+      "name": "python3.13-pip-24.0",
+      "pname": "pip",
+      "rev": "73cf49b8ad837ade2de76f87eb53fc85ed5d4680",
+      "rev_count": 755230,
+      "rev_date": "2025-02-18T08:17:47Z",
+      "scrape_date": "2025-02-20T02:25:42Z",
+      "stabilities": [
+        "staging",
+        "unstable"
+      ],
+      "unfree": false,
+      "version": "24.0",
+      "outputs_to_install": [
+        "man",
+        "out"
+      ],
+      "outputs": {
+        "dist": "/nix/store/25dracr56pp7kv7m82wm9fm733nidkic-python3.13-pip-24.0-dist",
+        "man": "/nix/store/pls63i2179s3yjqns5x9wxrdzij1328d-python3.13-pip-24.0-man",
+        "out": "/nix/store/il9mqh0rp4sjiy51h1rvpk94pjk7i22d-python3.13-pip-24.0"
+      },
+      "system": "aarch64-linux",
+      "group": "toplevel",
+      "priority": 5
+    },
+    {
+      "attr_path": "python313Packages.pip",
+      "broken": false,
+      "derivation": "/nix/store/8zi1z8lrgrcmc78yakiidp0137485z76-python3.13-pip-24.0.drv",
+      "description": "PyPA recommended tool for installing Python packages",
+      "install_id": "pip",
+      "license": "[ MIT ]",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=73cf49b8ad837ade2de76f87eb53fc85ed5d4680",
+      "name": "python3.13-pip-24.0",
+      "pname": "pip",
+      "rev": "73cf49b8ad837ade2de76f87eb53fc85ed5d4680",
+      "rev_count": 755230,
+      "rev_date": "2025-02-18T08:17:47Z",
+      "scrape_date": "2025-02-20T02:25:42Z",
+      "stabilities": [
+        "staging",
+        "unstable"
+      ],
+      "unfree": false,
+      "version": "24.0",
+      "outputs_to_install": [
+        "man",
+        "out"
+      ],
+      "outputs": {
+        "dist": "/nix/store/cndknixas9i54vw6ai8rzy95456qhawj-python3.13-pip-24.0-dist",
+        "man": "/nix/store/f1y6cgpms1p9isxghnc04adqrhm8ws3f-python3.13-pip-24.0-man",
+        "out": "/nix/store/k4zjl979si70axv85my96x7m85w44i5h-python3.13-pip-24.0"
+      },
+      "system": "x86_64-darwin",
+      "group": "toplevel",
+      "priority": 5
+    },
+    {
+      "attr_path": "python313Packages.pip",
+      "broken": false,
+      "derivation": "/nix/store/3a3rj40f35vpr23kkyvg07a3iqvcd6mq-python3.13-pip-24.0.drv",
+      "description": "PyPA recommended tool for installing Python packages",
+      "install_id": "pip",
+      "license": "[ MIT ]",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=73cf49b8ad837ade2de76f87eb53fc85ed5d4680",
+      "name": "python3.13-pip-24.0",
+      "pname": "pip",
+      "rev": "73cf49b8ad837ade2de76f87eb53fc85ed5d4680",
+      "rev_count": 755230,
+      "rev_date": "2025-02-18T08:17:47Z",
+      "scrape_date": "2025-02-20T02:25:42Z",
+      "stabilities": [
+        "staging",
+        "unstable"
+      ],
+      "unfree": false,
+      "version": "24.0",
+      "outputs_to_install": [
+        "man",
+        "out"
+      ],
+      "outputs": {
+        "dist": "/nix/store/hzjq560yhxiz7swbvyk7a6d0wdsc278c-python3.13-pip-24.0-dist",
+        "man": "/nix/store/106y6d16lcmjpm2rqnd2vis07d35f8k9-python3.13-pip-24.0-man",
+        "out": "/nix/store/0hdv53rz22ymihpgl8d3w6hx57sgjl1w-python3.13-pip-24.0"
+      },
+      "system": "x86_64-linux",
+      "group": "toplevel",
+      "priority": 5
+    },
+    {
+      "attr_path": "zlib",
+      "broken": false,
+      "derivation": "/nix/store/5skl576ixs56r7bw7w39sl50r9ll090v-zlib-1.3.1.drv",
+      "description": "Lossless data-compression library",
+      "install_id": "zlib",
+      "license": "Zlib",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=73cf49b8ad837ade2de76f87eb53fc85ed5d4680",
+      "name": "zlib-1.3.1",
+      "pname": "zlib",
+      "rev": "73cf49b8ad837ade2de76f87eb53fc85ed5d4680",
+      "rev_count": 755230,
+      "rev_date": "2025-02-18T08:17:47Z",
+      "scrape_date": "2025-02-20T02:25:42Z",
+      "stabilities": [
+        "staging",
+        "unstable"
+      ],
+      "unfree": false,
+      "version": "1.3.1",
+      "outputs_to_install": [
+        "out"
+      ],
+      "outputs": {
+        "dev": "/nix/store/xdi5lrllrkyzgb8d73hsid44a822ml5x-zlib-1.3.1-dev",
+        "out": "/nix/store/hzq48n4hmcwsgccab7djxxxj2m8h4cxb-zlib-1.3.1",
+        "static": "/nix/store/3cixwjm6nqrc0xb93nlp8hbgc74r8mws-zlib-1.3.1-static"
+      },
+      "system": "aarch64-darwin",
+      "group": "toplevel",
+      "priority": 5
+    },
+    {
+      "attr_path": "zlib",
+      "broken": false,
+      "derivation": "/nix/store/jajcf6fwjpib2ri0caa2ggj389dw5fh4-zlib-1.3.1.drv",
+      "description": "Lossless data-compression library",
+      "install_id": "zlib",
+      "license": "Zlib",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=73cf49b8ad837ade2de76f87eb53fc85ed5d4680",
+      "name": "zlib-1.3.1",
+      "pname": "zlib",
+      "rev": "73cf49b8ad837ade2de76f87eb53fc85ed5d4680",
+      "rev_count": 755230,
+      "rev_date": "2025-02-18T08:17:47Z",
+      "scrape_date": "2025-02-20T02:25:42Z",
+      "stabilities": [
+        "staging",
+        "unstable"
+      ],
+      "unfree": false,
+      "version": "1.3.1",
+      "outputs_to_install": [
+        "out"
+      ],
+      "outputs": {
+        "dev": "/nix/store/vjs0jqq7w99lsmbkk68q23v8qzkzr9ms-zlib-1.3.1-dev",
+        "out": "/nix/store/y6vlbaplzsx9m95zn0h071afi8i5gw58-zlib-1.3.1",
+        "static": "/nix/store/dn8lhy8hgcc5cpycirkj82vjlmjjn91j-zlib-1.3.1-static"
+      },
+      "system": "aarch64-linux",
+      "group": "toplevel",
+      "priority": 5
+    },
+    {
+      "attr_path": "zlib",
+      "broken": false,
+      "derivation": "/nix/store/ihrrll2gspz42lmnwaj87v3ha0ci9mpj-zlib-1.3.1.drv",
+      "description": "Lossless data-compression library",
+      "install_id": "zlib",
+      "license": "Zlib",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=73cf49b8ad837ade2de76f87eb53fc85ed5d4680",
+      "name": "zlib-1.3.1",
+      "pname": "zlib",
+      "rev": "73cf49b8ad837ade2de76f87eb53fc85ed5d4680",
+      "rev_count": 755230,
+      "rev_date": "2025-02-18T08:17:47Z",
+      "scrape_date": "2025-02-20T02:25:42Z",
+      "stabilities": [
+        "staging",
+        "unstable"
+      ],
+      "unfree": false,
+      "version": "1.3.1",
+      "outputs_to_install": [
+        "out"
+      ],
+      "outputs": {
+        "dev": "/nix/store/p0fp3nq3qkrxvrgq05wxak8nq636ghjh-zlib-1.3.1-dev",
+        "out": "/nix/store/0r10n174pvyrll572gnbb3haqxy0gn27-zlib-1.3.1",
+        "static": "/nix/store/rc4y2z20xvkfc4zgm4kxjvckw93v64rw-zlib-1.3.1-static"
+      },
+      "system": "x86_64-darwin",
+      "group": "toplevel",
+      "priority": 5
+    },
+    {
+      "attr_path": "zlib",
+      "broken": false,
+      "derivation": "/nix/store/zpwdb0j0y2168w2d880f2wlbjxc41hji-zlib-1.3.1.drv",
+      "description": "Lossless data-compression library",
+      "install_id": "zlib",
+      "license": "Zlib",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=73cf49b8ad837ade2de76f87eb53fc85ed5d4680",
+      "name": "zlib-1.3.1",
+      "pname": "zlib",
+      "rev": "73cf49b8ad837ade2de76f87eb53fc85ed5d4680",
+      "rev_count": 755230,
+      "rev_date": "2025-02-18T08:17:47Z",
+      "scrape_date": "2025-02-20T02:25:42Z",
+      "stabilities": [
+        "staging",
+        "unstable"
+      ],
+      "unfree": false,
+      "version": "1.3.1",
+      "outputs_to_install": [
+        "out"
+      ],
+      "outputs": {
+        "dev": "/nix/store/wvz2wwp4pkm550i9a33yqwmzj4mkqbk4-zlib-1.3.1-dev",
+        "out": "/nix/store/jb442jir0a2x7zsk0d63xb6rh8p280ai-zlib-1.3.1",
+        "static": "/nix/store/bhrjmz1sfjd14s3gkaik639w1wxvynn1-zlib-1.3.1-static"
+      },
+      "system": "x86_64-linux",
+      "group": "toplevel",
+      "priority": 5
+    }
+  ]
+}

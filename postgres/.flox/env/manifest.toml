@@ -1,0 +1,446 @@
+version = 1
+
+
+[install]
+gum.pkg-path = "gum"
+
+# uncomment to select your postgreSQL version:
+postgresql.pkg-path = "postgresql_16"
+postgis.pkg-path = "postgresql16Packages.postgis"
+#postgresql.pkg-path = "postgresql_15"
+#postgresql.pkg-path = "postgresql_14"
+#postgresql.pkg-path = "postgresql_13"
+#postgresql.pkg-path = "postgresql_12"
+#postgresql.pkg-path = "postgresql_11"
+#postgresql.pkg-path = "postgresql_10"
+
+
+[vars]
+# define env vars available at runtime
+PGHOSTADDR = "127.0.0.1"
+PGPORT = "15432"
+PGUSER = "pguser"
+PGPASS = "pgpass"
+PGDATABASE = "postgres"
+
+
+[hook]
+on-activate = '''
+# define env vars available during activation
+export PGDIR="${FLOX_ENV_CACHE}/postgres"
+export CONFIG_FILE="${FLOX_ENV_CACHE}/postgres.config"
+export DEFAULT_PGHOSTADDR="127.0.0.1"
+export DEFAULT_PGPORT="15432"
+export DEFAULT_PGUSER="pguser"
+export DEFAULT_PGPASS="pgpass"
+export DEFAULT_PGDATABASE="postgres"
+export DEFAULT_PGDIR="${FLOX_ENV_CACHE}/postgres"
+
+# enable/disable debugging; set to "true" to enable verbose output
+export PG_DEBUG="false"
+
+# this function checks if first run
+check_first_run() {
+    if [[ ! -f "$CONFIG_FILE" ]]; then
+        return 0 # True, this is the first run
+    else
+        return 1 # False, not the first run
+    fi
+}
+
+# this function loads postgres.config if exists
+load_config() {
+    if [[ -f "$CONFIG_FILE" ]]; then
+        source "$CONFIG_FILE"
+    else
+        # set defaults if no postgres.config
+        export PGHOSTADDR="$DEFAULT_PGHOSTADDR"
+        export PGPORT="$DEFAULT_PGPORT"
+        export PGUSER="$DEFAULT_PGUSER"
+        export PGPASS="$DEFAULT_PGPASS"
+        export PGDATABASE="$DEFAULT_PGDATABASE"
+        export PGDIR="$DEFAULT_PGDIR"
+    fi
+}
+
+# this function saves postgres.config to file
+save_config() {
+    mkdir -p "$(dirname "$CONFIG_FILE")"
+    cat > "$CONFIG_FILE" << EOF
+# postgresql configuration - Generated on $(date)
+export PGHOSTADDR="$PGHOSTADDR"
+export PGPORT="$PGPORT"
+export PGUSER="$PGUSER"
+export PGPASS="$PGPASS"
+export PGDATABASE="$PGDATABASE"
+export PGDIR="$PGDIR"
+export PG_DEBUG="$PG_DEBUG"
+
+## BEGIN ACTIVATION HOOK ##
+$(declare -f debug_log)
+$(declare -f check_first_run)
+$(declare -f load_config)
+$(declare -f save_config)
+$(declare -f prompt_for_config)
+$(declare -f update_dependent_vars)
+$(declare -f initialize_postgres)
+$(declare -f create_config_file)
+$(declare -f start_postgres)
+$(declare -f create_database)
+$(declare -f stop_postgres)
+$(declare -f reconfigure_postgres)
+$(declare -f first_run_setup)
+$(declare -f display_postgres_config_ui)
+$(declare -f postgres_setup)
+$(declare -f main)
+## END ACTIVATION HOOK ##
+EOF
+    chmod 644 "$CONFIG_FILE"
+}
+
+# this function prompts user 'do you want to custom configure postgres vars?'
+prompt_for_config() {
+    echo ""
+    if gum confirm "$(gum style --foreground 240 'Would you like to customize your PostgreSQL configuration?')" --default=false; then
+        PGHOSTADDR=$(gum input --placeholder "$DEFAULT_PGHOSTADDR" --value "$DEFAULT_PGHOSTADDR" --prompt "Host Address: ")
+        PGPORT=$(gum input --placeholder "$DEFAULT_PGPORT" --value "$DEFAULT_PGPORT" --prompt "Port: ")
+        PGUSER=$(gum input --placeholder "$DEFAULT_PGUSER" --value "$DEFAULT_PGUSER" --prompt "Username: ")
+        PGPASS=$(gum input --placeholder "$DEFAULT_PGPASS" --value "$DEFAULT_PGPASS" --prompt "Password: " --password)
+        PGDATABASE=$(gum input --placeholder "$DEFAULT_PGDATABASE" --value "$DEFAULT_PGDATABASE" --prompt "Database: ")
+        
+        if gum confirm "Use default directory for PostgreSQL data?" --default=true; then
+            PGDIR="$DEFAULT_PGDIR"
+        else
+            PGDIR=$(gum input --placeholder "$DEFAULT_PGDIR" --value "$DEFAULT_PGDIR" --prompt "PostgreSQL Data Directory: ")
+        fi
+    else
+        # defaults for gum prompts
+        PGHOSTADDR="$DEFAULT_PGHOSTADDR"
+        PGPORT="$DEFAULT_PGPORT"
+        PGUSER="$DEFAULT_PGUSER"
+        PGPASS="$DEFAULT_PGPASS"
+        PGDATABASE="$DEFAULT_PGDATABASE"
+        PGDIR="$DEFAULT_PGDIR"
+    fi
+    
+    # export user-defined variables
+    export PGHOSTADDR PGPORT PGUSER PGPASS PGDATABASE PGDIR
+    
+    # save to postgres.config
+    save_config
+}
+
+# this function handles debug logging
+debug_log() {
+    if [[ "$PG_DEBUG" == "true" ]]; then
+        echo "$@"
+    fi
+}
+
+# this function updates dependent vars after loading postgres.config
+update_dependent_vars() {
+    # is $PGDIR an absolute path?
+    if [[ ! "$PGDIR" = /* ]]; then
+        PGDIR="$(pwd)/$PGDIR"
+        export PGDIR
+    fi
+    
+    # set dependent vars with absolute paths
+    export PGDATA="$PGDIR/data"
+    export PGHOST="$PGDIR/run"
+    export PGCONFIGFILE="$PGDIR/postgresql.conf"
+    export LOG_PATH="$PGHOST/LOG"
+    export SESSION_SECRET="$USER-session-secret"
+    export DATABASE_URL="postgresql:///$PGDATABASE?host=$PGHOST&port=$PGPORT"
+    
+    # debug output
+    debug_log "Configuration paths:"
+    debug_log "  PGDIR: $PGDIR"
+    debug_log "  PGDATA: $PGDATA"
+    debug_log "  PGHOST: $PGHOST"
+}
+
+# this function initializes postgres
+initialize_postgres() {
+    mkdir -p "$(dirname "$PGDATA")" && chmod 700 "$(dirname "$PGDATA")"
+    rm -rf "$PGDATA" && mkdir -p "$PGDATA" && chmod 700 "$PGDATA"
+    
+    if [[ "$PG_DEBUG" == "true" ]]; then
+        initdb "$PGDATA" --locale=C --encoding=UTF8 -A md5 --auth=trust --username "$PGUSER" --pwfile=<(echo "$PGPASS")
+    else
+        initdb "$PGDATA" --locale=C --encoding=UTF8 -A md5 --auth=trust --username "$PGUSER" --pwfile=<(echo "$PGPASS") > /dev/null 2>&1
+    fi
+    
+    return $?
+}
+
+# this function creates config file if not exist
+create_config_file() {
+    echo "listen_addresses = '$PGHOSTADDR'
+port = $PGPORT
+unix_socket_directories = '$PGHOST'
+unix_socket_permissions = 0700" > "$PGDATA/postgresql.conf"
+    return 0
+}
+
+# this function starts postgres
+start_postgres() {
+    # is $PGHOST an absolute path?
+    if [[ ! "$PGHOST" = /* ]]; then
+        debug_log "Warning: PGHOST is not an absolute path. Using absolute path instead."
+        PGHOST="$(pwd)/$PGHOST"
+        export PGHOST
+    fi
+    
+    # create debugging dir
+    debug_log "Creating PostgreSQL socket directory at: $PGHOST"
+    mkdir -p "$PGHOST" 
+    
+    # enforce permissions
+    chmod 700 "$PGHOST"
+    
+    # was / was not debugging dir created successfully?
+    if [[ ! -d "$PGHOST" ]]; then
+        echo "Error: Failed to create PostgreSQL socket directory at $PGHOST"
+        return 1
+    fi
+    
+    debug_log "Starting PostgreSQL with socket directory: $PGHOST"
+    debug_log "Data directory: $PGDATA"
+    
+    # start postgres with or without debugging
+    if [[ "$PG_DEBUG" == "true" ]]; then
+        pg_ctl -D "$PGDATA" -w start -o "-c unix_socket_directories=$PGHOST -c listen_addresses=$PGHOSTADDR -p $PGPORT"
+    else
+        pg_ctl -D "$PGDATA" -w start -o "-c unix_socket_directories=$PGHOST -c listen_addresses=$PGHOSTADDR -p $PGPORT" > /dev/null 2>&1
+    fi
+    
+    return $?
+}
+
+# this function creates database if not exist
+create_database() {
+    psql -lqt | cut -d \| -f 1 | grep -qw $PGDATABASE || createdb > /dev/null 2>&1
+    return 0
+}
+
+# this function stops postgres
+stop_postgres() {
+    if [[ "$PG_DEBUG" == "true" ]]; then
+        pg_ctl -D "$PGDATA" -m fast -w stop
+    else
+        pg_ctl -D "$PGDATA" -m fast -w stop > /dev/null 2>&1
+    fi
+    return $?
+}
+
+# we call this function from profile if we want/need to reconfigure postgres
+reconfigure_postgres() {
+    rm -f "$CONFIG_FILE"
+    first_run_setup
+    postgres_setup
+}
+
+# it's tautological!
+first_run_setup() {
+    if check_first_run; then
+        display_postgres_config_ui
+    else
+        load_config
+    fi
+    
+    update_dependent_vars
+}
+
+# our gum-ified tui (thank you ye good folk at charmbracelet!)
+display_postgres_config_ui() {
+    clear
+    
+    # customize header + colors
+    gum style \
+        --border rounded \
+        --border-foreground 240 \
+        --padding "1 2" \
+        --margin "1 0" \
+        --width 70 \
+        "$(gum style --foreground 27 --bold 'PostgreSQL Configuration')
+        
+$(gum style --foreground 240 'First-time setup for your local development database')"
+    
+    prompt_for_config
+}
+
+# postgres setup master function
+postgres_setup() {
+    debug_log "Setting up PostgreSQL..."
+    
+    # this is where we init postgres
+    debug_log "Initializing PostgreSQL..."
+    initialize_postgres || { echo "Failed to initialize PostgreSQL"; return 1; }
+    
+    if [[ -f "$PGDATA/PG_VERSION" ]]; then
+        debug_log "PostgreSQL data directory initialized successfully"
+        
+        # this is where we create postgres config
+        debug_log "Creating PostgreSQL configuration file..."
+        create_config_file || { echo "Failed to create configuration file"; return 1; }
+        
+        # stop existing postgres instance(s)
+        debug_log "Ensuring PostgreSQL is not running..."
+        if [[ "$PG_DEBUG" == "true" ]]; then
+            pg_ctl stop -D "$PGDATA" 2>/dev/null || true
+        else
+            pg_ctl stop -D "$PGDATA" > /dev/null 2>&1 || true
+        fi
+        
+        # this is where we start it up
+        debug_log "Starting PostgreSQL..."
+        start_postgres || { echo "Failed to start PostgreSQL"; return 1; }
+        
+        # this is where we create database
+        debug_log "Creating database..."
+        create_database || { echo "Failed to create database"; return 1; }
+        
+        # this is where we shut it down
+        debug_log "Stopping PostgreSQL..."
+        stop_postgres || { echo "Failed to stop PostgreSQL"; return 1; }
+        
+        debug_log "PostgreSQL setup completed successfully"
+    else
+        echo "Error: PostgreSQL data directory was not initialized correctly"
+        return 1
+    fi
+    
+    return 0
+}
+
+# gummified help message
+show_postgres_help() {
+    # Determine display host
+    local display_host
+    if [[ "$PGHOSTADDR" == "0.0.0.0" ]]; then
+        display_host="localhost"
+    else
+        display_host="$PGHOSTADDR"
+    fi
+    
+    # Create the help message with Gum styling
+    gum style \
+        --border rounded \
+        --border-foreground 240 \
+        --padding "1 2" \
+        --margin "1 0" \
+        --width 96 \
+        "$(gum style --foreground 141 --bold 'This is a  F l o x  PostgreSQL Environment')
+
+👉  Service Management:
+    $(gum style --foreground 212 'flox activate -s')    Start PostgreSQL at activation
+    $(gum style --foreground 212 'pgstart')             Start PostgreSQL post activation
+    $(gum style --foreground 212 'pgstop')              Stop PostgreSQL post activation
+    $(gum style --foreground 212 'pgrestart')           Restart PostgreSQL post activation
+
+👉  Configuration:
+    $(gum style --foreground 212 'pgconfigure')         Reconfigure PostgreSQL post activation
+
+👉  Connection:
+    $(gum style --foreground 212 'psql')                Connect to PostgreSQL
+
+👉  Connection Details:
+    Host:     $(gum style --foreground 212 "${display_host}")
+    Port:     $(gum style --foreground 212 "${PGPORT}")
+    Database: $(gum style --foreground 212 "${PGDATABASE}")
+    User:     $(gum style --foreground 212 "${PGUSER}")"
+
+    echo ""
+}
+
+# it's tautological!
+main() {
+    first_run_setup
+    
+    postgres_setup
+
+    show_postgres_help
+}
+
+# runnit all
+main
+'''
+
+
+[profile]
+common = '''
+'''
+
+bash = '''
+source "${FLOX_ENV_CACHE}/postgres.config" 2>/dev/null || true
+pgstart() { flox services start postgres; }
+pgstop() { flox services stop postgres; }
+pgrestart() { flox services restart postgres; }
+pgconfigure() {
+  flox services stop postgres
+  source "${FLOX_ENV_CACHE}/postgres.config" 2>/dev/null || true
+  reconfigure_postgres
+  flox services start postgres
+}
+export -f pgstart pgstop pgrestart pgconfigure
+unset -f toggle_debug debug_log initialize_postgres create_config_file
+unset -f start_postgres stop_postgres create_database check_first_run
+unset -f load_config prompt_for_config display_postgres_config_ui main
+'''
+
+zsh = '''
+source "${FLOX_ENV_CACHE}/postgres.config" 2>/dev/null || true
+pgstart() { flox services start postgres; }
+pgstop() { flox services stop postgres; }
+pgrestart() { flox services restart postgres; }
+pgconfigure() {
+  flox services stop postgres
+  source "${FLOX_ENV_CACHE}/postgres.config" 2>/dev/null || true
+  reconfigure_postgres
+  flox services start postgres
+}
+export pgstart pgstop pgrestart pgconfigure
+unset -f "toggle_debug" "debug_log" "initialize_postgres" "create_config_file"
+unset -f "start_postgres" "stop_postgres" "create_database" "check_first_run"
+unset -f "load_config" "prompt_for_config" "display_postgres_config_ui" "main"
+'''
+
+fish = '''
+source "$FLOX_ENV_CACHE/postgres.config" 2>/dev/null || true
+
+function pgstart
+    flox services start postgres
+end
+
+function pgstop
+    flox services stop postgres
+end
+
+function pgrestart
+    flox services restart postgres
+end
+
+function pgconfigure
+    flox services stop postgres
+    source "$FLOX_ENV_CACHE/postgres.config" 2>/dev/null || true
+    reconfigure_postgres
+    flox services start postgres
+end
+
+functions -e toggle_debug debug_log initialize_postgres create_config_file
+functions -e start_postgres stop_postgres create_database check_first_run
+functions -e load_config prompt_for_config display_postgres_config_ui main
+'''
+
+[services]
+postgres.command = "postgres -D $PGDATA -c unix_socket_directories=$PGHOST -c listen_addresses=$PGHOSTADDR -p $PGPORT"
+
+
+[options]
+systems = [
+  "aarch64-darwin",
+  "aarch64-linux",
+  "x86_64-darwin",
+  "x86_64-linux",
+]

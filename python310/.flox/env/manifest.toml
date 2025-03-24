@@ -1,0 +1,597 @@
+## Flox Environment Manifest -----------------------------------------
+##
+##   _Everything_ you need to know about the _manifest_ is here:
+##
+##               https://flox.dev/docs/concepts/manifest
+##
+## -------------------------------------------------------------------
+# Flox manifest version managed by Flox CLI
+version = 1
+
+
+## Install Packages --------------------------------------------------
+##  $ flox install gum  <- puts a package in [install] section below
+##  $ flox search gum   <- search for a package
+##  $ flox show gum     <- show all versions of a package
+## -------------------------------------------------------------------
+[install]
+#python312Full.pkg-path = "python312Full"
+pip.pkg-path = "python310Packages.pip"
+gum.pkg-path = "gum"
+zlib.pkg-path = "zlib"
+#black.pkg-path = "black"
+#flake8.pkg-path = "python312Packages.flake8"
+#isort.pkg-path = "python312Packages.isort"
+
+
+## Environment Variables ---------------------------------------------
+##  ... available for use in the activated environment
+##      as well as [hook], [profile] scripts and [services] below.
+## -------------------------------------------------------------------
+[vars]
+PYTHON = "python3"
+
+## Activation Hook ---------------------------------------------------
+##  ... run by _bash_ shell when you run 'flox activate'.
+## -------------------------------------------------------------------
+[hook]
+on-activate = '''
+show_venv_help() {
+    # Create the help message with Gum styling
+    gum style \
+        --border rounded \
+        --border-foreground 240 \
+        --padding "1 2" \
+        --margin "1 0" \
+        --width 96 \
+        "$(gum style --foreground 141 --bold 'This is a  F l o x  Python 3.10 dev environment')
+
+🏗️  Stuff for environment management:
+    $(gum style --foreground 212 'mkvenv')         Creates a new virtual environment
+    $(gum style --foreground 212 'aktivate')       Finds and activates venvs
+    $(gum style --foreground 212 'qwit')           Safely exits the current venv
+    $(gum style --foreground 212 'mkprojekt')      Creates and sets up a complete project
+
+📦  Stuff for package management:
+    $(gum style --foreground 212 'pist')           Pip install from requirements.txt
+    $(gum style --foreground 212 'freezereqs')     Save installed packages to requirements.txt
+    $(gum style --foreground 212 'chkupdates')     Check for and update outdated packages
+
+🛠️  Development Tools:
+    $(gum style --foreground 212 'lint')           Run code quality checks (black, flake8, isort)
+    $(gum style --foreground 212 'run')            Smart-run Python files (auto-finds main.py/app.py)
+
+💡  Tip: Most functions include interactive prompts to guide you through options."
+
+    echo ""
+}
+
+## one function to run them all
+main() {
+    show_venv_help
+}
+
+## runnit
+main
+'''
+
+
+## Profile script ----------------------------------------------------
+## ... sourced by _your shell_ when you run 'flox activate'.
+## -------------------------------------------------------------------
+[profile]
+# common = '''
+#   gum style \
+#   --foreground 212 --border-foreground 212 --border double \
+#   --align center --width 50 --margin "1 2" --padding "2 4" \
+#     $INTRO_MESSAGE
+# '''
+## Shell specific profiles go here:
+bash = '''
+mkvenv() {
+    [ -d ".venv" ] && case $(gum choose --header "A virtual environment (.venv) already exists. Choose an action:" "Quit" "Replace .venv" "Create new virtual environment") in
+        "Quit") return 0 ;;
+        "Replace .venv") rm -rf .venv ;;
+        "Create new virtual environment") 
+            name=$(gum input --placeholder "Enter name") || return 1
+            [ -z "$name" ] && return 1
+            python3 -m venv "$name" && source "$name/bin/activate"
+            return 0 ;;
+    esac
+    python3 -m venv .venv && source .venv/bin/activate
+}
+
+aktivate() {
+    readarray -t venvs < <(find . -name "activate" -type f | sed 's|/bin/activate$||')
+    [ ${#venvs[@]} -eq 0 ] && echo "No virtual environments found." && return 1
+    if [ ${#venvs[@]} -eq 1 ]; then
+        [ -n "$VIRTUAL_ENV" ] && deactivate
+        source "${venvs[0]}/bin/activate"
+        return 0
+    fi
+    venvs+=("quit")
+    selected=$(gum choose --header "Select environment to activate:" "${venvs[@]#./}") || return 1
+    [ "$selected" = "quit" ] && return 0
+    [ -n "$VIRTUAL_ENV" ] && deactivate
+    source "$selected/bin/activate"
+}
+
+pist() {
+    readarray -t venvs < <(find . -name "activate" -type f | sed 's|/bin/activate$||')
+    [ ${#venvs[@]} -eq 0 ] && mkvenv
+    [[ "$VIRTUAL_ENV" ]] || aktivate
+    pip install -r "${1:-requirements.txt}"
+}
+
+qwit() {
+    if [ -n "$VIRTUAL_ENV" ]; then
+        deactivate
+    else
+        echo "No active virtual environment found."
+    fi
+}
+
+freezereqs() {
+    [[ "$VIRTUAL_ENV" ]] || { echo "No active virtual environment found."; return 1; }
+    local output_file="${1:-requirements.txt}"
+    [[ -f "$output_file" ]] && gum confirm "File $output_file already exists. Overwrite?" || return 1
+    pip freeze > "$output_file" && echo "$(gum style --foreground 82 "✓") Requirements saved to $output_file"
+}
+
+mkprojekt() {
+    local project_name=$(gum input --placeholder "Project name") || return 1
+    [[ -z "$project_name" ]] && return 1
+    [[ -d "$project_name" ]] && gum confirm "Directory $project_name already exists. Use it anyway?" || mkdir -p "$project_name"
+    cd "$project_name" || return 1
+    gum confirm "Create a virtual environment in $project_name?" || return 0
+    python3 -m venv .venv && source .venv/bin/activate
+
+    if gum confirm "Install common development packages?"; then
+        local packages=$(gum choose --no-limit --header "Select packages to install:" \
+            "pytest" "black" "flake8" "mypy" "isort" "pylint" "pre-commit" "ipython" "jupyter" "requests" "pydantic" "fastapi" "flask" "django" "sqlalchemy" "numpy" "pandas" "matplotlib")
+        [[ -n "$packages" ]] && pip install $packages && freezereqs
+    fi
+
+    if gum confirm "Initialize Git repository?"; then
+        git init
+        cat > .gitignore << 'EOF'
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+.venv/
+venv/
+ENV/
+env/
+.env
+*.log
+# Distribution / packaging
+dist/
+build/
+*.egg-info/
+# Unit test / coverage
+.coverage
+htmlcov/
+.pytest_cache/
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+EOF
+        echo "$(gum style --foreground 82 "✓") Git repository initialized with Python .gitignore"
+    fi
+    echo "$(gum style --foreground 82 "✓") Project $project_name set up successfully"
+}
+
+chkupdates() {
+    [[ "$VIRTUAL_ENV" ]] || aktivate
+    local outdated=$(pip list --outdated --format=columns)
+    [[ -z "$outdated" ]] && echo "$(gum style --foreground 82 "✓") All packages are up to date." && return 0
+    
+    echo "Outdated packages:"
+    echo "$outdated"
+    
+    if gum confirm "Update all outdated packages?"; then
+        pip list --outdated --format=json | python -c "import json, sys; print(' '.join([pkg['name'] for pkg in json.load(sys.stdin)]))" | xargs -n1 pip install -U
+        echo "$(gum style --foreground 82 "✓") Packages updated successfully."
+    fi
+}
+
+lint() {
+    [[ "$VIRTUAL_ENV" ]] || aktivate
+    local files=()
+    
+    if [[ $# -eq 0 ]]; then
+        # Use null-terminated output with find to handle filenames with spaces
+        while IFS= read -rd $'\0' file; do
+            files+=("$file")
+        done < <(find . -name "*.py" -not -path "*/\.*" -not -path "*/venv/*" -not -path "*/.venv/*" -print0)
+    else
+        # If arguments were provided, use them as is
+        files=("$@")
+    fi
+    
+    local missing_tools=()
+    pip list | grep -q "black" || missing_tools+=("black")
+    pip list | grep -q "flake8" || missing_tools+=("flake8")
+    pip list | grep -q "isort" || missing_tools+=("isort")
+    
+    [[ ${#missing_tools[@]} -gt 0 ]] && echo "Some linting tools are missing. Install them now?" && \
+        gum confirm && pip install "${missing_tools[@]}"
+    
+    [[ ${#files[@]} -eq 0 ]] && echo "No Python files found to lint." && return 0
+    
+    pip list | grep -q "black" && echo "Running black..." && black --check "${files[@]}"
+    pip list | grep -q "flake8" && echo "Running flake8..." && flake8 "${files[@]}"
+    pip list | grep -q "isort" && echo "Running isort..." && isort --check "${files[@]}"
+    echo "Linting complete."
+}
+
+run() {
+    [[ "$VIRTUAL_ENV" ]] || aktivate
+    
+    # If a file is specified, run it directly with proper quoting
+    if [[ -n "$1" ]]; then
+        if [[ -f "$1" ]]; then
+            python "$1"
+            return
+        else
+            echo "File '$1' not found."
+            return 1
+        fi
+    fi
+    
+    # Auto-detect runnable Python files
+    local pyfiles=("main.py" "app.py" "run.py" "server.py" "manage.py")
+    for pyfile in "${pyfiles[@]}"; do
+        if [[ -f "$pyfile" ]]; then
+            echo "Running $pyfile..."
+            python "$pyfile"
+            return
+        fi
+    done
+    
+    echo "No runnable Python file found. Specify a file or create main.py/app.py."
+}
+'''
+
+zsh = '''
+mkvenv() {
+    [[ -d ".venv" ]] && case $(gum choose --header "A virtual environment (.venv) already exists. Choose an action:" "Quit" "Replace .venv" "Create new virtual environment") in
+        "Quit") return 0 ;;
+        "Replace .venv") rm -rf .venv ;;
+        "Create new virtual environment") 
+            name=$(gum input --placeholder "Enter name") || return 1
+            [[ -z "$name" ]] && return 1
+            python3 -m venv "$name" && source "$name/bin/activate"
+            return 0 ;;
+    esac
+    python3 -m venv .venv && source .venv/bin/activate
+}
+
+aktivate() {
+    local venvs=("${(@f)$(find . -name "activate" -type f | sed 's|/bin/activate$||')}")
+    [[ ${#venvs} -eq 0 ]] && echo "No virtual environments found." && return 1
+    if [[ ${#venvs} -eq 1 ]]; then
+        [[ -n "$VIRTUAL_ENV" ]] && deactivate
+        source "${venvs[1]}/bin/activate"
+        return 0
+    fi
+    venvs+=("quit")
+    selected=$(gum choose --header "Select environment to activate:" "${(@)venvs#./}") || return 1
+    [[ "$selected" = "quit" ]] && return 0
+    [[ -n "$VIRTUAL_ENV" ]] && deactivate
+    source "$selected/bin/activate"
+}
+
+pist() {
+    local venvs=("${(@f)$(find . -name "activate" -type f | sed 's|/bin/activate$||')}")
+    [[ ${#venvs} -eq 0 ]] && mkvenv
+    [[ "$VIRTUAL_ENV" ]] || aktivate
+    pip install -r "${1:-requirements.txt}"
+}
+
+qwit() {
+    if [[ -n "$VIRTUAL_ENV" ]]; then
+        deactivate
+    else
+        echo "No active virtual environment found."
+    fi
+}
+
+freezereqs() {
+    [[ "$VIRTUAL_ENV" ]] || { echo "No active virtual environment found."; return 1; }
+    local output_file="${1:-requirements.txt}"
+    [[ -f "$output_file" ]] && gum confirm "File $output_file already exists. Overwrite?" || return 1
+    pip freeze > "$output_file" && echo "$(gum style --foreground 82 "✓") Requirements saved to $output_file"
+}
+
+mkprojekt() {
+    local project_name=$(gum input --placeholder "Project name") || return 1
+    [[ -z "$project_name" ]] && return 1
+    [[ -d "$project_name" ]] && gum confirm "Directory $project_name already exists. Use it anyway?" || mkdir -p "$project_name"
+    cd "$project_name" || return 1
+    gum confirm "Create a virtual environment in $project_name?" || return 0
+    python3 -m venv .venv && source .venv/bin/activate
+
+    if gum confirm "Install common development packages?"; then
+        local packages=$(gum choose --no-limit --header "Select packages to install:" \
+            "pytest" "black" "flake8" "mypy" "isort" "pylint" "pre-commit" "ipython" "jupyter" "requests" "pydantic" "fastapi" "flask" "django" "sqlalchemy" "numpy" "pandas" "matplotlib")
+        [[ -n "$packages" ]] && pip install $packages && freezereqs
+    fi
+
+    if gum confirm "Initialize Git repository?"; then
+        git init
+        cat > .gitignore << 'EOF'
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+.venv/
+venv/
+ENV/
+env/
+.env
+*.log
+# Distribution / packaging
+dist/
+build/
+*.egg-info/
+# Unit test / coverage
+.coverage
+htmlcov/
+.pytest_cache/
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+EOF
+        echo "$(gum style --foreground 82 "✓") Git repository initialized with Python .gitignore"
+    fi
+    echo "$(gum style --foreground 82 "✓") Project $project_name set up successfully"
+}
+
+chkupdates() {
+    [[ "$VIRTUAL_ENV" ]] || aktivate
+    local outdated=$(pip list --outdated --format=columns)
+    [[ -z "$outdated" ]] && echo "$(gum style --foreground 82 "✓") All packages are up to date." && return 0
+    
+    echo "Outdated packages:"
+    echo "$outdated"
+    
+    if gum confirm "Update all outdated packages?"; then
+        pip list --outdated --format=json | python -c "import json, sys; print(' '.join([pkg['name'] for pkg in json.load(sys.stdin)]))" | xargs -n1 pip install -U
+        echo "$(gum style --foreground 82 "✓") Packages updated successfully."
+    fi
+}
+
+lint() {
+    [[ "$VIRTUAL_ENV" ]] || aktivate
+    local files=()
+    
+    if [[ $# -eq 0 ]]; then
+        # Use null-terminated output with find to handle filenames with spaces
+        while IFS= read -rd $'\0' file; do
+            files+=("$file")
+        done < <(find . -name "*.py" -not -path "*/\.*" -not -path "*/venv/*" -not -path "*/.venv/*" -print0)
+    else
+        # If arguments were provided, use them as is
+        files=("$@")
+    fi
+    
+    local missing_tools=()
+    pip list | grep -q "black" || missing_tools+=("black")
+    pip list | grep -q "flake8" || missing_tools+=("flake8")
+    pip list | grep -q "isort" || missing_tools+=("isort")
+    
+    [[ ${#missing_tools} -gt 0 ]] && echo "Some linting tools are missing. Install them now?" && \
+        gum confirm && pip install "${missing_tools[@]}"
+    
+    [[ ${#files} -eq 0 ]] && echo "No Python files found to lint." && return 0
+    
+    pip list | grep -q "black" && echo "Running black..." && black --check "${files[@]}"
+    pip list | grep -q "flake8" && echo "Running flake8..." && flake8 "${files[@]}"
+    pip list | grep -q "isort" && echo "Running isort..." && isort --check "${files[@]}"
+    echo "Linting complete."
+}
+
+run() {
+    [[ "$VIRTUAL_ENV" ]] || aktivate
+    
+    # If a file is specified, run it directly with proper quoting
+    if [[ -n "$1" ]]; then
+        if [[ -f "$1" ]]; then
+            python "$1"
+            return
+        else
+            echo "File '$1' not found."
+            return 1
+        fi
+    fi
+    
+    # Auto-detect runnable Python files
+    local pyfiles=("main.py" "app.py" "run.py" "server.py" "manage.py")
+    for pyfile in "${pyfiles[@]}"; do
+        if [[ -f "$pyfile" ]]; then
+            echo "Running $pyfile..."
+            python "$pyfile"
+            return
+        fi
+    done
+    
+    echo "No runnable Python file found. Specify a file or create main.py/app.py."
+}
+'''
+
+fish = '''
+function mkvenv
+    if test -d ".venv"
+        set choice (gum choose --header "A virtual environment (.venv) already exists. Choose an action:" "Quit" "Replace .venv" "Create new virtual environment")
+        switch $choice
+            case "Quit"; return 0
+            case "Replace .venv"; rm -rf .venv
+            case "Create new virtual environment"
+                set name (gum input --placeholder "Enter name"); or return 1
+                test -z "$name"; and return 1
+                python3 -m venv "$name"; and source "$name/bin/activate.fish"
+                return 0
+        end
+    end
+    python3 -m venv .venv; and source .venv/bin/activate.fish
+end
+
+function aktivate
+    set venvs (find . -name "activate.fish" -type f | sed 's|/bin/activate.fish$||')
+    test (count $venvs) -eq 0; and echo "No virtual environments found."; and return 1
+    if test (count $venvs) -eq 1
+        set -q VIRTUAL_ENV; and deactivate
+        source "$venvs[1]/bin/activate.fish"
+        return 0
+    end
+    set -a venvs "quit"
+    set venvs_display (string replace -a "./" "" $venvs)
+    set selected (gum choose --header "Select environment to activate:" $venvs_display); or return 1
+    test "$selected" = "quit"; and return 0
+    set -q VIRTUAL_ENV; and deactivate
+    for i in (seq (count $venvs))
+        if test (string replace -a "./" "" $venvs[$i]) = "$selected"
+            source "$venvs[$i]/bin/activate.fish"
+            break
+        end
+    end
+end
+
+function pist
+    set venvs (find . -name "activate.fish" -type f | sed 's|/bin/activate.fish$||')
+    test (count $venvs) -eq 0; and mkvenv
+    set -q VIRTUAL_ENV; or aktivate
+    pip install -r "$argv[1]"
+end
+
+function qwit
+    set -q VIRTUAL_ENV; and deactivate; or echo "No active virtual environment found."
+end
+
+function freezereqs
+    set -q VIRTUAL_ENV; or echo "No active virtual environment found."; and return 1
+    set output_file $argv[1]; or set output_file "requirements.txt"
+    test -f "$output_file"; and gum confirm "File $output_file already exists. Overwrite?"; or return 1
+    pip freeze > "$output_file"; and echo (gum style --foreground 82 "✓") "Requirements saved to $output_file"
+end
+
+function mkprojekt
+    set project_name (gum input --placeholder "Project name"); or return 1
+    test -z "$project_name"; and return 1
+    test -d "$project_name"; and gum confirm "Directory $project_name already exists. Use it anyway?"; or mkdir -p "$project_name"
+    cd "$project_name"; or return 1
+    gum confirm "Create a virtual environment in $project_name?"; or return 0
+    python3 -m venv .venv; and source .venv/bin/activate.fish
+    if gum confirm "Install common development packages?"
+        set packages (gum choose --no-limit --header "Select packages to install:" "pytest" "black" "flake8" "mypy" "isort" "pylint" "pre-commit" "ipython" "jupyter" "requests" "pydantic" "fastapi" "flask" "django" "sqlalchemy" "numpy" "pandas" "matplotlib")
+        if test -n "$packages"
+            for pkg in $packages; pip install "$pkg"; end
+            freezereqs
+        end
+    end
+    if gum confirm "Initialize Git repository?"
+        git init
+        echo '# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+.venv/
+venv/
+ENV/
+env/
+.env
+*.log
+# Distribution / packaging
+dist/
+build/
+*.egg-info/
+# Unit test / coverage
+.coverage
+htmlcov/
+.pytest_cache/
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo' > .gitignore
+        echo (gum style --foreground 82 "✓") "Git repository initialized with Python .gitignore"
+    end
+    echo (gum style --foreground 82 "✓") "Project $project_name set up successfully"
+end
+
+function checkupdates
+    set -q VIRTUAL_ENV; or aktivate
+    set outdated (pip list --outdated --format=columns)
+    test -z "$outdated"; and echo (gum style --foreground 82 "✓") "All packages are up to date."; and return 0
+    echo "Outdated packages:"; echo "$outdated"
+    gum confirm "Update all outdated packages?"; and begin
+        for pkg in (pip list --outdated --format=json | python -c "import json, sys; print('\n'.join([pkg['name'] for pkg in json.load(sys.stdin)]))")
+            pip install -U "$pkg"
+        end
+        echo (gum style --foreground 82 "✓") "Packages updated successfully."
+    end
+end
+
+function lint
+    set -q VIRTUAL_ENV; or aktivate
+    set files
+    test (count $argv) -eq 0; and set files (find . -name "*.py" -not -path "*/\.*" -not -path "*/venv/*" -not -path "*/.venv/*"); or set files $argv
+    set missing_tools
+    pip list | grep -q "black"; or set -a missing_tools "black"
+    pip list | grep -q "flake8"; or set -a missing_tools "flake8"
+    pip list | grep -q "isort"; or set -a missing_tools "isort"
+    if test (count $missing_tools) -gt 0
+        echo "Some linting tools are missing. Install them now?"; and gum confirm; and for tool in $missing_tools; pip install "$tool"; end
+    end
+    test (count $files) -eq 0; and echo "No Python files found to lint."; and return 0
+    pip list | grep -q "black"; and echo "Running black..."; and for file in $files; black --check "$file"; end
+    pip list | grep -q "flake8"; and echo "Running flake8..."; and for file in $files; flake8 "$file"; end
+    pip list | grep -q "isort"; and echo "Running isort..."; and for file in $files; isort --check "$file"; end
+    echo "Linting complete."
+end
+
+function run
+    set -q VIRTUAL_ENV; or aktivate
+    if test (count $argv) -gt 0
+        test -f "$argv[1]"; and python "$argv[1]"; and return; or echo "File '$argv[1]' not found."; and return 1
+    end
+    for pyfile in "main.py" "app.py" "run.py" "server.py" "manage.py"
+        if test -f "$pyfile"
+            echo "Running $pyfile..."; and python "$pyfile"; and return
+        end
+    end
+    echo "No runnable Python file found. Specify a file or create main.py/app.py."
+end
+'''
+## Services ----------------------------------------------------------
+##  $ flox services start             <- Starts all services
+##  $ flox services status            <- Status of running services
+##  $ flox activate --start-services  <- Activates & starts all
+## -------------------------------------------------------------------
+[services]
+# myservice.command = "python3 -m http.server"
+
+
+## Other Environment Options -----------------------------------------
+[options]
+# Systems that environment is compatible with
+systems = [
+  "aarch64-darwin",
+  "aarch64-linux",
+  "x86_64-darwin",
+  "x86_64-linux",
+]
+# Uncomment to disable CUDA detection.
+# cuda-detection = false
