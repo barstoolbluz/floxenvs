@@ -6,7 +6,6 @@ A collection of useful Flox environments that just work. Pick an environment, ac
 
 This repo contains pre-configured [Flox](https://flox.dev/docs) environments for common development stacks. Each environment:
 
-- Sets up isolated, reproducible development tools
 - Runs consistently across macOS and Linux
 - Includes smart defaults that don't get in your way
 - Offers simple terminal UI for configuration
