@@ -12,7 +12,7 @@ This environment gives you a Python 3.12 setup preconfigured for database work w
 
 ## 🧰 What's Inside
 
-- `python312` - Latest current-stable Python 3.12 package; change this to change versions
+- `python312` - Latest current-stable Python 3.12 package; use **`flox edit`** to change versions
 - `SQLAlchemy` - The Python SQL toolkit and ORM
 - `Alembic` - Database migration tool that doesn't suck
 - `gcc` + `zlib` - Build dependencies for psycopg2
