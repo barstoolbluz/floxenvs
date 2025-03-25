@@ -70,7 +70,7 @@ show_kind_help() {
         --width 84 \
         "$(gum style --foreground 141 --bold 'This is a  F l o x  KIND Kubernetes Environment')
 
-👉  Create Kubernetes Cluster:
+👉  Create KIND Cluster:
     $(gum style --foreground 212 'bootstrap')                           Interactive KIND cluster creation wizard
     $(gum style --foreground 212 'create-cluster NAME')                 Create KIND cluster with existing config
 
@@ -79,7 +79,7 @@ show_kind_help() {
     $(gum style --foreground 212 'k9s')                                 Terminal UI for Kubernetes
     $(gum style --foreground 212 'helm')                                Kubernetes package manager
     
-👉  Environment Commands:
+👉  Built-in Environment Commands:
     $(gum style --foreground 212 'delete-cluster NAME')                 Delete a KIND cluster
     $(gum style --foreground 212 'kind get clusters')                   List all KIND clusters
     $(gum style --foreground 212 'kubectl config get-contexts')         Show available contexts
