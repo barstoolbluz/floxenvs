@@ -1,4 +1,4 @@
-kind_wizard() {
+bootstrap() {
    # give the user a way to quit the bootstrapping wizard
    check_quit() {
        local input="$1"
