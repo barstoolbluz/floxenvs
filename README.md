@@ -36,7 +36,7 @@ This repo contains pre-configured [Flox](https://flox.dev/docs) environments for
 - [**python311**](./python311) - Python 3.11 with smart venv management
 - [**python312**](./python312) - Python 3.12 with smart venv management
 - [**python313**](./python313) - Python 3.13 with smart venv management
-- [**python-postgres**](./python-postgres) - Python 3.12 with SQLAlchemy + PostgreSQL database
+- [**python-postgres**](./python-postgres) - Python 3.12 with SQLAlchemy + other tools for working with PostgreSQL
 
 ## 🚀 Getting Started
 
