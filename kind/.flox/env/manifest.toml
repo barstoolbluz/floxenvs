@@ -22,6 +22,7 @@ gum.pkg-path = "gum"
 jq.pkg-path = "jq"
 helm.pkg-path = "helm"
 helm.systems = ["aarch64-linux", "x86_64-linux"]
+coreutils.pkg-path = "coreutils"
 # gum.pkg-path = "gum"
 # gum.version = "^0.14.5"
 
@@ -66,22 +67,22 @@ show_kind_help() {
         --border-foreground 240 \
         --padding "1 2" \
         --margin "1 0" \
-        --width 70 \
+        --width 96 \
         "$(gum style --foreground 141 --bold 'This is a  F l o x  KIND Kubernetes Environment')
 
 👉  Create Kubernetes Cluster:
-    $(gum style --foreground 212 'kind_wizard')         Interactive cluster creation wizard
-    $(gum style --foreground 212 'create-cluster NAME') Create cluster with existing config
+    $(gum style --foreground 212 'bootstrap')                           Interactive cluster creation wizard
+    $(gum style --foreground 212 'create-cluster NAME')                 Create cluster with existing config
 
 👉  Manage Kubernetes:
-    $(gum style --foreground 212 'kubectl')    Control Kubernetes clusters
-    $(gum style --foreground 212 'k9s')        Terminal UI for Kubernetes
-    $(gum style --foreground 212 'helm')       Kubernetes package manager
+    $(gum style --foreground 212 'kubectl')                             Control Kubernetes clusters
+    $(gum style --foreground 212 'k9s')                                 Terminal UI for Kubernetes
+    $(gum style --foreground 212 'helm')                                Kubernetes package manager
     
 👉  Environment Commands:
-    $(gum style --foreground 212 'delete-cluster NAME')    Delete a KIND cluster
-    $(gum style --foreground 212 'kind get clusters')      List all KIND clusters
-    $(gum style --foreground 212 'kubectl config get-contexts') Show available contexts
+    $(gum style --foreground 212 'delete-cluster NAME')                 Delete a KIND cluster
+    $(gum style --foreground 212 'kind get clusters')                   List all KIND clusters
+    $(gum style --foreground 212 'kubectl config get-contexts')         Show available contexts
     
 👉  Environment Details:
     Current Context: $(gum style --foreground 212 "${current_context}")
@@ -90,320 +91,52 @@ show_kind_help() {
     echo ""
 }
 
+# Function to download shell files from GitHub silently
+download_shell_files() {
+    # Create the cache directory if it doesn't exist
+    mkdir -p "$FLOX_ENV_CACHE" >/dev/null 2>&1
+    
+    # GitHub raw content base URL
+    local base_url="https://raw.githubusercontent.com/barstoolbluz/floxenvs/main/kind/.flox/cache"
+    
+    # Download files silently
+    curl -s -f -o "$FLOX_ENV_CACHE/kind_wizard.bash" "$base_url/kind_wizard.bash" >/dev/null 2>&1
+    [ -f "$FLOX_ENV_CACHE/kind_wizard.bash" ] && chmod +x "$FLOX_ENV_CACHE/kind_wizard.bash" >/dev/null 2>&1
+    
+    curl -s -f -o "$FLOX_ENV_CACHE/kind_wizard.zsh" "$base_url/kind_wizard.zsh" >/dev/null 2>&1
+    [ -f "$FLOX_ENV_CACHE/kind_wizard.zsh" ] && chmod +x "$FLOX_ENV_CACHE/kind_wizard.zsh" >/dev/null 2>&1
+    
+    curl -s -f -o "$FLOX_ENV_CACHE/kind_wizard.fish" "$base_url/kind_wizard.fish" >/dev/null 2>&1
+    [ -f "$FLOX_ENV_CACHE/kind_wizard.fish" ] && chmod +x "$FLOX_ENV_CACHE/kind_wizard.fish" >/dev/null 2>&1
+}
+
+# Download shell files if they don't exist
+if [ ! -f "$FLOX_ENV_CACHE/kind_wizard.bash" ] || \
+   [ ! -f "$FLOX_ENV_CACHE/kind_wizard.zsh" ] || \
+   [ ! -f "$FLOX_ENV_CACHE/kind_wizard.fish" ]; then
+    download_shell_files >/dev/null 2>&1
+fi
+
 # Run the help message
 show_kind_help
 
-# Create the kind_wizard functions for each shell and persist them to $FLOX_ENV_CACHE
-mkdir -p "$FLOX_ENV_CACHE"
-
-# Create the Bash version
-cat > "$FLOX_ENV_CACHE/kind_wizard.bash" << 'EOF'
-kind_wizard() {
-   # give the user a way to quit the bootstrapping wizard
-   check_quit() {
-       local input="$1"
-       if [ "$input" = ":q" ]; then
-           gum style --foreground 9 --bold "Wizard cancelled"
-           SHOULD_QUIT=1
-       fi
-   }
-
-   SHOULD_QUIT=0
-
-   # fetch the latest kubernetes version
-   get_latest_version() {
-       curl -s "https://registry.hub.docker.com/v2/repositories/kindest/node/tags?page_size=100" | \
-           jq -r '.results[].name | select(test("^v[0-9]+\\.[0-9]+\\.[0-9]+$"))' | \
-           sort -rV | \
-           head -n 1
-   }
-
-   # inform user about quit option
-   gum style --foreground 212 --bold "You can type ':q' at any prompt to quit the wizard"
-
-   # check for a container runtime
-   if ! (docker info >/dev/null 2>&1 || podman info >/dev/null 2>&1); then
-       gum style --foreground 9 --bold "No container runtime detected."
-       gum style --foreground 212 --bold "KIND requires a container runtime like Docker or Podman."
-       gum style --foreground 212 --bold "You can remotely activate Flox's Colima container runtime by running:"
-       gum style --foreground 10 --bold "flox activate -s -r flox/colima"
-       SHOULD_QUIT=1
-   fi
-
-   while [ $SHOULD_QUIT -eq 0 ]; do
-       # ask do you want to create a new kind configuration?
-       if ! gum confirm "Do you want to create a new KIND configuration file?"; then
-           gum style --foreground 212 --bold "Exiting without creating a configuration."
-           break
-       fi
-
-       # get the cluster name
-       gum style --foreground 212 --bold "Specify cluster name (e.g., 'dev-cluster'):"
-       CLUSTER_NAME=$(gum input --placeholder "kind")
-       check_quit "$CLUSTER_NAME"
-       [ $SHOULD_QUIT -eq 1 ] && break
-
-       # define config file name based on cluster name
-       CONFIG_FILE="${CLUSTER_NAME}-kind.yaml"
-
-       # default variables
-       K8S_VERSION=${1:-"latest"}
-       NODE_COUNT=${2:-4}
-
-       # prompt for K8s version and node count
-       gum style --foreground 212 --bold "Specify Kubernetes version (e.g., 'v1.29.2' or 'latest'):"
-       K8S_VERSION=$(gum input --value "${K8S_VERSION}")
-       check_quit "$K8S_VERSION"
-       [ $SHOULD_QUIT -eq 1 ] && break
-
-       gum style --foreground 212 --bold "Specify number of worker nodes (e.g., 3):"
-       NODE_COUNT=$(gum input --value "${NODE_COUNT}")
-       check_quit "$NODE_COUNT"
-       [ $SHOULD_QUIT -eq 1 ] && break
-
-       # fetch the latest k8s version if 'latest' is specified
-       if [ "$K8S_VERSION" == "latest" ]; then
-           K8S_VERSION=$(get_latest_version)
-       fi
-
-       # create the kind yaml file
-       cat <<EOFK > "$CONFIG_FILE"
-kind: Cluster
-apiVersion: kind.x-k8s.io/v1alpha4
-name: ${CLUSTER_NAME}
-nodes:
- - role: control-plane
-   image: kindest/node:${K8S_VERSION}
-EOFK
-
-       for i in $(seq 1 $NODE_COUNT); do
-           cat <<EOFK >> "$CONFIG_FILE"
- - role: worker
-   image: kindest/node:${K8S_VERSION}
-EOFK
-       done
-
-       gum style --foreground 10 --bold "Created configuration file: ${CONFIG_FILE}"
-
-       if gum confirm "Would you like to create your KIND cluster?"; then
-           kind create cluster --config "${CONFIG_FILE}"
-       fi
-       break
-   done
-}
-EOF
-
-# Create the Zsh version
-cat > "$FLOX_ENV_CACHE/kind_wizard.zsh" << 'EOF'
-kind_wizard() {
-   # give the user a way to quit the bootstrapping wizard
-   check_quit() {
-       local input="$1"
-       if [[ "$input" = ":q" ]]; then
-           gum style --foreground 9 --bold "Wizard cancelled"
-           SHOULD_QUIT=1
-       fi
-   }
-
-   SHOULD_QUIT=0
-
-   # fetch the latest kubernetes version
-   get_latest_version() {
-       curl -s "https://registry.hub.docker.com/v2/repositories/kindest/node/tags?page_size=100" | \
-           jq -r '.results[].name | select(test("^v[0-9]+\\.[0-9]+\\.[0-9]+$"))' | \
-           sort -rV | \
-           head -n 1
-   }
-
-   # inform user about quit option
-   gum style --foreground 212 --bold "You can type ':q' at any prompt to quit the wizard"
-
-   # check for a container runtime
-   if ! (docker info >/dev/null 2>&1 || podman info >/dev/null 2>&1); then
-       gum style --foreground 9 --bold "No container runtime detected."
-       gum style --foreground 212 --bold "KIND requires a container runtime like Docker or Podman."
-       gum style --foreground 212 --bold "You can remotely activate Flox's Colima container runtime by running:"
-       gum style --foreground 10 --bold "flox activate -s -r flox/colima"
-       SHOULD_QUIT=1
-   fi
-
-   while [[ $SHOULD_QUIT -eq 0 ]]; do
-       # ask do you want to create a new kind configuration?
-       if ! gum confirm "Do you want to create a new KIND configuration file?"; then
-           gum style --foreground 212 --bold "Exiting without creating a configuration."
-           break
-       fi
-
-       # get the cluster name
-       gum style --foreground 212 --bold "Specify cluster name (e.g., 'dev-cluster'):"
-       CLUSTER_NAME=$(gum input --placeholder "kind")
-       check_quit "$CLUSTER_NAME"
-       [[ $SHOULD_QUIT -eq 1 ]] && break
-
-       # define config file name based on cluster name
-       CONFIG_FILE="${CLUSTER_NAME}-kind.yaml"
-
-       # default variables
-       K8S_VERSION=${1:-"latest"}
-       NODE_COUNT=${2:-4}
-
-       # prompt for K8s version and node count
-       gum style --foreground 212 --bold "Specify Kubernetes version (e.g., 'v1.29.2' or 'latest'):"
-       K8S_VERSION=$(gum input --value "${K8S_VERSION}")
-       check_quit "$K8S_VERSION"
-       [[ $SHOULD_QUIT -eq 1 ]] && break
-
-       gum style --foreground 212 --bold "Specify number of worker nodes (e.g., 3):"
-       NODE_COUNT=$(gum input --value "${NODE_COUNT}")
-       check_quit "$NODE_COUNT"
-       [[ $SHOULD_QUIT -eq 1 ]] && break
-
-       # fetch the latest k8s version if 'latest' is specified
-       if [[ "$K8S_VERSION" == "latest" ]]; then
-           K8S_VERSION=$(get_latest_version)
-       fi
-
-       # create the kind yaml file
-       cat <<EOFK > "$CONFIG_FILE"
-kind: Cluster
-apiVersion: kind.x-k8s.io/v1alpha4
-name: ${CLUSTER_NAME}
-nodes:
- - role: control-plane
-   image: kindest/node:${K8S_VERSION}
-EOFK
-
-       for i in {1..$NODE_COUNT}; do
-           cat <<EOFK >> "$CONFIG_FILE"
- - role: worker
-   image: kindest/node:${K8S_VERSION}
-EOFK
-       done
-
-       gum style --foreground 10 --bold "Created configuration file: ${CONFIG_FILE}"
-
-       if gum confirm "Would you like to create your KIND cluster?"; then
-           kind create cluster --config "${CONFIG_FILE}"
-       fi
-       break
-   done
-}
-EOF
-
-# Create the Fish version
-cat > "$FLOX_ENV_CACHE/kind_wizard.fish" << 'EOF'
-function kind_wizard
-    # Helper function to check for quit command
-    function check_quit
-        set -l input $argv[1]
-        if test "$input" = ":q"
-            gum style --foreground 9 --bold "Wizard cancelled"
-            return 1
-        end
-        return 0
-    end
-
-    # Function to get latest k8s version
-    function get_latest_version
-        curl -s "https://registry.hub.docker.com/v2/repositories/kindest/node/tags?page_size=100" | \
-            jq -r '.results[].name | select(test("^v[0-9]+\\.[0-9]+\\.[0-9]+$"))' | \
-            sort -rV | \
-            head -n 1
-    end
-
-    # Variable to track if we should quit
-    set -l SHOULD_QUIT 0
-
-    # Inform user about quit option
-    gum style --foreground 212 --bold "You can type ':q' at any prompt to quit the wizard"
-
-    # Check for container runtime
-    if not command -v docker >/dev/null 2>&1 && not command -v podman >/dev/null 2>&1
-        gum style --foreground 9 --bold "No container runtime detected."
-        gum style --foreground 212 --bold "KIND requires a container runtime like Docker or Podman."
-        gum style --foreground 212 --bold "You can remotely activate Flox's Colima container runtime by running:"
-        gum style --foreground 10 --bold "flox activate -s -r flox/colima"
-        set SHOULD_QUIT 1
-    end
-
-    while test $SHOULD_QUIT -eq 0
-        # Ask about creating new kind configuration
-        if not gum confirm "Do you want to create a new KIND configuration file?"
-            gum style --foreground 212 --bold "Exiting without creating a configuration."
-            break
-        end
-
-        # Get cluster name
-        gum style --foreground 212 --bold "Specify cluster name (e.g., 'dev-cluster'):"
-        set -l CLUSTER_NAME (gum input --placeholder "kind")
-        if not check_quit "$CLUSTER_NAME"
-            set SHOULD_QUIT 1
-            break
-        end
-
-        # Define config file name
-        set -l CONFIG_FILE "$CLUSTER_NAME-kind.yaml"
-
-        # Set default variables
-        set -l K8S_VERSION $argv[1]
-        test -z "$K8S_VERSION" && set K8S_VERSION "latest"
-        
-        set -l NODE_COUNT $argv[2]
-        test -z "$NODE_COUNT" && set NODE_COUNT 4
-
-        # Prompt for K8s version and node count
-        gum style --foreground 212 --bold "Specify Kubernetes version (e.g., 'v1.29.2' or 'latest'):"
-        set K8S_VERSION (gum input --value "$K8S_VERSION")
-        if not check_quit "$K8S_VERSION"
-            set SHOULD_QUIT 1
-            break
-        end
-
-        gum style --foreground 212 --bold "Specify number of worker nodes (e.g., 3):"
-        set NODE_COUNT (gum input --value "$NODE_COUNT")
-        if not check_quit "$NODE_COUNT"
-            set SHOULD_QUIT 1
-            break
-        end
-
-        # Fetch latest version if needed
-        if test "$K8S_VERSION" = "latest"
-            set K8S_VERSION (get_latest_version)
-        end
-
-        # Create the KIND config file
-        echo "kind: Cluster
-apiVersion: kind.x-k8s.io/v1alpha4
-name: $CLUSTER_NAME
-nodes:
-- role: control-plane
-  image: kindest/node:$K8S_VERSION" > "$CONFIG_FILE"
-
-        for i in (seq 1 $NODE_COUNT)
-            echo "- role: worker
-  image: kindest/node:$K8S_VERSION" >> "$CONFIG_FILE"
-        end
-
-        gum style --foreground 10 --bold "Created configuration file: $CONFIG_FILE"
-
-        if gum confirm "Would you like to create your KIND cluster?"
-            kind create cluster --config "$CONFIG_FILE"
-        end
-        break
-    end
-end
-EOF
-
-# Make the files executable
-chmod +x "$FLOX_ENV_CACHE/kind_wizard.bash"
-chmod +x "$FLOX_ENV_CACHE/kind_wizard.zsh"
-chmod +x "$FLOX_ENV_CACHE/kind_wizard.fish"
+# Check if KIND is available
+if command -v kind >/dev/null 2>&1; then
+    # Check if any KIND clusters exist
+    if [ -z "$(kind get clusters 2>/dev/null)" ]; then
+        # No clusters exist, source the Bash wizard and prompt to create one
+        gum style --foreground 212 --bold "No KIND clusters detected. Let's set one up!"
+        if [ -f "$FLOX_ENV_CACHE/kind_wizard.bash" ]; then
+            source "$FLOX_ENV_CACHE/kind_wizard.bash"
+            kind_wizard
+        fi
+    fi
+fi
 '''
 
 [profile]
-# For bash:
 bash = '''
-# Source the kind_wizard function
+# Source the bootstrap function
 if [ -f "$FLOX_ENV_CACHE/kind_wizard.bash" ]; then
     source "$FLOX_ENV_CACHE/kind_wizard.bash"
 fi
@@ -417,9 +150,20 @@ delete-cluster() {
     local cluster_name=${1:-$(gum input --placeholder "cluster to delete")}
     kind delete cluster --name "$cluster_name"
 }
+
+readme() {
+  local readme_path="$FLOX_ENV_CACHE/README.md"
+  
+  curl -s -o "$readme_path" "https://raw.githubusercontent.com/barstoolbluz/floxenvs/main/kind/README.md"
+  
+  if command -v bat &>/dev/null; then
+    bat --paging=always "$readme_path"
+  else
+    cat "$readme_path"
+  fi
+}
 '''
 
-# For zsh:
 zsh = '''
 # Source the kind_wizard function
 if [ -f "$FLOX_ENV_CACHE/kind_wizard.zsh" ]; then
@@ -435,9 +179,20 @@ delete-cluster() {
     local cluster_name=${1:-$(gum input --placeholder "cluster to delete")}
     kind delete cluster --name "$cluster_name"
 }
+
+function readme
+  set readme_path "$FLOX_ENV_CACHE/README.md"
+  
+  curl -s -o "$readme_path" "https://raw.githubusercontent.com/barstoolbluz/floxenvs/main/kind/README.md"
+  
+  if command -v bat &>/dev/null
+    bat --paging=always "$readme_path"
+  else
+    cat "$readme_path"
+  end
+end
 '''
 
-# For fish:
 fish = '''
 # Source the kind_wizard function
 if test -f "$FLOX_ENV_CACHE/kind_wizard.fish"
@@ -458,6 +213,18 @@ function delete-cluster
         set cluster_name (gum input --placeholder "cluster to delete")
     end
     kind delete cluster --name "$cluster_name"
+end
+
+function readme
+  set readme_path "$FLOX_ENV_CACHE/README.md"
+  
+  curl -s -o "$readme_path" "https://raw.githubusercontent.com/barstoolbluz/floxenvs/main/kind/README.md"
+  
+  if command -v bat &>/dev/null
+    bat --paging=always "$readme_path"
+  else
+    cat "$readme_path"
+  end
 end
 '''
 
