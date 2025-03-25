@@ -128,7 +128,7 @@ if command -v kind >/dev/null 2>&1; then
         gum style --foreground 212 --bold "No KIND clusters detected. Let's set one up!"
         if [ -f "$FLOX_ENV_CACHE/kind_wizard.bash" ]; then
             source "$FLOX_ENV_CACHE/kind_wizard.bash"
-            kind_wizard
+            bootstrap
         fi
     fi
 fi
