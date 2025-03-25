@@ -1,0 +1,722 @@
+{
+  "lockfile-version": 1,
+  "manifest": {
+    "version": 1,
+    "install": {
+      "gum": {
+        "pkg-path": "gum"
+      },
+      "helm": {
+        "pkg-path": "helm",
+        "systems": [
+          "aarch64-linux",
+          "x86_64-linux"
+        ]
+      },
+      "jq": {
+        "pkg-path": "jq"
+      },
+      "k9s": {
+        "pkg-path": "k9s"
+      },
+      "kind": {
+        "pkg-path": "kind"
+      },
+      "kubectl": {
+        "pkg-path": "kubectl"
+      }
+    },
+    "hook": {
+      "on-activate": "# Show the welcome message\nshow_kind_help() {\n    # Get current cluster context if available\n    local current_context\n    if command -v kubectl >/dev/null 2>&1; then\n        current_context=$(kubectl config current-context 2>/dev/null || echo \"None\")\n    else\n        current_context=\"None\"\n    fi\n\n    # Get list of KIND clusters\n    local kind_clusters\n    if command -v kind >/dev/null 2>&1; then\n        kind_clusters=$(kind get clusters 2>/dev/null)\n        if [ -z \"$kind_clusters\" ]; then\n            kind_clusters=\"No clusters found\"\n        fi\n    else\n        kind_clusters=\"KIND not available\"\n    fi\n\n    # Create the help message with Gum styling\n    gum style \\\n        --border rounded \\\n        --border-foreground 240 \\\n        --padding \"1 2\" \\\n        --margin \"1 0\" \\\n        --width 70 \\\n        \"$(gum style --foreground 141 --bold 'This is a  F l o x  KIND Kubernetes Environment')\n\n👉  Create Kubernetes Cluster:\n    $(gum style --foreground 212 'kind_wizard')         Interactive cluster creation wizard\n    $(gum style --foreground 212 'create-cluster NAME') Create cluster with existing config\n\n👉  Manage Kubernetes:\n    $(gum style --foreground 212 'kubectl')    Control Kubernetes clusters\n    $(gum style --foreground 212 'k9s')        Terminal UI for Kubernetes\n    $(gum style --foreground 212 'helm')       Kubernetes package manager\n    \n👉  Environment Commands:\n    $(gum style --foreground 212 'delete-cluster NAME')    Delete a KIND cluster\n    $(gum style --foreground 212 'kind get clusters')      List all KIND clusters\n    $(gum style --foreground 212 'kubectl config get-contexts') Show available contexts\n    \n👉  Environment Details:\n    Current Context: $(gum style --foreground 212 \"${current_context}\")\n    KIND Clusters:   $(gum style --foreground 212 \"${kind_clusters}\")\"\n\n    echo \"\"\n}\n\n# Run the help message\nshow_kind_help\n\n# Create the kind_wizard functions for each shell and persist them to $FLOX_ENV_CACHE\nmkdir -p \"$FLOX_ENV_CACHE\"\n\n# Create the Bash version\ncat > \"$FLOX_ENV_CACHE/kind_wizard.bash\" << 'EOF'\nkind_wizard() {\n   # give the user a way to quit the bootstrapping wizard\n   check_quit() {\n       local input=\"$1\"\n       if [ \"$input\" = \":q\" ]; then\n           gum style --foreground 9 --bold \"Wizard cancelled\"\n           SHOULD_QUIT=1\n       fi\n   }\n\n   SHOULD_QUIT=0\n\n   # fetch the latest kubernetes version\n   get_latest_version() {\n       curl -s \"https://registry.hub.docker.com/v2/repositories/kindest/node/tags?page_size=100\" | \\\n           jq -r '.results[].name | select(test(\"^v[0-9]+\\\\.[0-9]+\\\\.[0-9]+$\"))' | \\\n           sort -rV | \\\n           head -n 1\n   }\n\n   # inform user about quit option\n   gum style --foreground 212 --bold \"You can type ':q' at any prompt to quit the wizard\"\n\n   # check for a container runtime\n   if ! (docker info >/dev/null 2>&1 || podman info >/dev/null 2>&1); then\n       gum style --foreground 9 --bold \"No container runtime detected.\"\n       gum style --foreground 212 --bold \"KIND requires a container runtime like Docker or Podman.\"\n       gum style --foreground 212 --bold \"You can remotely activate Flox's Colima container runtime by running:\"\n       gum style --foreground 10 --bold \"flox activate -s -r flox/colima\"\n       SHOULD_QUIT=1\n   fi\n\n   while [ $SHOULD_QUIT -eq 0 ]; do\n       # ask do you want to create a new kind configuration?\n       if ! gum confirm \"Do you want to create a new KIND configuration file?\"; then\n           gum style --foreground 212 --bold \"Exiting without creating a configuration.\"\n           break\n       fi\n\n       # get the cluster name\n       gum style --foreground 212 --bold \"Specify cluster name (e.g., 'dev-cluster'):\"\n       CLUSTER_NAME=$(gum input --placeholder \"kind\")\n       check_quit \"$CLUSTER_NAME\"\n       [ $SHOULD_QUIT -eq 1 ] && break\n\n       # define config file name based on cluster name\n       CONFIG_FILE=\"${CLUSTER_NAME}-kind.yaml\"\n\n       # default variables\n       K8S_VERSION=${1:-\"latest\"}\n       NODE_COUNT=${2:-4}\n\n       # prompt for K8s version and node count\n       gum style --foreground 212 --bold \"Specify Kubernetes version (e.g., 'v1.29.2' or 'latest'):\"\n       K8S_VERSION=$(gum input --value \"${K8S_VERSION}\")\n       check_quit \"$K8S_VERSION\"\n       [ $SHOULD_QUIT -eq 1 ] && break\n\n       gum style --foreground 212 --bold \"Specify number of worker nodes (e.g., 3):\"\n       NODE_COUNT=$(gum input --value \"${NODE_COUNT}\")\n       check_quit \"$NODE_COUNT\"\n       [ $SHOULD_QUIT -eq 1 ] && break\n\n       # fetch the latest k8s version if 'latest' is specified\n       if [ \"$K8S_VERSION\" == \"latest\" ]; then\n           K8S_VERSION=$(get_latest_version)\n       fi\n\n       # create the kind yaml file\n       cat <<EOFK > \"$CONFIG_FILE\"\nkind: Cluster\napiVersion: kind.x-k8s.io/v1alpha4\nname: ${CLUSTER_NAME}\nnodes:\n - role: control-plane\n   image: kindest/node:${K8S_VERSION}\nEOFK\n\n       for i in $(seq 1 $NODE_COUNT); do\n           cat <<EOFK >> \"$CONFIG_FILE\"\n - role: worker\n   image: kindest/node:${K8S_VERSION}\nEOFK\n       done\n\n       gum style --foreground 10 --bold \"Created configuration file: ${CONFIG_FILE}\"\n\n       if gum confirm \"Would you like to create your KIND cluster?\"; then\n           kind create cluster --config \"${CONFIG_FILE}\"\n       fi\n       break\n   done\n}\nEOF\n\n# Create the Zsh version\ncat > \"$FLOX_ENV_CACHE/kind_wizard.zsh\" << 'EOF'\nkind_wizard() {\n   # give the user a way to quit the bootstrapping wizard\n   check_quit() {\n       local input=\"$1\"\n       if [[ \"$input\" = \":q\" ]]; then\n           gum style --foreground 9 --bold \"Wizard cancelled\"\n           SHOULD_QUIT=1\n       fi\n   }\n\n   SHOULD_QUIT=0\n\n   # fetch the latest kubernetes version\n   get_latest_version() {\n       curl -s \"https://registry.hub.docker.com/v2/repositories/kindest/node/tags?page_size=100\" | \\\n           jq -r '.results[].name | select(test(\"^v[0-9]+\\\\.[0-9]+\\\\.[0-9]+$\"))' | \\\n           sort -rV | \\\n           head -n 1\n   }\n\n   # inform user about quit option\n   gum style --foreground 212 --bold \"You can type ':q' at any prompt to quit the wizard\"\n\n   # check for a container runtime\n   if ! (docker info >/dev/null 2>&1 || podman info >/dev/null 2>&1); then\n       gum style --foreground 9 --bold \"No container runtime detected.\"\n       gum style --foreground 212 --bold \"KIND requires a container runtime like Docker or Podman.\"\n       gum style --foreground 212 --bold \"You can remotely activate Flox's Colima container runtime by running:\"\n       gum style --foreground 10 --bold \"flox activate -s -r flox/colima\"\n       SHOULD_QUIT=1\n   fi\n\n   while [[ $SHOULD_QUIT -eq 0 ]]; do\n       # ask do you want to create a new kind configuration?\n       if ! gum confirm \"Do you want to create a new KIND configuration file?\"; then\n           gum style --foreground 212 --bold \"Exiting without creating a configuration.\"\n           break\n       fi\n\n       # get the cluster name\n       gum style --foreground 212 --bold \"Specify cluster name (e.g., 'dev-cluster'):\"\n       CLUSTER_NAME=$(gum input --placeholder \"kind\")\n       check_quit \"$CLUSTER_NAME\"\n       [[ $SHOULD_QUIT -eq 1 ]] && break\n\n       # define config file name based on cluster name\n       CONFIG_FILE=\"${CLUSTER_NAME}-kind.yaml\"\n\n       # default variables\n       K8S_VERSION=${1:-\"latest\"}\n       NODE_COUNT=${2:-4}\n\n       # prompt for K8s version and node count\n       gum style --foreground 212 --bold \"Specify Kubernetes version (e.g., 'v1.29.2' or 'latest'):\"\n       K8S_VERSION=$(gum input --value \"${K8S_VERSION}\")\n       check_quit \"$K8S_VERSION\"\n       [[ $SHOULD_QUIT -eq 1 ]] && break\n\n       gum style --foreground 212 --bold \"Specify number of worker nodes (e.g., 3):\"\n       NODE_COUNT=$(gum input --value \"${NODE_COUNT}\")\n       check_quit \"$NODE_COUNT\"\n       [[ $SHOULD_QUIT -eq 1 ]] && break\n\n       # fetch the latest k8s version if 'latest' is specified\n       if [[ \"$K8S_VERSION\" == \"latest\" ]]; then\n           K8S_VERSION=$(get_latest_version)\n       fi\n\n       # create the kind yaml file\n       cat <<EOFK > \"$CONFIG_FILE\"\nkind: Cluster\napiVersion: kind.x-k8s.io/v1alpha4\nname: ${CLUSTER_NAME}\nnodes:\n - role: control-plane\n   image: kindest/node:${K8S_VERSION}\nEOFK\n\n       for i in {1..$NODE_COUNT}; do\n           cat <<EOFK >> \"$CONFIG_FILE\"\n - role: worker\n   image: kindest/node:${K8S_VERSION}\nEOFK\n       done\n\n       gum style --foreground 10 --bold \"Created configuration file: ${CONFIG_FILE}\"\n\n       if gum confirm \"Would you like to create your KIND cluster?\"; then\n           kind create cluster --config \"${CONFIG_FILE}\"\n       fi\n       break\n   done\n}\nEOF\n\n# Create the Fish version\ncat > \"$FLOX_ENV_CACHE/kind_wizard.fish\" << 'EOF'\nfunction kind_wizard\n    # Helper function to check for quit command\n    function check_quit\n        set -l input $argv[1]\n        if test \"$input\" = \":q\"\n            gum style --foreground 9 --bold \"Wizard cancelled\"\n            return 1\n        end\n        return 0\n    end\n\n    # Function to get latest k8s version\n    function get_latest_version\n        curl -s \"https://registry.hub.docker.com/v2/repositories/kindest/node/tags?page_size=100\" | \\\n            jq -r '.results[].name | select(test(\"^v[0-9]+\\\\.[0-9]+\\\\.[0-9]+$\"))' | \\\n            sort -rV | \\\n            head -n 1\n    end\n\n    # Variable to track if we should quit\n    set -l SHOULD_QUIT 0\n\n    # Inform user about quit option\n    gum style --foreground 212 --bold \"You can type ':q' at any prompt to quit the wizard\"\n\n    # Check for container runtime\n    if not command -v docker >/dev/null 2>&1 && not command -v podman >/dev/null 2>&1\n        gum style --foreground 9 --bold \"No container runtime detected.\"\n        gum style --foreground 212 --bold \"KIND requires a container runtime like Docker or Podman.\"\n        gum style --foreground 212 --bold \"You can remotely activate Flox's Colima container runtime by running:\"\n        gum style --foreground 10 --bold \"flox activate -s -r flox/colima\"\n        set SHOULD_QUIT 1\n    end\n\n    while test $SHOULD_QUIT -eq 0\n        # Ask about creating new kind configuration\n        if not gum confirm \"Do you want to create a new KIND configuration file?\"\n            gum style --foreground 212 --bold \"Exiting without creating a configuration.\"\n            break\n        end\n\n        # Get cluster name\n        gum style --foreground 212 --bold \"Specify cluster name (e.g., 'dev-cluster'):\"\n        set -l CLUSTER_NAME (gum input --placeholder \"kind\")\n        if not check_quit \"$CLUSTER_NAME\"\n            set SHOULD_QUIT 1\n            break\n        end\n\n        # Define config file name\n        set -l CONFIG_FILE \"$CLUSTER_NAME-kind.yaml\"\n\n        # Set default variables\n        set -l K8S_VERSION $argv[1]\n        test -z \"$K8S_VERSION\" && set K8S_VERSION \"latest\"\n        \n        set -l NODE_COUNT $argv[2]\n        test -z \"$NODE_COUNT\" && set NODE_COUNT 4\n\n        # Prompt for K8s version and node count\n        gum style --foreground 212 --bold \"Specify Kubernetes version (e.g., 'v1.29.2' or 'latest'):\"\n        set K8S_VERSION (gum input --value \"$K8S_VERSION\")\n        if not check_quit \"$K8S_VERSION\"\n            set SHOULD_QUIT 1\n            break\n        end\n\n        gum style --foreground 212 --bold \"Specify number of worker nodes (e.g., 3):\"\n        set NODE_COUNT (gum input --value \"$NODE_COUNT\")\n        if not check_quit \"$NODE_COUNT\"\n            set SHOULD_QUIT 1\n            break\n        end\n\n        # Fetch latest version if needed\n        if test \"$K8S_VERSION\" = \"latest\"\n            set K8S_VERSION (get_latest_version)\n        end\n\n        # Create the KIND config file\n        echo \"kind: Cluster\napiVersion: kind.x-k8s.io/v1alpha4\nname: $CLUSTER_NAME\nnodes:\n- role: control-plane\n  image: kindest/node:$K8S_VERSION\" > \"$CONFIG_FILE\"\n\n        for i in (seq 1 $NODE_COUNT)\n            echo \"- role: worker\n  image: kindest/node:$K8S_VERSION\" >> \"$CONFIG_FILE\"\n        end\n\n        gum style --foreground 10 --bold \"Created configuration file: $CONFIG_FILE\"\n\n        if gum confirm \"Would you like to create your KIND cluster?\"\n            kind create cluster --config \"$CONFIG_FILE\"\n        end\n        break\n    end\nend\nEOF\n\n# Make the files executable\nchmod +x \"$FLOX_ENV_CACHE/kind_wizard.bash\"\nchmod +x \"$FLOX_ENV_CACHE/kind_wizard.zsh\"\nchmod +x \"$FLOX_ENV_CACHE/kind_wizard.fish\"\n"
+    },
+    "profile": {
+      "bash": "# Source the kind_wizard function\nif [ -f \"$FLOX_ENV_CACHE/kind_wizard.bash\" ]; then\n    source \"$FLOX_ENV_CACHE/kind_wizard.bash\"\nfi\n\ncreate-cluster() {\n    local cluster_name=${1:-$(gum input --placeholder \"cluster name\")}\n    kind create cluster --name \"$cluster_name\" --config \"${cluster_name}-kind.yaml\"\n}\n\ndelete-cluster() {\n    local cluster_name=${1:-$(gum input --placeholder \"cluster to delete\")}\n    kind delete cluster --name \"$cluster_name\"\n}\n",
+      "zsh": "# Source the kind_wizard function\nif [ -f \"$FLOX_ENV_CACHE/kind_wizard.zsh\" ]; then\n    source \"$FLOX_ENV_CACHE/kind_wizard.zsh\"\nfi\n\ncreate-cluster() {\n    local cluster_name=${1:-$(gum input --placeholder \"cluster name\")}\n    kind create cluster --name \"$cluster_name\" --config \"${cluster_name}-kind.yaml\"\n}\n\ndelete-cluster() {\n    local cluster_name=${1:-$(gum input --placeholder \"cluster to delete\")}\n    kind delete cluster --name \"$cluster_name\"\n}\n",
+      "fish": "# Source the kind_wizard function\nif test -f \"$FLOX_ENV_CACHE/kind_wizard.fish\"\n    source \"$FLOX_ENV_CACHE/kind_wizard.fish\"\nend\n\nfunction create-cluster\n    set cluster_name $argv[1]\n    if test -z \"$cluster_name\"\n        set cluster_name (gum input --placeholder \"cluster name\")\n    end\n    kind create cluster --name \"$cluster_name\" --config \"$cluster_name-kind.yaml\"\nend\n\nfunction delete-cluster\n    set cluster_name $argv[1]\n    if test -z \"$cluster_name\"\n        set cluster_name (gum input --placeholder \"cluster to delete\")\n    end\n    kind delete cluster --name \"$cluster_name\"\nend\n"
+    },
+    "options": {
+      "systems": [
+        "aarch64-darwin",
+        "aarch64-linux",
+        "x86_64-darwin",
+        "x86_64-linux"
+      ],
+      "allow": {
+        "licenses": []
+      },
+      "semver": {}
+    }
+  },
+  "packages": [
+    {
+      "attr_path": "gum",
+      "broken": false,
+      "derivation": "/nix/store/saqsc2cnrj5kdswscdl8f7za5pjh29f7-gum-0.14.5.drv",
+      "description": "Tasty Bubble Gum for your shell",
+      "install_id": "gum",
+      "license": "MIT",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=bffc22eb12172e6db3c5dde9e3e5628f8e3e7912",
+      "name": "gum-0.14.5",
+      "pname": "gum",
+      "rev": "bffc22eb12172e6db3c5dde9e3e5628f8e3e7912",
+      "rev_count": 735357,
+      "rev_date": "2025-01-08T13:55:31Z",
+      "scrape_date": "2025-01-10T03:41:12Z",
+      "stabilities": [
+        "unstable"
+      ],
+      "unfree": false,
+      "version": "0.14.5",
+      "outputs_to_install": [
+        "out"
+      ],
+      "outputs": {
+        "out": "/nix/store/p87f1zvabjckkam5f8p5n8s0p9dy2z8d-gum-0.14.5"
+      },
+      "system": "aarch64-darwin",
+      "group": "toplevel",
+      "priority": 5
+    },
+    {
+      "attr_path": "gum",
+      "broken": false,
+      "derivation": "/nix/store/gq0x16il396knlmncdmljqrgxmqj5vlx-gum-0.14.5.drv",
+      "description": "Tasty Bubble Gum for your shell",
+      "install_id": "gum",
+      "license": "MIT",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=bffc22eb12172e6db3c5dde9e3e5628f8e3e7912",
+      "name": "gum-0.14.5",
+      "pname": "gum",
+      "rev": "bffc22eb12172e6db3c5dde9e3e5628f8e3e7912",
+      "rev_count": 735357,
+      "rev_date": "2025-01-08T13:55:31Z",
+      "scrape_date": "2025-01-10T03:41:12Z",
+      "stabilities": [
+        "unstable"
+      ],
+      "unfree": false,
+      "version": "0.14.5",
+      "outputs_to_install": [
+        "out"
+      ],
+      "outputs": {
+        "out": "/nix/store/i8ks7qinadmk77dmknnrpi4iczv8p8gj-gum-0.14.5"
+      },
+      "system": "aarch64-linux",
+      "group": "toplevel",
+      "priority": 5
+    },
+    {
+      "attr_path": "gum",
+      "broken": false,
+      "derivation": "/nix/store/p9hjn7115d3ks9nd96zc5zj8wbfvm932-gum-0.14.5.drv",
+      "description": "Tasty Bubble Gum for your shell",
+      "install_id": "gum",
+      "license": "MIT",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=bffc22eb12172e6db3c5dde9e3e5628f8e3e7912",
+      "name": "gum-0.14.5",
+      "pname": "gum",
+      "rev": "bffc22eb12172e6db3c5dde9e3e5628f8e3e7912",
+      "rev_count": 735357,
+      "rev_date": "2025-01-08T13:55:31Z",
+      "scrape_date": "2025-01-10T03:41:12Z",
+      "stabilities": [
+        "unstable"
+      ],
+      "unfree": false,
+      "version": "0.14.5",
+      "outputs_to_install": [
+        "out"
+      ],
+      "outputs": {
+        "out": "/nix/store/1s4jc1kmqksngyhanl76iibb19b7sd2v-gum-0.14.5"
+      },
+      "system": "x86_64-darwin",
+      "group": "toplevel",
+      "priority": 5
+    },
+    {
+      "attr_path": "gum",
+      "broken": false,
+      "derivation": "/nix/store/xbrn20zfhm8w5cgjjzjcyv67g5k6kbdl-gum-0.14.5.drv",
+      "description": "Tasty Bubble Gum for your shell",
+      "install_id": "gum",
+      "license": "MIT",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=bffc22eb12172e6db3c5dde9e3e5628f8e3e7912",
+      "name": "gum-0.14.5",
+      "pname": "gum",
+      "rev": "bffc22eb12172e6db3c5dde9e3e5628f8e3e7912",
+      "rev_count": 735357,
+      "rev_date": "2025-01-08T13:55:31Z",
+      "scrape_date": "2025-01-10T03:41:12Z",
+      "stabilities": [
+        "unstable"
+      ],
+      "unfree": false,
+      "version": "0.14.5",
+      "outputs_to_install": [
+        "out"
+      ],
+      "outputs": {
+        "out": "/nix/store/z96hiw9h45mph9qilm4hp4j4ncf19qbl-gum-0.14.5"
+      },
+      "system": "x86_64-linux",
+      "group": "toplevel",
+      "priority": 5
+    },
+    {
+      "attr_path": "helm",
+      "broken": false,
+      "derivation": "/nix/store/dljqgfnzdq61v8xinrhymzaa3y2vk8g0-helm-0.9.0.drv",
+      "description": "Free, cross-platform, polyphonic synthesizer",
+      "install_id": "helm",
+      "license": "GPL-3.0-or-later",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=bffc22eb12172e6db3c5dde9e3e5628f8e3e7912",
+      "name": "helm-0.9.0",
+      "pname": "helm",
+      "rev": "bffc22eb12172e6db3c5dde9e3e5628f8e3e7912",
+      "rev_count": 735357,
+      "rev_date": "2025-01-08T13:55:31Z",
+      "scrape_date": "2025-01-10T03:41:12Z",
+      "stabilities": [
+        "unstable"
+      ],
+      "unfree": false,
+      "version": "0.9.0",
+      "outputs_to_install": [
+        "out"
+      ],
+      "outputs": {
+        "out": "/nix/store/bwm375kwyppqcy46cb0mfjrvx2g4i3f4-helm-0.9.0"
+      },
+      "system": "aarch64-linux",
+      "group": "toplevel",
+      "priority": 5
+    },
+    {
+      "attr_path": "helm",
+      "broken": false,
+      "derivation": "/nix/store/9mc2xdsy4pq2g8y4c3gxmspzi5p6840r-helm-0.9.0.drv",
+      "description": "Free, cross-platform, polyphonic synthesizer",
+      "install_id": "helm",
+      "license": "GPL-3.0-or-later",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=bffc22eb12172e6db3c5dde9e3e5628f8e3e7912",
+      "name": "helm-0.9.0",
+      "pname": "helm",
+      "rev": "bffc22eb12172e6db3c5dde9e3e5628f8e3e7912",
+      "rev_count": 735357,
+      "rev_date": "2025-01-08T13:55:31Z",
+      "scrape_date": "2025-01-10T03:41:12Z",
+      "stabilities": [
+        "unstable"
+      ],
+      "unfree": false,
+      "version": "0.9.0",
+      "outputs_to_install": [
+        "out"
+      ],
+      "outputs": {
+        "out": "/nix/store/9rbz435svg3ps5byngi3d8zam68avvk6-helm-0.9.0"
+      },
+      "system": "x86_64-linux",
+      "group": "toplevel",
+      "priority": 5
+    },
+    {
+      "attr_path": "jq",
+      "broken": false,
+      "derivation": "/nix/store/i68d7y99nw2kz34bqr3w68rp2p5yanmb-jq-1.7.1.drv",
+      "description": "Lightweight and flexible command-line JSON processor",
+      "install_id": "jq",
+      "license": "MIT",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=bffc22eb12172e6db3c5dde9e3e5628f8e3e7912",
+      "name": "jq-1.7.1",
+      "pname": "jq",
+      "rev": "bffc22eb12172e6db3c5dde9e3e5628f8e3e7912",
+      "rev_count": 735357,
+      "rev_date": "2025-01-08T13:55:31Z",
+      "scrape_date": "2025-01-10T03:41:12Z",
+      "stabilities": [
+        "unstable"
+      ],
+      "unfree": false,
+      "version": "1.7.1",
+      "outputs_to_install": [
+        "bin",
+        "man"
+      ],
+      "outputs": {
+        "bin": "/nix/store/x07x6ixbqrh7javaz84sh7lxy5zjwc66-jq-1.7.1-bin",
+        "dev": "/nix/store/lhqbi2g0dpiv87341gzzd3vlkcs817yq-jq-1.7.1-dev",
+        "doc": "/nix/store/viyl0y7dbapp79ibwliqfljxr13n89b9-jq-1.7.1-doc",
+        "man": "/nix/store/fik16kqw21fpfknda8xpmqi94brmdy5m-jq-1.7.1-man",
+        "out": "/nix/store/kkymhin05qdfplfnv5k50x0fb9qbvrbl-jq-1.7.1"
+      },
+      "system": "aarch64-darwin",
+      "group": "toplevel",
+      "priority": 5
+    },
+    {
+      "attr_path": "jq",
+      "broken": false,
+      "derivation": "/nix/store/grbm3p3f1xx5b07nryinz7mc40634cbc-jq-1.7.1.drv",
+      "description": "Lightweight and flexible command-line JSON processor",
+      "install_id": "jq",
+      "license": "MIT",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=bffc22eb12172e6db3c5dde9e3e5628f8e3e7912",
+      "name": "jq-1.7.1",
+      "pname": "jq",
+      "rev": "bffc22eb12172e6db3c5dde9e3e5628f8e3e7912",
+      "rev_count": 735357,
+      "rev_date": "2025-01-08T13:55:31Z",
+      "scrape_date": "2025-01-10T03:41:12Z",
+      "stabilities": [
+        "unstable"
+      ],
+      "unfree": false,
+      "version": "1.7.1",
+      "outputs_to_install": [
+        "bin",
+        "man"
+      ],
+      "outputs": {
+        "bin": "/nix/store/bs198wj6yi71yzbiykizj5y79ll1y5a5-jq-1.7.1-bin",
+        "dev": "/nix/store/ibh2q48q1xn2bfyvjm6kr3wkphi3rb9r-jq-1.7.1-dev",
+        "doc": "/nix/store/wjjkav2gqfj67wzzkfw9gmp878dxpy0r-jq-1.7.1-doc",
+        "man": "/nix/store/0brmnz2q55dkzqbnld9s2l53hzyi82yg-jq-1.7.1-man",
+        "out": "/nix/store/cpxcnasas8nnwib686pbhzrkz1cnq0p6-jq-1.7.1"
+      },
+      "system": "aarch64-linux",
+      "group": "toplevel",
+      "priority": 5
+    },
+    {
+      "attr_path": "jq",
+      "broken": false,
+      "derivation": "/nix/store/8sgh0mivrrr6pyga0ajy8y9bgaq7jvnb-jq-1.7.1.drv",
+      "description": "Lightweight and flexible command-line JSON processor",
+      "install_id": "jq",
+      "license": "MIT",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=bffc22eb12172e6db3c5dde9e3e5628f8e3e7912",
+      "name": "jq-1.7.1",
+      "pname": "jq",
+      "rev": "bffc22eb12172e6db3c5dde9e3e5628f8e3e7912",
+      "rev_count": 735357,
+      "rev_date": "2025-01-08T13:55:31Z",
+      "scrape_date": "2025-01-10T03:41:12Z",
+      "stabilities": [
+        "unstable"
+      ],
+      "unfree": false,
+      "version": "1.7.1",
+      "outputs_to_install": [
+        "bin",
+        "man"
+      ],
+      "outputs": {
+        "bin": "/nix/store/ingdf4pkbkm85bfl0j95j834lvhllp3a-jq-1.7.1-bin",
+        "dev": "/nix/store/zvwl6lq9xq1sk9vapx51vajz00c80087-jq-1.7.1-dev",
+        "doc": "/nix/store/22qfscingx32vgap2kg9gcrgcrvv6ykn-jq-1.7.1-doc",
+        "man": "/nix/store/w6aijc6k90s04jx5a7pk8j1gmacyllqc-jq-1.7.1-man",
+        "out": "/nix/store/0g44qcyxjr944pn560l3mr884akh7il4-jq-1.7.1"
+      },
+      "system": "x86_64-darwin",
+      "group": "toplevel",
+      "priority": 5
+    },
+    {
+      "attr_path": "jq",
+      "broken": false,
+      "derivation": "/nix/store/g40vzh1csbvl17rygg3mzk0pg86hvxy7-jq-1.7.1.drv",
+      "description": "Lightweight and flexible command-line JSON processor",
+      "install_id": "jq",
+      "license": "MIT",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=bffc22eb12172e6db3c5dde9e3e5628f8e3e7912",
+      "name": "jq-1.7.1",
+      "pname": "jq",
+      "rev": "bffc22eb12172e6db3c5dde9e3e5628f8e3e7912",
+      "rev_count": 735357,
+      "rev_date": "2025-01-08T13:55:31Z",
+      "scrape_date": "2025-01-10T03:41:12Z",
+      "stabilities": [
+        "unstable"
+      ],
+      "unfree": false,
+      "version": "1.7.1",
+      "outputs_to_install": [
+        "bin",
+        "man"
+      ],
+      "outputs": {
+        "bin": "/nix/store/c79nkzxaiki5r7igd4a5lawwdds38f2l-jq-1.7.1-bin",
+        "dev": "/nix/store/4nrxcmjis6bahcr6gphczjfhz12f2vnd-jq-1.7.1-dev",
+        "doc": "/nix/store/kbp9hjh0zcqdc04kiya3wazs50g3mhnp-jq-1.7.1-doc",
+        "man": "/nix/store/bj4b7al7f1x6lvsk1p5gza26ya5is8zn-jq-1.7.1-man",
+        "out": "/nix/store/s8vyrf9xh2yh66ilivw3gi8hzxv7d44c-jq-1.7.1"
+      },
+      "system": "x86_64-linux",
+      "group": "toplevel",
+      "priority": 5
+    },
+    {
+      "attr_path": "k9s",
+      "broken": false,
+      "derivation": "/nix/store/syxya4q3ciyrjpl8mxx41dk49iivf5vy-k9s-0.32.7.drv",
+      "description": "Kubernetes CLI To Manage Your Clusters In Style",
+      "install_id": "k9s",
+      "license": "Apache-2.0",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=bffc22eb12172e6db3c5dde9e3e5628f8e3e7912",
+      "name": "k9s-0.32.7",
+      "pname": "k9s",
+      "rev": "bffc22eb12172e6db3c5dde9e3e5628f8e3e7912",
+      "rev_count": 735357,
+      "rev_date": "2025-01-08T13:55:31Z",
+      "scrape_date": "2025-01-10T03:41:12Z",
+      "stabilities": [
+        "unstable"
+      ],
+      "unfree": false,
+      "version": "0.32.7",
+      "outputs_to_install": [
+        "out"
+      ],
+      "outputs": {
+        "out": "/nix/store/j34ib6fncah841fs9f735jydwl9mgrcq-k9s-0.32.7"
+      },
+      "system": "aarch64-darwin",
+      "group": "toplevel",
+      "priority": 5
+    },
+    {
+      "attr_path": "k9s",
+      "broken": false,
+      "derivation": "/nix/store/njsacfdgrfk1shpx01p0md3cqd3809rj-k9s-0.32.7.drv",
+      "description": "Kubernetes CLI To Manage Your Clusters In Style",
+      "install_id": "k9s",
+      "license": "Apache-2.0",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=bffc22eb12172e6db3c5dde9e3e5628f8e3e7912",
+      "name": "k9s-0.32.7",
+      "pname": "k9s",
+      "rev": "bffc22eb12172e6db3c5dde9e3e5628f8e3e7912",
+      "rev_count": 735357,
+      "rev_date": "2025-01-08T13:55:31Z",
+      "scrape_date": "2025-01-10T03:41:12Z",
+      "stabilities": [
+        "unstable"
+      ],
+      "unfree": false,
+      "version": "0.32.7",
+      "outputs_to_install": [
+        "out"
+      ],
+      "outputs": {
+        "out": "/nix/store/0dzcr6jpjyr94rvc05lvpyh3aq0ispbw-k9s-0.32.7"
+      },
+      "system": "aarch64-linux",
+      "group": "toplevel",
+      "priority": 5
+    },
+    {
+      "attr_path": "k9s",
+      "broken": false,
+      "derivation": "/nix/store/h0n2sapizg8qb82lg9p0ywv9z45z2vk4-k9s-0.32.7.drv",
+      "description": "Kubernetes CLI To Manage Your Clusters In Style",
+      "install_id": "k9s",
+      "license": "Apache-2.0",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=bffc22eb12172e6db3c5dde9e3e5628f8e3e7912",
+      "name": "k9s-0.32.7",
+      "pname": "k9s",
+      "rev": "bffc22eb12172e6db3c5dde9e3e5628f8e3e7912",
+      "rev_count": 735357,
+      "rev_date": "2025-01-08T13:55:31Z",
+      "scrape_date": "2025-01-10T03:41:12Z",
+      "stabilities": [
+        "unstable"
+      ],
+      "unfree": false,
+      "version": "0.32.7",
+      "outputs_to_install": [
+        "out"
+      ],
+      "outputs": {
+        "out": "/nix/store/fnxpjszlgh4g25jl96xxcm0wxd0n7h0i-k9s-0.32.7"
+      },
+      "system": "x86_64-darwin",
+      "group": "toplevel",
+      "priority": 5
+    },
+    {
+      "attr_path": "k9s",
+      "broken": false,
+      "derivation": "/nix/store/rwgizzz85m80d78ns89w57h9v7liaj4r-k9s-0.32.7.drv",
+      "description": "Kubernetes CLI To Manage Your Clusters In Style",
+      "install_id": "k9s",
+      "license": "Apache-2.0",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=bffc22eb12172e6db3c5dde9e3e5628f8e3e7912",
+      "name": "k9s-0.32.7",
+      "pname": "k9s",
+      "rev": "bffc22eb12172e6db3c5dde9e3e5628f8e3e7912",
+      "rev_count": 735357,
+      "rev_date": "2025-01-08T13:55:31Z",
+      "scrape_date": "2025-01-10T03:41:12Z",
+      "stabilities": [
+        "unstable"
+      ],
+      "unfree": false,
+      "version": "0.32.7",
+      "outputs_to_install": [
+        "out"
+      ],
+      "outputs": {
+        "out": "/nix/store/acfv4993hw202l9zrrmgrjf3bk7imaym-k9s-0.32.7"
+      },
+      "system": "x86_64-linux",
+      "group": "toplevel",
+      "priority": 5
+    },
+    {
+      "attr_path": "kind",
+      "broken": false,
+      "derivation": "/nix/store/bnn6q7nr9px7h2l3da9rhcdiz3zp4lyc-kind-0.26.0.drv",
+      "description": "Kubernetes IN Docker - local clusters for testing Kubernetes",
+      "install_id": "kind",
+      "license": "Apache-2.0",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=bffc22eb12172e6db3c5dde9e3e5628f8e3e7912",
+      "name": "kind-0.26.0",
+      "pname": "kind",
+      "rev": "bffc22eb12172e6db3c5dde9e3e5628f8e3e7912",
+      "rev_count": 735357,
+      "rev_date": "2025-01-08T13:55:31Z",
+      "scrape_date": "2025-01-10T03:41:12Z",
+      "stabilities": [
+        "unstable"
+      ],
+      "unfree": false,
+      "version": "0.26.0",
+      "outputs_to_install": [
+        "out"
+      ],
+      "outputs": {
+        "out": "/nix/store/hhxm3h93l4lqlnfapp7ph9wyk8bvk8mn-kind-0.26.0"
+      },
+      "system": "aarch64-darwin",
+      "group": "toplevel",
+      "priority": 5
+    },
+    {
+      "attr_path": "kind",
+      "broken": false,
+      "derivation": "/nix/store/1ka7v3l8nw9fxy5jss2lz1nicixgk5pz-kind-0.26.0.drv",
+      "description": "Kubernetes IN Docker - local clusters for testing Kubernetes",
+      "install_id": "kind",
+      "license": "Apache-2.0",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=bffc22eb12172e6db3c5dde9e3e5628f8e3e7912",
+      "name": "kind-0.26.0",
+      "pname": "kind",
+      "rev": "bffc22eb12172e6db3c5dde9e3e5628f8e3e7912",
+      "rev_count": 735357,
+      "rev_date": "2025-01-08T13:55:31Z",
+      "scrape_date": "2025-01-10T03:41:12Z",
+      "stabilities": [
+        "unstable"
+      ],
+      "unfree": false,
+      "version": "0.26.0",
+      "outputs_to_install": [
+        "out"
+      ],
+      "outputs": {
+        "out": "/nix/store/v9npawa3zwd9cz71h3s55hrhn5hn2fwy-kind-0.26.0"
+      },
+      "system": "aarch64-linux",
+      "group": "toplevel",
+      "priority": 5
+    },
+    {
+      "attr_path": "kind",
+      "broken": false,
+      "derivation": "/nix/store/nh8srg3a1i5nldfwr60x8a6q39fw1g2k-kind-0.26.0.drv",
+      "description": "Kubernetes IN Docker - local clusters for testing Kubernetes",
+      "install_id": "kind",
+      "license": "Apache-2.0",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=bffc22eb12172e6db3c5dde9e3e5628f8e3e7912",
+      "name": "kind-0.26.0",
+      "pname": "kind",
+      "rev": "bffc22eb12172e6db3c5dde9e3e5628f8e3e7912",
+      "rev_count": 735357,
+      "rev_date": "2025-01-08T13:55:31Z",
+      "scrape_date": "2025-01-10T03:41:12Z",
+      "stabilities": [
+        "unstable"
+      ],
+      "unfree": false,
+      "version": "0.26.0",
+      "outputs_to_install": [
+        "out"
+      ],
+      "outputs": {
+        "out": "/nix/store/hmpsrwyadikzw7hm5agv27nag8sg91rm-kind-0.26.0"
+      },
+      "system": "x86_64-darwin",
+      "group": "toplevel",
+      "priority": 5
+    },
+    {
+      "attr_path": "kind",
+      "broken": false,
+      "derivation": "/nix/store/ncfxljaw75scy2j1hr3d5pgm4cqm8dcr-kind-0.26.0.drv",
+      "description": "Kubernetes IN Docker - local clusters for testing Kubernetes",
+      "install_id": "kind",
+      "license": "Apache-2.0",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=bffc22eb12172e6db3c5dde9e3e5628f8e3e7912",
+      "name": "kind-0.26.0",
+      "pname": "kind",
+      "rev": "bffc22eb12172e6db3c5dde9e3e5628f8e3e7912",
+      "rev_count": 735357,
+      "rev_date": "2025-01-08T13:55:31Z",
+      "scrape_date": "2025-01-10T03:41:12Z",
+      "stabilities": [
+        "unstable"
+      ],
+      "unfree": false,
+      "version": "0.26.0",
+      "outputs_to_install": [
+        "out"
+      ],
+      "outputs": {
+        "out": "/nix/store/dz1qn5pgy14cb8v88dgi38j70lfbb2q4-kind-0.26.0"
+      },
+      "system": "x86_64-linux",
+      "group": "toplevel",
+      "priority": 5
+    },
+    {
+      "attr_path": "kubectl",
+      "broken": false,
+      "derivation": "/nix/store/p33f57gi0nflqlalfw9f79ajp4khb30j-kubectl-1.32.0.drv",
+      "description": "Kubernetes CLI",
+      "install_id": "kubectl",
+      "license": "Apache-2.0",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=bffc22eb12172e6db3c5dde9e3e5628f8e3e7912",
+      "name": "kubectl-1.32.0",
+      "pname": "kubectl",
+      "rev": "bffc22eb12172e6db3c5dde9e3e5628f8e3e7912",
+      "rev_count": 735357,
+      "rev_date": "2025-01-08T13:55:31Z",
+      "scrape_date": "2025-01-10T03:41:12Z",
+      "stabilities": [
+        "unstable"
+      ],
+      "unfree": false,
+      "version": "1.32.0",
+      "outputs_to_install": [
+        "out",
+        "man"
+      ],
+      "outputs": {
+        "convert": "/nix/store/4kamlm1ii5j7zmivizvpl8l7nw4da1n8-kubectl-1.32.0-convert",
+        "man": "/nix/store/3nz42pz97757darq7yy930yh5l8xhb03-kubectl-1.32.0-man",
+        "out": "/nix/store/i8cpdk16v3gj7bx0wh009xsr3zjyykdy-kubectl-1.32.0"
+      },
+      "system": "aarch64-darwin",
+      "group": "toplevel",
+      "priority": 5
+    },
+    {
+      "attr_path": "kubectl",
+      "broken": false,
+      "derivation": "/nix/store/qb8njgz025djfj23kixf2blxj5xwrwns-kubectl-1.32.0.drv",
+      "description": "Kubernetes CLI",
+      "install_id": "kubectl",
+      "license": "Apache-2.0",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=bffc22eb12172e6db3c5dde9e3e5628f8e3e7912",
+      "name": "kubectl-1.32.0",
+      "pname": "kubectl",
+      "rev": "bffc22eb12172e6db3c5dde9e3e5628f8e3e7912",
+      "rev_count": 735357,
+      "rev_date": "2025-01-08T13:55:31Z",
+      "scrape_date": "2025-01-10T03:41:12Z",
+      "stabilities": [
+        "unstable"
+      ],
+      "unfree": false,
+      "version": "1.32.0",
+      "outputs_to_install": [
+        "out",
+        "man"
+      ],
+      "outputs": {
+        "convert": "/nix/store/av3jckh7q3lswq8p0bfwiirvbpp0rvyz-kubectl-1.32.0-convert",
+        "man": "/nix/store/3cl305jf0x48ad2gkhhgbi5gnsmrcci6-kubectl-1.32.0-man",
+        "out": "/nix/store/df7cvpjy0wm1c5z6l44qb9085yfx72yn-kubectl-1.32.0"
+      },
+      "system": "aarch64-linux",
+      "group": "toplevel",
+      "priority": 5
+    },
+    {
+      "attr_path": "kubectl",
+      "broken": false,
+      "derivation": "/nix/store/c53gh4pbm2s5fzsxx4gl95qw29ylnnxj-kubectl-1.32.0.drv",
+      "description": "Kubernetes CLI",
+      "install_id": "kubectl",
+      "license": "Apache-2.0",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=bffc22eb12172e6db3c5dde9e3e5628f8e3e7912",
+      "name": "kubectl-1.32.0",
+      "pname": "kubectl",
+      "rev": "bffc22eb12172e6db3c5dde9e3e5628f8e3e7912",
+      "rev_count": 735357,
+      "rev_date": "2025-01-08T13:55:31Z",
+      "scrape_date": "2025-01-10T03:41:12Z",
+      "stabilities": [
+        "unstable"
+      ],
+      "unfree": false,
+      "version": "1.32.0",
+      "outputs_to_install": [
+        "out",
+        "man"
+      ],
+      "outputs": {
+        "convert": "/nix/store/pcjy7wd5dm98iyw8qybq7mn5bbd906kc-kubectl-1.32.0-convert",
+        "man": "/nix/store/9dj1jjvk7wp5nn20j7m00yrb6m12sxhh-kubectl-1.32.0-man",
+        "out": "/nix/store/qqxzggng2kw7z7dzvyajfwixmz923k3w-kubectl-1.32.0"
+      },
+      "system": "x86_64-darwin",
+      "group": "toplevel",
+      "priority": 5
+    },
+    {
+      "attr_path": "kubectl",
+      "broken": false,
+      "derivation": "/nix/store/06yc80k4j9qf08mx693yz6xyfv40c13m-kubectl-1.32.0.drv",
+      "description": "Kubernetes CLI",
+      "install_id": "kubectl",
+      "license": "Apache-2.0",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=bffc22eb12172e6db3c5dde9e3e5628f8e3e7912",
+      "name": "kubectl-1.32.0",
+      "pname": "kubectl",
+      "rev": "bffc22eb12172e6db3c5dde9e3e5628f8e3e7912",
+      "rev_count": 735357,
+      "rev_date": "2025-01-08T13:55:31Z",
+      "scrape_date": "2025-01-10T03:41:12Z",
+      "stabilities": [
+        "unstable"
+      ],
+      "unfree": false,
+      "version": "1.32.0",
+      "outputs_to_install": [
+        "out",
+        "man"
+      ],
+      "outputs": {
+        "convert": "/nix/store/s8pn6j48wrwr9fh5x2836ywcnai2wxma-kubectl-1.32.0-convert",
+        "man": "/nix/store/i4jqhs1mw5v0igk0ry0y1w22rb1lbykz-kubectl-1.32.0-man",
+        "out": "/nix/store/bji52bdp0fpnl11lqvwbqjbvs84zmprz-kubectl-1.32.0"
+      },
+      "system": "x86_64-linux",
+      "group": "toplevel",
+      "priority": 5
+    }
+  ]
+}
