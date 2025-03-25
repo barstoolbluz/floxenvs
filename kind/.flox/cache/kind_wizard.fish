@@ -1,5 +1,4 @@
-function kind_wizard
-    # Helper function to check for quit command
+function bootstrap
     function check_quit
         set -l input $argv[1]
         if test "$input" = ":q"
@@ -9,7 +8,6 @@ function kind_wizard
         return 0
     end
 
-    # Function to get latest k8s version
     function get_latest_version
         curl -s "https://registry.hub.docker.com/v2/repositories/kindest/node/tags?page_size=100" | \
             jq -r '.results[].name | select(test("^v[0-9]+\\.[0-9]+\\.[0-9]+$"))' | \
@@ -17,13 +15,12 @@ function kind_wizard
             head -n 1
     end
 
-    # Variable to track if we should quit
+    # should we quit?
     set -l SHOULD_QUIT 0
 
-    # Inform user about quit option
     gum style --foreground 212 --bold "You can type ':q' at any prompt to quit the wizard"
 
-    # Check for container runtime
+    # does / does not container runtime exist?
     if not command -v docker >/dev/null 2>&1 && not command -v podman >/dev/null 2>&1
         gum style --foreground 9 --bold "No container runtime detected."
         gum style --foreground 212 --bold "KIND requires a container runtime like Docker or Podman."
@@ -39,7 +36,7 @@ function kind_wizard
             break
         end
 
-        # Get cluster name
+        # get cluster name
         gum style --foreground 212 --bold "Specify cluster name (e.g., 'dev-cluster'):"
         set -l CLUSTER_NAME (gum input --placeholder "kind")
         if not check_quit "$CLUSTER_NAME"
@@ -47,17 +44,17 @@ function kind_wizard
             break
         end
 
-        # Define config file name
+        # define config file
         set -l CONFIG_FILE "$CLUSTER_NAME-kind.yaml"
 
-        # Set default variables
+        # set default variables
         set -l K8S_VERSION $argv[1]
         test -z "$K8S_VERSION" && set K8S_VERSION "latest"
         
         set -l NODE_COUNT $argv[2]
         test -z "$NODE_COUNT" && set NODE_COUNT 4
 
-        # Prompt for K8s version and node count
+        # prompt for K8s version + node count
         gum style --foreground 212 --bold "Specify Kubernetes version (e.g., 'v1.29.2' or 'latest'):"
         set K8S_VERSION (gum input --value "$K8S_VERSION")
         if not check_quit "$K8S_VERSION"
@@ -72,12 +69,12 @@ function kind_wizard
             break
         end
 
-        # Fetch latest version if needed
+        # fetch latest k8s version if needed
         if test "$K8S_VERSION" = "latest"
             set K8S_VERSION (get_latest_version)
         end
 
-        # Create the KIND config file
+        # create the KIND config
         echo "kind: Cluster
 apiVersion: kind.x-k8s.io/v1alpha4
 name: $CLUSTER_NAME
