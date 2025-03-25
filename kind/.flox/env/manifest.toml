@@ -67,12 +67,12 @@ show_kind_help() {
         --border-foreground 240 \
         --padding "1 2" \
         --margin "1 0" \
-        --width 96 \
+        --width 84 \
         "$(gum style --foreground 141 --bold 'This is a  F l o x  KIND Kubernetes Environment')
 
 👉  Create Kubernetes Cluster:
-    $(gum style --foreground 212 'bootstrap')                           Interactive cluster creation wizard
-    $(gum style --foreground 212 'create-cluster NAME')                 Create cluster with existing config
+    $(gum style --foreground 212 'bootstrap')                           Interactive KIND cluster creation wizard
+    $(gum style --foreground 212 'create-cluster NAME')                 Create KIND cluster with existing config
 
 👉  Manage Kubernetes:
     $(gum style --foreground 212 'kubectl')                             Control Kubernetes clusters
@@ -153,14 +153,8 @@ delete-cluster() {
 
 readme() {
   local readme_path="$FLOX_ENV_CACHE/README.md"
-  
-  curl -s -o "$readme_path" "https://raw.githubusercontent.com/barstoolbluz/floxenvs/main/kind/README.md"
-  
-  if command -v bat &>/dev/null; then
-    bat --paging=always "$readme_path"
-  else
-    cat "$readme_path"
-  fi
+  [[ "$1" == "--refresh" || ! -f "$readme_path" ]] && curl -s -o "$readme_path" "https://raw.githubusercontent.com/barstoolbluz/floxenvs/main/kind/README.md" 2>/dev/null
+  command -v bat &>/dev/null && bat --paging=always "$readme_path" 2>/dev/null || cat "$readme_path" 2>/dev/null
 }
 '''
 
@@ -180,17 +174,11 @@ delete-cluster() {
     kind delete cluster --name "$cluster_name"
 }
 
-function readme
-  set readme_path "$FLOX_ENV_CACHE/README.md"
-  
-  curl -s -o "$readme_path" "https://raw.githubusercontent.com/barstoolbluz/floxenvs/main/kind/README.md"
-  
-  if command -v bat &>/dev/null
-    bat --paging=always "$readme_path"
-  else
-    cat "$readme_path"
-  end
-end
+readme() {
+  local readme_path="$FLOX_ENV_CACHE/README.md"
+  [[ "$1" == "--refresh" || ! -f "$readme_path" ]] && curl -s -o "$readme_path" "https://raw.githubusercontent.com/barstoolbluz/floxenvs/main/kind/README.md" 2>/dev/null
+  command -v bat &>/dev/null && bat --paging=always "$readme_path" 2>/dev/null || cat "$readme_path" 2>/dev/null
+}
 '''
 
 fish = '''
@@ -217,14 +205,8 @@ end
 
 function readme
   set readme_path "$FLOX_ENV_CACHE/README.md"
-  
-  curl -s -o "$readme_path" "https://raw.githubusercontent.com/barstoolbluz/floxenvs/main/kind/README.md"
-  
-  if command -v bat &>/dev/null
-    bat --paging=always "$readme_path"
-  else
-    cat "$readme_path"
-  end
+  test "$argv[1]" = "--refresh" -o ! -f "$readme_path"; and curl -s -o "$readme_path" "https://raw.githubusercontent.com/barstoolbluz/floxenvs/main/kind/README.md" 2>/dev/null
+  command -v bat >/dev/null; and bat --paging=always "$readme_path" 2>/dev/null; or cat "$readme_path" 2>/dev/null
 end
 '''
 
