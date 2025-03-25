@@ -1,5 +1,5 @@
 bootstrap() {
-   # give the user a way to quit the bootstrapping wizard
+   # quit yes/no bootstrapping wizard?
    check_quit() {
        local input="$1"
        if [ "$input" = ":q" ]; then
@@ -10,7 +10,7 @@ bootstrap() {
 
    SHOULD_QUIT=0
 
-   # fetch the latest kubernetes version
+   # fetch the latest k8s version
    get_latest_version() {
        curl -s "https://registry.hub.docker.com/v2/repositories/kindest/node/tags?page_size=100" | \
            jq -r '.results[].name | select(test("^v[0-9]+\\.[0-9]+\\.[0-9]+$"))' | \
@@ -18,10 +18,9 @@ bootstrap() {
            head -n 1
    }
 
-   # inform user about quit option
    gum style --foreground 212 --bold "You can type ':q' at any prompt to quit the wizard"
 
-   # check for a container runtime
+   # does/does not container runtime exist?
    if ! (docker info >/dev/null 2>&1 || podman info >/dev/null 2>&1); then
        gum style --foreground 9 --bold "No container runtime detected."
        gum style --foreground 212 --bold "KIND requires a container runtime like Docker or Podman."
@@ -31,26 +30,26 @@ bootstrap() {
    fi
 
    while [ $SHOULD_QUIT -eq 0 ]; do
-       # ask do you want to create a new kind configuration?
+       # create yes/no a new kind configuration?
        if ! gum confirm "Do you want to create a new KIND configuration file?"; then
            gum style --foreground 212 --bold "Exiting without creating a configuration."
            break
        fi
 
-       # get the cluster name
+       # get cluster name
        gum style --foreground 212 --bold "Specify cluster name (e.g., 'dev-cluster'):"
        CLUSTER_NAME=$(gum input --placeholder "kind")
        check_quit "$CLUSTER_NAME"
        [ $SHOULD_QUIT -eq 1 ] && break
 
-       # define config file name based on cluster name
+       # define config file
        CONFIG_FILE="${CLUSTER_NAME}-kind.yaml"
 
-       # default variables
+       # set default variables
        K8S_VERSION=${1:-"latest"}
        NODE_COUNT=${2:-4}
 
-       # prompt for K8s version and node count
+       # prompt for k8s version + node count
        gum style --foreground 212 --bold "Specify Kubernetes version (e.g., 'v1.29.2' or 'latest'):"
        K8S_VERSION=$(gum input --value "${K8S_VERSION}")
        check_quit "$K8S_VERSION"
@@ -61,7 +60,7 @@ bootstrap() {
        check_quit "$NODE_COUNT"
        [ $SHOULD_QUIT -eq 1 ] && break
 
-       # fetch the latest k8s version if 'latest' is specified
+       # fetch the latest k8s version
        if [ "$K8S_VERSION" == "latest" ]; then
            K8S_VERSION=$(get_latest_version)
        fi
