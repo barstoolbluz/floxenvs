@@ -20,8 +20,9 @@ The environment packs these essential tools:
 - `helm` - Kubernetes package manager
 - `gum` - Terminal UI toolkit powering the setup wizard and styling
 - `jq` - Command-line JSON processor for API interactions
+- `coreutils` - GNU core utilities for reliable cross-platform operation
 - `bat` - Used to power the environment's built-in `readme` function
-- `curl` - Used to fetch this `README.md`
+- `curl` - Used to fetch this `README.md` and shell integration scripts
 
 ## 🏁 Getting Started
 
@@ -52,13 +53,14 @@ flox activate
 
 This command:
 - Pulls in all dependencies
+- Downloads shell integration scripts from GitHub
 - Detects any existing KIND clusters
 - Fires up the cluster creation wizard if no clusters are found
 - Drops you into the Flox env with Kubernetes tools ready to go
 
 ### 🧙 Cluster Creation Wizard
 
-The environment includes an interactive wizard that:
+The environment includes an interactive wizard (now called `bootstrap`) that:
 
 1. Checks for a container runtime (Docker/Podman/Colima)
 2. Guides you through naming your cluster
@@ -73,7 +75,7 @@ After setup, you have access to these commands:
 
 ```bash
 # Create a new cluster with the interactive wizard
-kind_wizard
+bootstrap
 
 # Create a cluster with an existing config file
 create-cluster my-cluster
@@ -92,9 +94,24 @@ k9s
 
 # Manage Kubernetes packages
 helm ...
+
+# View this README in the terminal
+readme
+
+# Update and view the README
+readme --refresh
 ```
 
 ## 🔍 How It Works
+
+### 🔄 Shell Integration
+
+The environment dynamically downloads shell integration scripts from GitHub:
+- `kind_wizard.bash` for Bash users
+- `kind_wizard.zsh` for Zsh users
+- `kind_wizard.fish` for Fish users
+
+These scripts provide the `bootstrap` function (renamed from `kind_wizard`) and are automatically sourced in your shell. The shell scripts are stored in `$FLOX_ENV_CACHE` and only downloaded if they don't exist.
 
 ### 🔄 Cluster Management
 
@@ -106,7 +123,7 @@ The environment implements a streamlined cluster creation process:
 4. **Node Configuration**: Supports multi-node clusters with a control-plane and workers
 5. **Cluster Creation**: Launches the cluster with your custom configuration
 
-### 🐚 Shell Integration
+### 🐚 Shell Support
 
 The environment includes integration for:
 - Bash
@@ -117,6 +134,14 @@ With helper functions that:
 1. Create and manage KIND clusters
 2. Provide access to Kubernetes tools
 3. Display cluster information and status
+
+### 📖 Integrated Documentation
+
+The `readme` function:
+- Downloads this README.md to your environment's cache
+- Displays it using `bat` with syntax highlighting and paging
+- Can be refreshed with the `--refresh` flag to get the latest version
+- Falls back to `cat` if for whatever (inconceivable) reason `bat` is not available
 
 ### 📊 Kubernetes Interaction
 
@@ -144,6 +169,11 @@ If you encounter issues:
    - KIND runs Kubernetes in containers, so resource usage is limited by your Docker/Podman settings
    - Consider adjusting container runtime resource limits for larger clusters
 
+4. **Shell integration issues**:
+   - If shell functions aren't available, check internet connectivity
+   - The environment tries to download integration scripts from GitHub
+   - You can manually download them to `$FLOX_ENV_CACHE` if needed
+
 ## 💻 System Compatibility
 
 This works on:
@@ -156,6 +186,7 @@ This works on:
 - Cluster configs are stored as YAML files in your working directory
 - Kubernetes credentials are stored in your kubeconfig (typically ~/.kube/config)
 - For proper security, follow Kubernetes security best practices even in development
+- Shell integration scripts are downloaded from GitHub - review them if you have security concerns
 
 ## About Flox
 
