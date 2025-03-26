@@ -30,6 +30,9 @@ This repo contains pre-configured [Flox](https://flox.dev/docs) environments for
 
 - [**postgres-metabase**](./postgres-metabase) - PostgreSQL + Metabase BI platform
 
+### Containers and Kubernetes (K8s)
+- [**kind**](./kind) - Kubernetes IN Docker, essential K8s tools, and a KIND auto-configuration wizard
+ 
 ### Python Development
 
 - [**python310**](./python310) - Python 3.10 with smart venv management
