@@ -17,10 +17,11 @@ The environment packs these essential tools:
 - `kind` - Kubernetes IN Docker for local cluster creation
 - `kubectl` - Official Kubernetes command-line tool
 - `k9s` - Terminal-based UI for Kubernetes
+- `stern` - Multi-pod and container log tailing for Kubernetes
 - `helm` - Kubernetes package manager
 - `gum` - Terminal UI toolkit powering the setup wizard and styling
 - `jq` - Command-line JSON processor for API interactions
-- `coreutils` - GNU core utilities for reliable cross-platform operation
+- `coreutils` - GNU core utilities for enhanced file and text operations
 - `bat` - Used to power the environment's built-in `readme` function
 - `curl` - Used to fetch this `README.md` and shell integration scripts
 
@@ -92,6 +93,9 @@ kubectl ...
 # Open the K9s terminal UI
 k9s
 
+# Tail logs across multiple pods
+stern ...
+
 # Manage Kubernetes packages
 helm ...
 
@@ -101,6 +105,99 @@ readme
 # Update and view the README
 readme --refresh
 ```
+
+## 🛠️ Working with the Included Tools
+
+### 🖥️ K9s - Terminal UI for Kubernetes
+
+K9s provides a terminal UI to interact with your Kubernetes clusters:
+
+```bash
+# Launch K9s with the current context
+k9s
+
+# Launch K9s for a specific namespace
+k9s -n kube-system
+
+# Launch K9s for a specific context
+k9s --context my-context
+```
+
+Common workflows with K9s:
+- Press `:` to enter command mode (like Vim)
+- Type `pod` and press Enter to view pods
+- Type `deploy` to view deployments
+- Type `svc` to view services
+- Type `ns` to switch namespaces
+- Press `/` to filter resources
+- Press `d` to describe the selected resource
+- Press `l` to view logs of the selected pod
+- Press `s` to get a shell into the selected pod
+- Press `ctrl+d` to delete the selected resource
+- Press `?` for help with keyboard shortcuts
+
+### 📊 Stern - Multi-pod Log Tailing
+
+Stern lets you tail logs from multiple pods and containers:
+
+```bash
+# Tail logs from all pods with names containing "api"
+stern api
+
+# Tail logs from specific containers across all pods
+stern --container nginx .
+
+# Tail logs with timestamps
+stern --timestamps api
+
+# Tail logs with color-coded output for each pod
+stern --color always api
+
+# Tail logs from specific namespace
+stern --namespace monitoring api
+```
+
+Common use cases:
+- Debug distributed applications by viewing logs across multiple services
+- Monitor specific components during deployment or testing
+- Trace requests across microservices by matching logs with request IDs
+- Get real-time feedback during development in a Kubernetes environment
+
+### 📦 Helm - Kubernetes Package Manager
+
+Helm simplifies the deployment of applications and services:
+
+```bash
+# List available repositories
+helm repo list
+
+# Add a repository
+helm repo add bitnami https://charts.bitnami.com/bitnami
+
+# Update repositories
+helm repo update
+
+# Search for charts
+helm search repo nginx
+
+# Install a chart
+helm install my-release bitnami/nginx
+
+# List installed releases
+helm list
+
+# Upgrade a release
+helm upgrade my-release bitnami/nginx --set replicaCount=3
+
+# Uninstall a release
+helm uninstall my-release
+```
+
+Common workflows:
+- Setting up development dependencies (databases, message queues, etc.)
+- Deploying applications with consistent configurations
+- Managing application lifecycle through upgrades and rollbacks
+- Creating custom charts for your applications
 
 ## 🔍 How It Works
 
@@ -141,15 +238,18 @@ The `readme` function:
 - Downloads this README.md to your environment's cache
 - Displays it using `bat` with syntax highlighting and paging
 - Can be refreshed with the `--refresh` flag to get the latest version
-- Falls back to `cat` if for whatever (inconceivable) reason `bat` is not available
+- Falls back to `cat` if `bat` is not available
 
-### 📊 Kubernetes Interaction
+### 📊 Kubernetes Development Workflow
 
-The tools defined in this environment support:
-- Deploying applications to Kubernetes
-- Managing cluster resources
-- Monitoring cluster health
-- Installing packages with Helm
+This environment is ideal for a local Kubernetes development workflow:
+
+1. Create a local cluster with `bootstrap` or `create-cluster`
+2. Deploy applications using `kubectl` or `helm`
+3. Monitor deployments with `k9s`
+4. Watch application logs with `stern`
+5. Iterate on development with fast local feedback cycles
+6. Clean up with `delete-cluster` when done
 
 ## 🔧 Troubleshooting
 
