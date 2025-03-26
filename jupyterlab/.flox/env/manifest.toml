@@ -1,0 +1,245 @@
+#
+# This is a Flox environment manifest.
+# Visit flox.dev/docs/concepts/manifest/
+# or see flox-edit(1), manifest.toml(5) for more information.
+#
+# Flox manifest version managed by Flox CLI
+version = 1
+
+
+[install]
+# Jupyter Lab
+jupyterlab.pkg-path = "python312Packages.jupyterlab"
+jupyterlab-lsp.pkg-path = "python312Packages.jupyterlab-lsp"
+jupyterlab-server.pkg-path = "python312Packages.jupyterlab-server"
+jupyterlab-widgets.pkg-path = "python312Packages.jupyterlab-widgets"
+jupyterlab-pygments.pkg-path = "python312Packages.jupyterlab-pygments"
+jupyterlab-execute-time.pkg-path = "python312Packages.jupyterlab-execute-time"
+
+# Data science stuffs
+pandas.pkg-path = "python312Packages.pandas"
+matplotlib.pkg-path = "python312Packages.matplotlib"
+numpy.pkg-path = "python312Packages.numpy"
+pyarrow.pkg-path = "python312Packages.pyarrow"
+sympy.pkg-path = "python312Packages.sympy"
+pydot.pkg-path = "python312Packages.pydot"
+plotly.pkg-path = "python312Packages.plotly"
+
+# To print a welcome banner
+figlet.pkg-path = "toilet"
+
+# For the spinnin'
+gum.pkg-path = "gum"
+
+[vars]
+#PYTHON_ENV='./nb-venv/'
+JUPYTER_SERVER_TOKEN = "floxfan123456"
+
+[hook]
+on-activate = '''
+# Define default values
+DEFAULT_JUPYTER_HOST="0.0.0.0"
+DEFAULT_JUPYTER_PORT="8888"
+DEFAULT_JUPYTER_TOKEN="${JUPYTER_SERVER_TOKEN:-floxfan123456}"
+DEFAULT_NOTEBOOK_DIR="$(pwd)"
+DEFAULT_JUPYTER_THEME="JupyterLab Light"
+DEFAULT_INSTALL_REQUIREMENTS="true"
+DEFAULT_AUTO_START="false"
+
+# Configuration file path
+CONFIG_FILE="$FLOX_ENV_CACHE/jupyter_config.sh"
+
+# Load saved configuration if exists
+load_config() {
+  if [[ -f "$CONFIG_FILE" ]]; then
+    source "$CONFIG_FILE"
+  else
+    # Set defaults if no config file exists
+    JUPYTER_HOST="$DEFAULT_JUPYTER_HOST"
+    JUPYTER_PORT="$DEFAULT_JUPYTER_PORT"
+    JUPYTER_TOKEN="$DEFAULT_JUPYTER_TOKEN"
+    NOTEBOOK_DIR="$DEFAULT_NOTEBOOK_DIR"
+    JUPYTER_THEME="$DEFAULT_JUPYTER_THEME"
+    INSTALL_REQUIREMENTS="$DEFAULT_INSTALL_REQUIREMENTS"
+    AUTO_START="$DEFAULT_AUTO_START"
+  fi
+}
+
+# Save configuration to file
+save_config() {
+  mkdir -p "$(dirname "$CONFIG_FILE")"
+  cat > "$CONFIG_FILE" << EOF
+# JupyterLab configuration
+# Generated on $(date)
+JUPYTER_HOST="$JUPYTER_HOST"
+JUPYTER_PORT="$JUPYTER_PORT"
+JUPYTER_TOKEN="$JUPYTER_TOKEN"
+NOTEBOOK_DIR="$NOTEBOOK_DIR"
+JUPYTER_THEME="$JUPYTER_THEME"
+INSTALL_REQUIREMENTS="$INSTALL_REQUIREMENTS"
+AUTO_START="$AUTO_START"
+EOF
+}
+
+# Function to prompt for configuration
+prompt_for_config() {
+  echo ""
+  if gum confirm "$(gum style --foreground 240 'Would you like to customize your JupyterLab configuration?')" --default=false; then
+    
+    # Host address configuration
+    echo "$(gum style --foreground 212 'Network Configuration')"
+    echo "$(gum style --foreground 240 '0.0.0.0 - Allow connections from any IP address')"
+    echo "$(gum style --foreground 240 '127.0.0.1 - Allow connections only from this computer')"
+    JUPYTER_HOST=$(gum input --placeholder "$DEFAULT_JUPYTER_HOST" --value "$JUPYTER_HOST" --prompt "Host Address: ")
+    JUPYTER_PORT=$(gum input --placeholder "$DEFAULT_JUPYTER_PORT" --value "$JUPYTER_PORT" --prompt "Port: ")
+    
+    # Authentication
+    echo "$(gum style --foreground 212 'Authentication')"
+    JUPYTER_TOKEN=$(gum input --placeholder "$DEFAULT_JUPYTER_TOKEN" --value "$JUPYTER_TOKEN" --prompt "Access Token: ")
+    
+    # Notebook directory
+    echo "$(gum style --foreground 212 'Notebook Settings')"
+    NOTEBOOK_DIR=$(gum input --placeholder "$DEFAULT_NOTEBOOK_DIR" --value "$NOTEBOOK_DIR" --prompt "Notebook Directory: ")
+    
+    # Theme selection
+    JUPYTER_THEME=$(gum choose "JupyterLab Light" "JupyterLab Dark" --selected="$JUPYTER_THEME")
+    
+    # Installation options
+    echo "$(gum style --foreground 212 'Package Management')"
+    if gum confirm "Automatically install packages from requirements.txt?" --default=${INSTALL_REQUIREMENTS}; then
+      INSTALL_REQUIREMENTS="true"
+    else
+      INSTALL_REQUIREMENTS="false"
+    fi
+    
+    # Auto-start option
+    if gum confirm "Automatically start JupyterLab when environment activates?" --default=${AUTO_START}; then
+      AUTO_START="true"
+    else
+      AUTO_START="false"
+    fi
+  fi
+  
+  # Save the configuration
+  save_config
+}
+
+# Function to activate Flox Python environment
+activate_venv() {
+  # Use the environment variable or default to the Flox env cache
+  export PYTHON_ENV="${PYTHON_ENV:-$FLOX_ENV_CACHE/python}" 
+
+  if [[ -d $PYTHON_ENV ]]; then
+    echo; echo -n "⚡️ Activating existing venv in $PYTHON_ENV..."
+    . $PYTHON_ENV/bin/activate
+    echo "done."
+  else
+    # Create virtual environment if it doesn't exist
+    python -m venv $PYTHON_ENV
+    . $PYTHON_ENV/bin/activate
+  fi
+
+  # If we see a requirements.txt file and install_requirements is true, install its contents
+  if [[ -f requirements.txt ]] && [[ "$INSTALL_REQUIREMENTS" == "true" ]]; then
+    gum spin --spinner dot --title "Updating packages in $PYTHON_ENV" -- pip install -r "./requirements.txt" --quiet
+  fi
+}
+
+# Function to display Jupyter Lab information
+show_jupyter_help() {
+    # Create access URL based on host configuration
+    if [[ "$JUPYTER_HOST" == "0.0.0.0" ]]; then
+      ACCESS_URL="http://localhost:$JUPYTER_PORT"
+      NETWORK_NOTE="(accessible from other devices on your network)"
+    else
+      ACCESS_URL="http://$JUPYTER_HOST:$JUPYTER_PORT"
+      NETWORK_NOTE="(accessible only from this computer)"
+    fi
+    
+    # Create the help message with Gum styling
+    gum style \
+        --border rounded \
+        --border-foreground 240 \
+        --padding "1 2" \
+        --margin "1 0" \
+        --width 84 \
+        "$(gum style --foreground 141 --bold 'This is a  F l o x  JupyterLab environment')
+
+👉  Access JupyterLab:
+    URL: $(gum style --foreground 212 "$ACCESS_URL") $NETWORK_NOTE
+    Token: $(gum style --foreground 212 "${JUPYTER_TOKEN}")
+    Theme: $(gum style --foreground 212 "${JUPYTER_THEME}")
+
+👉  Environment Commands:
+    $(gum style --foreground 212 'jupyter-lab')         Start JupyterLab
+    $(gum style --foreground 212 'jupyter-lab list')    List running Jupyter servers
+    $(gum style --foreground 212 'pip install')         Install Python packages
+
+👉  Notebook Directory:
+    $(gum style --foreground 212 "${NOTEBOOK_DIR}")
+
+👉  Quick Tips:
+    - Start services with: $(gum style --foreground 212 'flox activate --start-services')
+    - Add packages to 'requirements.txt' for automatic installation"
+
+    echo ""
+}
+
+# Main execution flow
+load_config  # Load existing config or set defaults
+prompt_for_config  # Run the configuration wizard
+activate_venv  # Activate or create Python environment
+show_jupyter_help  # Show information
+
+# Auto-start JupyterLab if configured
+if [[ "$AUTO_START" == "true" ]]; then
+  jupyter-lab --no-browser --IdentityProvider.token="${JUPYTER_TOKEN}" --ip="${JUPYTER_HOST}" --port="${JUPYTER_PORT}" --notebook-dir="${NOTEBOOK_DIR}" &
+  echo "JupyterLab started in background. Use 'jupyter-lab list' to see running servers."
+fi
+'''
+
+[services.jupyter-lab]
+command = "jupyter-lab --no-browser --IdentityProvider.token=${JUPYTER_SERVER_TOKEN} --ip=0.0.0.0"
+
+[profile]
+bash = '''
+  if [ -d "$VENV_DIR" ]; then
+    source "$VENV_DIR/bin/activate"
+  fi
+  
+  # Source Jupyter helpers
+  HELPER_SCRIPT="$FLOX_ENV_CACHE/jupyter_helpers.sh"
+  if [ -f "$HELPER_SCRIPT" ]; then
+    source "$HELPER_SCRIPT"
+  fi
+'''
+
+zsh = '''
+  if [ -d "$VENV_DIR" ]; then
+    source "$VENV_DIR/bin/activate"
+  fi
+  
+  # Source Jupyter helpers
+  HELPER_SCRIPT="$FLOX_ENV_CACHE/jupyter_helpers.sh"
+  if [ -f "$HELPER_SCRIPT" ]; then
+    source "$HELPER_SCRIPT"
+  fi
+'''
+
+fish = '''
+  if test -d "$VENV_DIR"
+    source "$VENV_DIR/bin/activate.fish"
+  end
+  
+  # Source Jupyter helpers
+  set HELPER_SCRIPT "$FLOX_ENV_CACHE/jupyter_helpers.fish"
+  if test -f "$HELPER_SCRIPT"
+    source "$HELPER_SCRIPT"
+  end
+'''
+
+[options]
+systems = ["x86_64-linux", "aarch64-darwin", "aarch64-linux", "x86_64-darwin"]
+
+
+
