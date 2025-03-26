@@ -18,6 +18,7 @@ version = 1
 kind.pkg-path = "kind"
 kubectl.pkg-path = "kubectl"
 k9s.pkg-path = "k9s"
+stern.pkg-path = "stern"
 gum.pkg-path = "gum"
 jq.pkg-path = "jq"
 helm.pkg-path = "helm"
