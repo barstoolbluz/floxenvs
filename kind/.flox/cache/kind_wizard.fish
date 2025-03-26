@@ -43,6 +43,9 @@ function bootstrap
             set SHOULD_QUIT 1
             break
         end
+        
+        # Use default "kind" if empty
+        test -z "$CLUSTER_NAME" && set CLUSTER_NAME "kind"
 
         # define config file
         set -l CONFIG_FILE "$CLUSTER_NAME-kind.yaml"
