@@ -41,6 +41,9 @@ bootstrap() {
        CLUSTER_NAME=$(gum input --placeholder "kind")
        check_quit "$CLUSTER_NAME"
        [ $SHOULD_QUIT -eq 1 ] && break
+       
+       # Use default "kind" if empty
+       [ -z "$CLUSTER_NAME" ] && CLUSTER_NAME="kind"
 
        # define config file
        CONFIG_FILE="${CLUSTER_NAME}-kind.yaml"
