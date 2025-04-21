@@ -1,0 +1,732 @@
+## Flox Environment Manifest -----------------------------------------
+##
+##   _Everything_ you need to know about the _manifest_ is here:
+##
+##               https://flox.dev/docs/concepts/manifest
+##
+## -------------------------------------------------------------------
+# Flox manifest version managed by Flox CLI
+version = 1
+
+
+## Install Packages --------------------------------------------------
+##  $ flox install gum  <- puts a package in [install] section below
+##  $ flox search gum   <- search for a package
+##  $ flox show gum     <- show all versions of a package
+## -------------------------------------------------------------------
+[install]
+gh.pkg-path = "gh"
+git.pkg-path = "git"
+gum.pkg-path = "gum"
+bat.pkg-path = "bat"
+curl.pkg-path = "curl"
+openssl.pkg-path = "openssl"
+# gum.pkg-path = "gum"
+# gum.version = "^0.14.5"
+
+
+## Environment Variables ---------------------------------------------
+##  ... available for use in the activated environment
+##      as well as [hook], [profile] scripts and [services] below.
+## -------------------------------------------------------------------
+[vars]
+# INTRO_MESSAGE = "It's gettin' Flox in here"
+
+
+## Activation Hook ---------------------------------------------------
+##  ... run by _bash_ shell when you run 'flox activate'.
+## -------------------------------------------------------------------
+[hook]
+on-activate = '''
+# define paths
+CONFIG_FILE="${FLOX_ENV_CACHE:-$HOME/.cache/flox}/github_config"
+ENCRYPTED_TOKEN_FILE="${FLOX_ENV_CACHE:-$HOME/.cache/flox}/github_token.enc"
+BASH_WRAPPER="${FLOX_ENV_CACHE:-$HOME/.cache/flox}/gh_wrapper.bash"
+ZSH_WRAPPER="${FLOX_ENV_CACHE:-$HOME/.cache/flox}/gh_wrapper.zsh"
+FISH_WRAPPER="${FLOX_ENV_CACHE:-$HOME/.cache/flox}/gh_wrapper.fish"
+
+# detect operating system
+detect_os() {
+    if [[ "$OSTYPE" == "darwin"* ]]; then
+        echo "macos"
+    elif [[ "$OSTYPE" == "linux-gnu"* ]]; then
+        echo "linux"
+    else
+        echo "unsupported"
+    fi
+}
+
+# derive an encryption password from system information
+derive_password() {
+    # combine username, hostname and machine id for a unique but deterministic password
+    local user_info="$USER"
+    local host_info=$(hostname)
+    local machine_id=""
+    
+    if [[ -f "/etc/machine-id" ]]; then
+        machine_id=$(cat /etc/machine-id)
+    elif [[ -f "/var/lib/dbus/machine-id" ]]; then
+        machine_id=$(cat /var/lib/dbus/machine-id)
+    elif [[ "$(detect_os)" == "macos" ]]; then
+        machine_id=$(ioreg -rd1 -c IOPlatformExpertDevice | grep -E '(UUID)' | awk '{print $3}' | tr -d \")
+    fi
+    
+    # combine and hash the information
+    echo -n "${user_info}${host_info}${machine_id}flox-github-token" | openssl dgst -sha256 | awk '{print $2}'
+}
+
+# test if gh cli can directly authenticate with token
+test_gh_direct_auth() {
+    local token="$1"
+    local orig_token=""
+    
+    # Backup any existing GITHUB_TOKEN
+    if [[ -n "$GITHUB_TOKEN" ]]; then
+        orig_token="$GITHUB_TOKEN"
+    fi
+    
+    # Test with the new token
+    export GITHUB_TOKEN="$token"
+    if gh auth status &>/dev/null; then
+        # Restore original token if any
+        if [[ -n "$orig_token" ]]; then
+            export GITHUB_TOKEN="$orig_token"
+        else
+            unset GITHUB_TOKEN
+        fi
+        return 0
+    else
+        # Restore original token if any
+        if [[ -n "$orig_token" ]]; then
+            export GITHUB_TOKEN="$orig_token"
+        else
+            unset GITHUB_TOKEN
+        fi
+        return 1
+    fi
+}
+
+# store token in system keyring
+store_github_token() {
+    local token="$1"
+    local os=$(detect_os)
+    
+    if [[ "$os" == "macos" ]]; then
+        if security add-generic-password -s "flox-github" -a "$USER" -w "$token" -U; then
+            # Test if gh works directly with the token
+            if test_gh_direct_auth "$token"; then
+                # No wrapper needed
+                mkdir -p "$(dirname "$CONFIG_FILE")"
+                echo "GITHUB_TOKEN_STORED=true" > "$CONFIG_FILE"
+                echo "STORAGE_METHOD=keyring" >> "$CONFIG_FILE"
+                echo "NEEDS_WRAPPER=false" >> "$CONFIG_FILE"
+                
+                # Configure github cli with the token
+                echo "$token" | gh auth login --with-token
+                
+                echo "Token stored successfully in system keyring/keychain."
+                return 0
+            else
+                # Wrapper needed
+                mkdir -p "$(dirname "$CONFIG_FILE")"
+                echo "GITHUB_TOKEN_STORED=true" > "$CONFIG_FILE"
+                echo "STORAGE_METHOD=keyring" >> "$CONFIG_FILE"
+                echo "NEEDS_WRAPPER=true" >> "$CONFIG_FILE"
+                
+                echo "Token stored successfully in system keyring/keychain."
+                return 0
+            fi
+        else
+            return 1
+        fi
+    elif [[ "$os" == "linux" ]]; then
+        if echo -n "$token" | secret-tool store --label="Flox GitHub Token" service flox-github user "$USER"; then
+            # Test if gh works directly with the token
+            if test_gh_direct_auth "$token"; then
+                # No wrapper needed
+                mkdir -p "$(dirname "$CONFIG_FILE")"
+                echo "GITHUB_TOKEN_STORED=true" > "$CONFIG_FILE"
+                echo "STORAGE_METHOD=keyring" >> "$CONFIG_FILE"
+                echo "NEEDS_WRAPPER=false" >> "$CONFIG_FILE"
+                
+                # Configure github cli with the token
+                echo "$token" | gh auth login --with-token
+                
+                echo "Token stored successfully in system keyring/keychain."
+                return 0
+            else
+                # Wrapper needed
+                mkdir -p "$(dirname "$CONFIG_FILE")"
+                echo "GITHUB_TOKEN_STORED=true" > "$CONFIG_FILE"
+                echo "STORAGE_METHOD=keyring" >> "$CONFIG_FILE"
+                echo "NEEDS_WRAPPER=true" >> "$CONFIG_FILE"
+                
+                echo "Token stored successfully in system keyring/keychain."
+                return 0
+            fi
+        else
+            return 1
+        fi
+    else
+        echo "Error: Unsupported operating system."
+        return 1
+    fi
+}
+
+# store token in encrypted file as fallback
+store_github_token_encrypted() {
+    local token="$1"
+    local password=$(derive_password)
+    
+    # create directory if it doesn't exist
+    mkdir -p "$(dirname "$ENCRYPTED_TOKEN_FILE")"
+    
+    # encrypt token with openssl
+    echo -n "$token" | openssl enc -aes-256-cbc -salt -pbkdf2 -pass pass:"$password" -out "$ENCRYPTED_TOKEN_FILE"
+    
+    # record that token has been stored in encrypted file
+    mkdir -p "$(dirname "$CONFIG_FILE")"
+    echo "GITHUB_TOKEN_STORED=true" > "$CONFIG_FILE"
+    echo "STORAGE_METHOD=encrypted_file" >> "$CONFIG_FILE"
+    echo "NEEDS_WRAPPER=true" >> "$CONFIG_FILE"
+    echo "Token stored successfully in encrypted file."
+}
+
+# retrieve token from system keyring
+retrieve_github_token_keyring() {
+    local os=$(detect_os)
+    
+    if [[ "$os" == "macos" ]]; then
+        security find-generic-password -s "flox-github" -a "$USER" -w 2>/dev/null
+    elif [[ "$os" == "linux" ]]; then
+        secret-tool lookup service flox-github user "$USER" 2>/dev/null
+    fi
+}
+
+# retrieve token from encrypted file
+retrieve_github_token_encrypted() {
+    local password=$(derive_password)
+    
+    if [[ -f "$ENCRYPTED_TOKEN_FILE" ]]; then
+        openssl enc -aes-256-cbc -d -salt -pbkdf2 -pass pass:"$password" -in "$ENCRYPTED_TOKEN_FILE" 2>/dev/null
+        return $?
+    fi
+    return 1
+}
+
+# retrieve github token from appropriate storage
+retrieve_github_token() {
+    if [[ -f "$CONFIG_FILE" ]]; then
+        source "$CONFIG_FILE"
+        if [[ "$STORAGE_METHOD" == "keyring" ]]; then
+            retrieve_github_token_keyring
+        elif [[ "$STORAGE_METHOD" == "encrypted_file" ]]; then
+            retrieve_github_token_encrypted
+        fi
+    fi
+}
+
+# check if token exists
+token_exists() {
+    local token=$(retrieve_github_token)
+    [[ -n "$token" ]]
+}
+
+# validate github token with api
+validate_github_token() {
+    local token="$1"
+    echo "Validating GitHub token..."
+    
+    # test token with a simple api request
+    local response=$(curl -s -o /dev/null -w "%{http_code}" -H "Authorization: token $token" https://api.github.com/user)
+    
+    if [[ "$response" == "200" ]]; then
+        return 0
+    else
+        return 1
+    fi
+}
+
+# check for existing token and validate
+check_existing_token() {
+    if [[ -f "$CONFIG_FILE" ]] && source "$CONFIG_FILE" && [[ "$GITHUB_TOKEN_STORED" == "true" ]]; then
+        # if no wrapper needed, verify with gh auth status
+        if [[ "$NEEDS_WRAPPER" == "false" ]]; then
+            if gh auth status &>/dev/null; then
+                return 0
+            else
+                echo "GitHub integration was set up, but authentication is no longer working."
+                return 1
+            fi
+        else
+            # verify the token still works
+            local token=$(retrieve_github_token)
+            if [[ -n "$token" ]] && validate_github_token "$token"; then
+                # create shell wrappers if they don't exist but are needed
+                if [[ ! -f "$BASH_WRAPPER" ]]; then
+                    create_shell_wrappers
+                fi
+                return 0
+            else
+                echo "Stored GitHub token is invalid or expired."
+                return 1
+            fi
+        fi
+    fi
+    return 1
+}
+
+# create wrappers for different shells
+create_shell_wrappers() {
+    # create bash/zsh wrapper
+    cat > "$BASH_WRAPPER" << 'BASH_EOF'
+# detect operating system
+_gh_wrapper_detect_os() {
+    if [[ "$OSTYPE" == "darwin"* ]]; then
+        echo "macos"
+    elif [[ "$OSTYPE" == "linux-gnu"* ]]; then
+        echo "linux"
+    else
+        echo "unsupported"
+    fi
+}
+
+# derive an encryption password from system information
+_gh_wrapper_derive_password() {
+    # combine username, hostname and machine id for a unique but deterministic password
+    local user_info="$USER"
+    local host_info=$(hostname)
+    local machine_id=""
+    
+    if [[ -f "/etc/machine-id" ]]; then
+        machine_id=$(cat /etc/machine-id)
+    elif [[ -f "/var/lib/dbus/machine-id" ]]; then
+        machine_id=$(cat /var/lib/dbus/machine-id)
+    elif [[ "$(_gh_wrapper_detect_os)" == "macos" ]]; then
+        machine_id=$(ioreg -rd1 -c IOPlatformExpertDevice | grep -E '(UUID)' | awk '{print $3}' | tr -d \")
+    fi
+    
+    # combine and hash the information
+    echo -n "${user_info}${host_info}${machine_id}flox-github-token" | openssl dgst -sha256 | awk '{print $2}'
+}
+
+# retrieve token from system keyring
+_gh_wrapper_retrieve_github_token_keyring() {
+    local os=$(_gh_wrapper_detect_os)
+    
+    if [[ "$os" == "macos" ]]; then
+        security find-generic-password -s "flox-github" -a "$USER" -w 2>/dev/null
+    elif [[ "$os" == "linux" ]]; then
+        secret-tool lookup service flox-github user "$USER" 2>/dev/null
+    fi
+}
+
+# retrieve token from encrypted file
+_gh_wrapper_retrieve_github_token_encrypted() {
+    local password=$(_gh_wrapper_derive_password)
+    local token_file="${FLOX_ENV_CACHE:-$HOME/.cache/flox}/github_token.enc"
+    
+    if [[ -f "$token_file" ]]; then
+        openssl enc -aes-256-cbc -d -salt -pbkdf2 -pass pass:"$password" -in "$token_file" 2>/dev/null
+        return $?
+    fi
+    return 1
+}
+
+# retrieve github token
+_gh_wrapper_retrieve_github_token() {
+    local config_file="${FLOX_ENV_CACHE:-$HOME/.cache/flox}/github_config"
+    
+    if [[ -f "$config_file" ]]; then
+        source "$config_file"
+        if [[ "$STORAGE_METHOD" == "keyring" ]]; then
+            _gh_wrapper_retrieve_github_token_keyring
+        elif [[ "$STORAGE_METHOD" == "encrypted_file" ]]; then
+            _gh_wrapper_retrieve_github_token_encrypted
+        fi
+    fi
+}
+
+# wrapper function for gh
+gh() {
+    local token=$(_gh_wrapper_retrieve_github_token)
+    if [[ -n "$token" ]]; then
+        GITHUB_TOKEN="$token" command gh "$@"
+    else
+        echo "Error: Unable to retrieve GitHub token. Please run 'flox activate' to set up GitHub integration."
+        return 1
+    fi
+}
+BASH_EOF
+
+    # Create copy for zsh (same content)
+    cp "$BASH_WRAPPER" "$ZSH_WRAPPER"
+    
+    # Create fish wrapper with a different heredoc delimiter
+    cat > "$FISH_WRAPPER" << 'FISH_EOF'
+# detect operating system
+function _gh_wrapper_detect_os
+    switch (uname)
+        case Darwin
+            echo "macos"
+        case Linux
+            echo "linux"
+        case '*'
+            echo "unsupported"
+    end
+end
+
+# derive an encryption password from system information
+function _gh_wrapper_derive_password
+    # combine username, hostname and machine id for a unique but deterministic password
+    set -l user_info $USER
+    set -l host_info (hostname)
+    set -l machine_id ""
+    
+    if test -f "/etc/machine-id"
+        set machine_id (cat /etc/machine-id)
+    else if test -f "/var/lib/dbus/machine-id"
+        set machine_id (cat /var/lib/dbus/machine-id)
+    else if test (_gh_wrapper_detect_os) = "macos"
+        set machine_id (ioreg -rd1 -c IOPlatformExpertDevice | grep -E '(UUID)' | awk '{print $3}' | tr -d \")
+    end
+    
+    # combine and hash the information
+    echo -n "$user_info$host_info$machine_idflox-github-token" | openssl dgst -sha256 | awk '{print $2}'
+end
+
+# retrieve token from system keyring
+function _gh_wrapper_retrieve_github_token_keyring
+    set -l os (_gh_wrapper_detect_os)
+    
+    if test $os = "macos"
+        security find-generic-password -s "flox-github" -a "$USER" -w 2>/dev/null
+    else if test $os = "linux"
+        secret-tool lookup service flox-github user "$USER" 2>/dev/null
+    end
+end
+
+# retrieve token from encrypted file
+function _gh_wrapper_retrieve_github_token_encrypted
+    set -l password (_gh_wrapper_derive_password)
+    set -l token_file "$FLOX_ENV_CACHE/github_token.enc"
+    test -z "$FLOX_ENV_CACHE"; and set token_file "$HOME/.cache/flox/github_token.enc"
+    
+    if test -f "$token_file"
+        openssl enc -aes-256-cbc -d -salt -pbkdf2 -pass pass:"$password" -in "$token_file" 2>/dev/null
+        return $status
+    end
+    return 1
+end
+
+# retrieve github token
+function _gh_wrapper_retrieve_github_token
+    set -l config_file "$FLOX_ENV_CACHE/github_config"
+    test -z "$FLOX_ENV_CACHE"; and set config_file "$HOME/.cache/flox/github_config"
+    
+    if test -f "$config_file"
+        set -l storage_method (grep "STORAGE_METHOD" "$config_file" | cut -d '=' -f2)
+        
+        if test "$storage_method" = "keyring"
+            _gh_wrapper_retrieve_github_token_keyring
+        else if test "$storage_method" = "encrypted_file"
+            _gh_wrapper_retrieve_github_token_encrypted
+        end
+    end
+end
+
+# wrapper function for gh
+function gh
+    set -l token (_gh_wrapper_retrieve_github_token)
+    if test -n "$token"
+        env GITHUB_TOKEN="$token" command gh $argv
+    else
+        echo "Error: Unable to retrieve GitHub token. Please run 'flox activate' to set up GitHub integration."
+        return 1
+    end
+end
+FISH_EOF
+}
+
+# wilkommen / bienvenue / witamy / welcome
+show_welcome_message() {
+    gum style \
+        --border rounded \
+        --border-foreground 240 \
+        --padding "1 2" \
+        --margin "1 0" \
+        --width 96 \
+        "$(gum style --foreground 141 --bold 'F l o x  GitHub CLI (More) Secure Local Auth Setup Wizard')
+
+👉  This wizard will guide you through setting up GitHub CLI (gh) authentication using
+    secure local storage:
+
+    1.  System keyring/keychain (preferred)
+    2.  Encrypted local file (fallback)
+
+👉  You will need to provide:
+
+    •  Your GitHub Personal Access Token with appropriate permissions
+
+Your token will be securely stored and used to authenticate GitHub CLI commands."
+
+    echo ""
+}
+
+# this explains how we create a token
+show_token_instructions() {
+    gum style \
+        --border rounded \
+        --border-foreground 240 \
+        --padding "1 2" \
+        --margin "1 0" \
+        --width 96 \
+        "$(gum style --foreground 141 --bold 'Creating a GitHub Personal Access Token')
+
+👉  To create a GitHub Personal Access Token:
+
+    1.  Go to $(gum style --foreground 212 --underline 'https://github.com/settings/tokens')
+    2.  Click 'Generate new token' (classic)
+    3.  Add a note like 'Flox CLI Integration'
+    4.  Select appropriate scopes:
+         •  $(gum style --foreground 212 'repo')
+         •  $(gum style --foreground 212 'read:org')
+    5.  Click 'Generate token'
+    6.  Copy the generated token"
+
+    echo ""
+}
+
+# this is our completion message
+show_completion_message() {
+    local storage_method="$1"
+    local needs_wrapper="$2"
+    
+    local wrapper_status="will use a wrapper"
+    
+    if [[ "$needs_wrapper" == "false" ]]; then
+        wrapper_status="will authenticate directly"
+    fi
+    
+    gum style \
+        --border rounded \
+        --border-foreground 240 \
+        --padding "1 2" \
+        --margin "1 0" \
+        --width 96 \
+        "$(gum style --foreground 141 --bold 'F l o x  GitHub Integration Complete!')
+
+👉  Setup completed successfully!
+
+👉  Configuration Details:
+    Storage method: $(gum style --foreground 212 "$storage_method")
+    GitHub CLI: $wrapper_status
+
+👉  You can now use these and other GitHub CLI commands:
+    $(gum style --foreground 212 'gh repo create')      Create a new repository
+    $(gum style --foreground 212 'gh pr list')          List pull requests
+    $(gum style --foreground 212 'gh issue view')       View issue details
+
+Your token is securely stored and will be automatically used for GitHub authentication."
+
+    echo ""
+}
+
+# main setup function
+setup_github_integration() {
+    # exit the shell if user opts not to continue
+    exit_shell() {
+        echo "Exiting the shell. Please run 'flox activate' to restart the wizard."
+        exit 1
+    }
+    
+    # check for existing token
+    if check_existing_token; then
+        return 0
+    fi
+    
+    # github token setup wizard
+    clear
+    show_welcome_message
+    
+    # prompt to continue with the setup wizard
+    if ! gum confirm "Do you want to continue?" --default=true; then
+        exit_shell
+    fi
+    
+    echo "Type 'exit' or 'quit' at any prompt to exit the wizard."
+    
+    term_width=$(tput cols)
+    if [[ $term_width -gt 70 ]]; then
+        term_width=70
+    fi
+    
+    # check for skip command
+    check_skip() {
+        if [[ "$1" == "exit" || "$1" == "quit" ]]; then
+            echo "Skipping the wizard. You can run 'flox activate' again to restart."
+            return 1
+        fi
+        return 0
+    }
+    
+    # display token creation instructions
+    show_token_instructions
+    
+    # collect github token
+    local github_token=""
+    while true; do
+        github_token=$(gum input --prompt "Enter your GitHub Personal Access Token: " --password --width "$term_width")
+        
+        if ! check_skip "$github_token"; then
+            return 1
+        fi
+        
+        if [[ -z "$github_token" ]]; then
+            echo "Token cannot be empty. Please try again."
+            continue
+        fi
+        
+        echo "Validating token..."
+        if validate_github_token "$github_token"; then
+            echo "Token validation successful!"
+            break
+        else
+            echo "Invalid token. Please check and try again."
+        fi
+    done
+    
+    # try to store in system keyring first
+    echo "Attempting to store token in system keyring..."
+    if store_github_token "$github_token"; then
+        # source config to get NEEDS_WRAPPER
+        source "$CONFIG_FILE"
+        
+        if [[ "$NEEDS_WRAPPER" == "true" ]]; then
+            # remove any existing gh auth
+            gh auth logout --hostname github.com 2>/dev/null || true
+            
+            # create shell wrappers
+            echo "Creating shell wrappers..."
+            create_shell_wrappers
+            
+            show_completion_message "system keyring" "true"
+        else
+            # No wrapper needed, make sure we don't have any leftover wrapper files
+            rm -f "$BASH_WRAPPER" "$ZSH_WRAPPER" "$FISH_WRAPPER" 2>/dev/null || true
+            
+            show_completion_message "system keyring" "false"
+        fi
+        return 0
+    else
+        # fallback to encrypted file if keyring fails
+        echo "Unable to use system keyring/keychain."
+        
+        if gum confirm "Do you want to store your GitHub token in an encrypted local file?" --default=true; then
+            echo "Storing token in encrypted file..."
+            store_github_token_encrypted "$github_token"
+            
+            # remove any existing gh auth
+            gh auth logout --hostname github.com 2>/dev/null || true
+            
+            # create shell wrappers
+            echo "Creating shell wrappers..."
+            create_shell_wrappers
+            
+            show_completion_message "encrypted file" "true"
+            return 0
+        else
+            echo "No storage method selected. GitHub integration setup cancelled."
+            exit_shell
+        fi
+    fi
+}
+
+# create cache directory if it doesn't exist
+mkdir -p "$(dirname "$CONFIG_FILE")"
+
+# call the main setup function
+setup_github_integration
+'''
+
+## ... sourced by _your shell_ when you run 'flox activate'.
+## -------------------------------------------------------------------
+[profile]
+# common = '''
+#   gum style \
+#   --foreground 212 --border-foreground 212 --border double \
+#   --align center --width 50 --margin "1 2" --padding "2 4" \
+#     $INTRO_MESSAGE
+# '''
+## Shell specific profiles go here:
+bash = '''
+if [[ -f "${FLOX_ENV_CACHE:-$HOME/.cache/flox}/github_config" ]]; then
+    source "${FLOX_ENV_CACHE:-$HOME/.cache/flox}/github_config"
+    if [[ "$NEEDS_WRAPPER" == "true" && -f "${FLOX_ENV_CACHE:-$HOME/.cache/flox}/gh_wrapper.bash" ]]; then
+        source "${FLOX_ENV_CACHE:-$HOME/.cache/flox}/gh_wrapper.bash"
+    fi
+fi
+
+readme() {
+  if [[ "$1" == "--refresh" ]] || [ ! -s "$FLOX_ENV_PROJECT/README.md" ]; then
+    curl -sL "https://raw.githubusercontent.com/barstoolbluz/ghcli/main/README.md" > "$FLOX_ENV_PROJECT/README.md" 2>/dev/null
+    echo "README updated from GitHub."
+  fi
+  bat --language markdown "$FLOX_ENV_PROJECT/README.md" 2>/dev/null
+}
+'''
+
+zsh = '''
+if [[ -f "${FLOX_ENV_CACHE:-$HOME/.cache/flox}/github_config" ]]; then
+    source "${FLOX_ENV_CACHE:-$HOME/.cache/flox}/github_config"
+    if [[ "$NEEDS_WRAPPER" == "true" && -f "${FLOX_ENV_CACHE:-$HOME/.cache/flox}/gh_wrapper.zsh" ]]; then
+        source "${FLOX_ENV_CACHE:-$HOME/.cache/flox}/gh_wrapper.zsh"
+    fi
+fi
+
+readme() {
+  if [[ "$1" == "--refresh" ]] || [ ! -s "$FLOX_ENV_PROJECT/README.md" ]; then
+    curl -sL "https://raw.githubusercontent.com/barstoolbluz/ghcli/main/README.md" > "$FLOX_ENV_PROJECT/README.md" 2>/dev/null
+    echo "README updated from GitHub."
+  fi
+  bat --language markdown "$FLOX_ENV_PROJECT/README.md" 2>/dev/null
+}
+'''
+
+fish = '''
+if test -f "${FLOX_ENV_CACHE:-$HOME/.cache/flox}/github_config"
+    set -l needs_wrapper (grep "NEEDS_WRAPPER" "${FLOX_ENV_CACHE:-$HOME/.cache/flox}/github_config" | cut -d '=' -f2)
+    if test "$needs_wrapper" = "true"; and test -f "${FLOX_ENV_CACHE:-$HOME/.cache/flox}/gh_wrapper.fish"
+        source ${FLOX_ENV_CACHE:-$HOME/.cache/flox}/gh_wrapper.fish
+    end
+end
+
+function readme
+  if test "$argv[1]" = "--refresh"; or test ! -s "$FLOX_ENV_PROJECT/README.md"
+    curl -sL "https://raw.githubusercontent.com/barstoolbluz/ghcli/main/README.md" > "$FLOX_ENV_PROJECT/README.md" 2>/dev/null
+    echo "README updated from GitHub."
+  fi
+  bat --language markdown "$FLOX_ENV_PROJECT/README.md" 2>/dev/null
+end
+'''
+
+## Services ----------------------------------------------------------
+##  $ flox services start             <- Starts all services
+##  $ flox services status            <- Status of running services
+##  $ flox activate --start-services  <- Activates & starts all
+## -------------------------------------------------------------------
+[services]
+# myservice.command = "python3 -m http.server"
+
+
+## Other Environment Options -----------------------------------------
+[options]
+# Systems that environment is compatible with
+systems = [
+  "aarch64-darwin",
+  "aarch64-linux",
+  "x86_64-darwin",
+  "x86_64-linux",
+]
+# Uncomment to disable CUDA detection.
+# cuda-detection = false

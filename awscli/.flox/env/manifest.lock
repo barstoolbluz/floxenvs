@@ -1,0 +1,930 @@
+{
+  "lockfile-version": 1,
+  "manifest": {
+    "version": 1,
+    "install": {
+      "awscli2": {
+        "pkg-path": "awscli2"
+      },
+      "bat": {
+        "pkg-path": "bat"
+      },
+      "curl": {
+        "pkg-path": "curl"
+      },
+      "gum": {
+        "pkg-path": "gum"
+      },
+      "jq": {
+        "pkg-path": "jq"
+      },
+      "lzop": {
+        "pkg-path": "lzop"
+      },
+      "openssl": {
+        "pkg-path": "openssl"
+      }
+    },
+    "vars": {
+      "PYTHON": "python3"
+    },
+    "hook": {
+      "on-activate": "# define paths\nCONFIG_FILE=\"${FLOX_ENV_CACHE:-$HOME/.cache/flox}/aws_config\"\nENCRYPTED_CREDS_FILE=\"${FLOX_ENV_CACHE:-$HOME/.cache/flox}/aws_credentials.enc\"\nBASH_WRAPPER=\"${FLOX_ENV_CACHE:-$HOME/.cache/flox}/aws_wrapper.bash\"\nZSH_WRAPPER=\"${FLOX_ENV_CACHE:-$HOME/.cache/flox}/aws_wrapper.zsh\"\nFISH_WRAPPER=\"${FLOX_ENV_CACHE:-$HOME/.cache/flox}/aws_wrapper.fish\"\n\n# detect operating system\ndetect_os() {\n    if [[ \"$OSTYPE\" == \"darwin\"* ]]; then\n        echo \"macos\"\n    elif [[ \"$OSTYPE\" == \"linux-gnu\"* ]]; then\n        echo \"linux\"\n    else\n        echo \"unsupported\"\n    fi\n}\n\n# derive an encryption password from system information\nderive_password() {\n    # combine username, hostname and machine id for a unique but deterministic password\n    local user_info=\"$USER\"\n    local host_info=$(hostname)\n    local machine_id=\"\"\n    \n    if [[ -f \"/etc/machine-id\" ]]; then\n        machine_id=$(cat /etc/machine-id)\n    elif [[ -f \"/var/lib/dbus/machine-id\" ]]; then\n        machine_id=$(cat /var/lib/dbus/machine-id)\n    elif [[ \"$(detect_os)\" == \"macos\" ]]; then\n        machine_id=$(ioreg -rd1 -c IOPlatformExpertDevice | grep -E '(UUID)' | awk '{print $3}' | tr -d \\\")\n    fi\n    \n    # combine and hash the information\n    echo -n \"${user_info}${host_info}${machine_id}flox-aws-credentials\" | openssl dgst -sha256 | awk '{print $2}'\n}\n\n# store credentials in system keyring\nstore_aws_credentials_keyring() {\n    local aws_access_key_id=\"$1\"\n    local aws_secret_access_key=\"$2\"\n    local aws_session_token=\"$3\"\n    local aws_region=\"$4\"\n    local profile_name=\"$5\"\n    local os=$(detect_os)\n    \n    # Create JSON structure for credentials\n    local creds_json=\"{\\\"aws_access_key_id\\\":\\\"$aws_access_key_id\\\",\\\"aws_secret_access_key\\\":\\\"$aws_secret_access_key\\\"\"\n    \n    if [[ -n \"$aws_session_token\" ]]; then\n        creds_json=\"$creds_json,\\\"aws_session_token\\\":\\\"$aws_session_token\\\"\"\n    fi\n    \n    if [[ -n \"$aws_region\" ]]; then\n        creds_json=\"$creds_json,\\\"aws_region\\\":\\\"$aws_region\\\"\"\n    else\n        creds_json=\"$creds_json,\\\"aws_region\\\":\\\"us-east-1\\\"\"\n    fi\n    \n    if [[ -n \"$profile_name\" ]]; then\n        creds_json=\"$creds_json,\\\"profile_name\\\":\\\"$profile_name\\\"\"\n    else\n        creds_json=\"$creds_json,\\\"profile_name\\\":\\\"default\\\"\"\n    fi\n    \n    creds_json=\"$creds_json}\"\n    \n    if [[ \"$os\" == \"macos\" ]]; then\n        if security add-generic-password -s \"flox-aws\" -a \"$USER\" -w \"$creds_json\" -U; then\n            # Always create wrapper for AWS CLI - it doesn't support keyring directly\n            mkdir -p \"$(dirname \"$CONFIG_FILE\")\"\n            echo \"AWS_CREDS_STORED=true\" > \"$CONFIG_FILE\"\n            echo \"STORAGE_METHOD=keyring\" >> \"$CONFIG_FILE\"\n            echo \"NEEDS_WRAPPER=true\" >> \"$CONFIG_FILE\"\n            \n            echo \"AWS credentials stored successfully in system keyring/keychain.\"\n            return 0\n        else\n            return 1\n        fi\n    elif [[ \"$os\" == \"linux\" ]]; then\n        if echo -n \"$creds_json\" | secret-tool store --label=\"Flox AWS Credentials\" service flox-aws user \"$USER\"; then\n            # Always create wrapper for AWS CLI - it doesn't support keyring directly\n            mkdir -p \"$(dirname \"$CONFIG_FILE\")\"\n            echo \"AWS_CREDS_STORED=true\" > \"$CONFIG_FILE\"\n            echo \"STORAGE_METHOD=keyring\" >> \"$CONFIG_FILE\"\n            echo \"NEEDS_WRAPPER=true\" >> \"$CONFIG_FILE\"\n            \n            echo \"AWS credentials stored successfully in system keyring/keychain.\"\n            return 0\n        else\n            return 1\n        fi\n    else\n        echo \"Error: Unsupported operating system.\"\n        return 1\n    fi\n}\n\n# store credentials in encrypted file as fallback\nstore_aws_credentials_encrypted() {\n    local aws_access_key_id=\"$1\"\n    local aws_secret_access_key=\"$2\"\n    local aws_session_token=\"$3\"\n    local aws_region=\"$4\"\n    local profile_name=\"$5\"\n    local password=$(derive_password)\n    \n    # Create JSON structure for credentials\n    local creds_json=\"{\\\"aws_access_key_id\\\":\\\"$aws_access_key_id\\\",\\\"aws_secret_access_key\\\":\\\"$aws_secret_access_key\\\"\"\n    \n    if [[ -n \"$aws_session_token\" ]]; then\n        creds_json=\"$creds_json,\\\"aws_session_token\\\":\\\"$aws_session_token\\\"\"\n    fi\n    \n    if [[ -n \"$aws_region\" ]]; then\n        creds_json=\"$creds_json,\\\"aws_region\\\":\\\"$aws_region\\\"\"\n    else\n        creds_json=\"$creds_json,\\\"aws_region\\\":\\\"us-east-1\\\"\"\n    fi\n    \n    if [[ -n \"$profile_name\" ]]; then\n        creds_json=\"$creds_json,\\\"profile_name\\\":\\\"$profile_name\\\"\"\n    else\n        creds_json=\"$creds_json,\\\"profile_name\\\":\\\"default\\\"\"\n    fi\n    \n    creds_json=\"$creds_json}\"\n    \n    # create directory if it doesn't exist\n    mkdir -p \"$(dirname \"$ENCRYPTED_CREDS_FILE\")\"\n    \n    # encrypt credentials with openssl\n    echo -n \"$creds_json\" | openssl enc -aes-256-cbc -salt -pbkdf2 -pass pass:\"$password\" -out \"$ENCRYPTED_CREDS_FILE\"\n    \n    # Set appropriate permissions on credentials file\n    chmod 600 \"$ENCRYPTED_CREDS_FILE\"\n    \n    # record that credentials have been stored in encrypted file\n    mkdir -p \"$(dirname \"$CONFIG_FILE\")\"\n    echo \"AWS_CREDS_STORED=true\" > \"$CONFIG_FILE\"\n    echo \"STORAGE_METHOD=encrypted_file\" >> \"$CONFIG_FILE\"\n    echo \"NEEDS_WRAPPER=true\" >> \"$CONFIG_FILE\"\n    \n    # Set appropriate permissions on config file\n    chmod 600 \"$CONFIG_FILE\"\n    \n    echo \"AWS credentials stored successfully in encrypted file.\"\n    return 0\n}\n\n# retrieve credentials from system keyring\nretrieve_aws_credentials_keyring() {\n    local os=$(detect_os)\n    \n    if [[ \"$os\" == \"macos\" ]]; then\n        security find-generic-password -s \"flox-aws\" -a \"$USER\" -w 2>/dev/null\n    elif [[ \"$os\" == \"linux\" ]]; then\n        secret-tool lookup service flox-aws user \"$USER\" 2>/dev/null\n    fi\n}\n\n# retrieve credentials from encrypted file\nretrieve_aws_credentials_encrypted() {\n    local password=$(derive_password)\n    \n    if [[ -f \"$ENCRYPTED_CREDS_FILE\" ]]; then\n        openssl enc -aes-256-cbc -d -salt -pbkdf2 -pass pass:\"$password\" -in \"$ENCRYPTED_CREDS_FILE\" 2>/dev/null\n        return $?\n    fi\n    return 1\n}\n\n# retrieve aws credentials from appropriate storage\nretrieve_aws_credentials() {\n    if [[ -f \"$CONFIG_FILE\" ]]; then\n        source \"$CONFIG_FILE\"\n        if [[ \"$STORAGE_METHOD\" == \"keyring\" ]]; then\n            retrieve_aws_credentials_keyring\n        elif [[ \"$STORAGE_METHOD\" == \"encrypted_file\" ]]; then\n            retrieve_aws_credentials_encrypted\n        fi\n    fi\n}\n\n# check if credentials exist\naws_credentials_exist() {\n    local creds_json=$(retrieve_aws_credentials)\n    [[ -n \"$creds_json\" ]]\n}\n\n# extract individual credential components from JSON using jq\nextract_aws_credentials() {\n    local creds_json=\"$1\"\n    local key=\"$2\"\n    \n    echo \"$creds_json\" | jq -r \".$key // \\\"\\\"\" 2>/dev/null\n}\n\n# validate aws credentials with api\nvalidate_aws_credentials() {\n    local aws_access_key_id=\"$1\"\n    local aws_secret_access_key=\"$2\"\n    local aws_session_token=\"$3\"\n    local aws_region=\"$4\"\n    \n    echo \"Validating AWS credentials...\"\n    \n    # test credentials with a simple api request\n    AWS_ACCESS_KEY_ID=\"$aws_access_key_id\" \\\n    AWS_SECRET_ACCESS_KEY=\"$aws_secret_access_key\" \\\n    AWS_SESSION_TOKEN=\"$aws_session_token\" \\\n    AWS_REGION=\"${aws_region:-us-east-1}\" \\\n    aws sts get-caller-identity &>/dev/null\n    \n    return $?\n}\n\n# check for existing credentials and validate\ncheck_existing_credentials() {\n    if [[ -f \"$CONFIG_FILE\" ]] && source \"$CONFIG_FILE\" && [[ \"$AWS_CREDS_STORED\" == \"true\" ]]; then\n        # Always assume wrapper is needed for AWS CLI\n        # verify the credentials still work\n        local creds_json=$(retrieve_aws_credentials)\n        if [[ -n \"$creds_json\" ]]; then\n            local aws_access_key_id=$(extract_aws_credentials \"$creds_json\" \"aws_access_key_id\")\n            local aws_secret_access_key=$(extract_aws_credentials \"$creds_json\" \"aws_secret_access_key\")\n            local aws_session_token=$(extract_aws_credentials \"$creds_json\" \"aws_session_token\")\n            local aws_region=$(extract_aws_credentials \"$creds_json\" \"aws_region\")\n            \n            if validate_aws_credentials \"$aws_access_key_id\" \"$aws_secret_access_key\" \"$aws_session_token\" \"$aws_region\"; then\n                # create shell wrappers if they don't exist\n                if [[ ! -f \"$BASH_WRAPPER\" ]]; then\n                    create_shell_wrappers\n                fi\n                # Fix config file if NEEDS_WRAPPER is incorrectly set\n                if [[ \"$NEEDS_WRAPPER\" != \"true\" ]]; then\n                    sed -i 's/NEEDS_WRAPPER=false/NEEDS_WRAPPER=true/' \"$CONFIG_FILE\"\n                    echo \"Fixing configuration to enable wrapper.\"\n                fi\n                return 0\n            else\n                echo \"Stored AWS credentials are invalid or expired.\"\n                return 1\n            fi\n        else\n            echo \"Failed to retrieve AWS credentials.\"\n            return 1\n        fi\n    fi\n    return 1\n}\n\n# create wrappers for different shells\ncreate_shell_wrappers() {\n    # create bash/zsh wrapper\n    cat > \"$BASH_WRAPPER\" << 'BASH_EOF'\n# detect operating system\n_aws_wrapper_detect_os() {\n    if [[ \"$OSTYPE\" == \"darwin\"* ]]; then\n        echo \"macos\"\n    elif [[ \"$OSTYPE\" == \"linux-gnu\"* ]]; then\n        echo \"linux\"\n    else\n        echo \"unsupported\"\n    fi\n}\n\n# derive an encryption password from system information\n_aws_wrapper_derive_password() {\n    # combine username, hostname and machine id for a unique but deterministic password\n    local user_info=\"$USER\"\n    local host_info=$(hostname)\n    local machine_id=\"\"\n    \n    if [[ -f \"/etc/machine-id\" ]]; then\n        machine_id=$(cat /etc/machine-id)\n    elif [[ -f \"/var/lib/dbus/machine-id\" ]]; then\n        machine_id=$(cat /var/lib/dbus/machine-id)\n    elif [[ \"$(_aws_wrapper_detect_os)\" == \"macos\" ]]; then\n        machine_id=$(ioreg -rd1 -c IOPlatformExpertDevice | grep -E '(UUID)' | awk '{print $3}' | tr -d \\\")\n    fi\n    \n    # combine and hash the information\n    echo -n \"${user_info}${host_info}${machine_id}flox-aws-credentials\" | openssl dgst -sha256 | awk '{print $2}'\n}\n\n# retrieve credentials from system keyring\n_aws_wrapper_retrieve_credentials_keyring() {\n    local os=$(_aws_wrapper_detect_os)\n    \n    if [[ \"$os\" == \"macos\" ]]; then\n        security find-generic-password -s \"flox-aws\" -a \"$USER\" -w 2>/dev/null\n    elif [[ \"$os\" == \"linux\" ]]; then\n        secret-tool lookup service flox-aws user \"$USER\" 2>/dev/null\n    fi\n}\n\n# retrieve credentials from encrypted file\n_aws_wrapper_retrieve_credentials_encrypted() {\n    local password=$(_aws_wrapper_derive_password)\n    local creds_file=\"${FLOX_ENV_CACHE:-$HOME/.cache/flox}/aws_credentials.enc\"\n    \n    if [[ -f \"$creds_file\" ]]; then\n        openssl enc -aes-256-cbc -d -salt -pbkdf2 -pass pass:\"$password\" -in \"$creds_file\" 2>/dev/null\n        return $?\n    fi\n    return 1\n}\n\n# retrieve aws credentials\n_aws_wrapper_retrieve_credentials() {\n    local config_file=\"${FLOX_ENV_CACHE:-$HOME/.cache/flox}/aws_config\"\n    \n    if [[ -f \"$config_file\" ]]; then\n        source \"$config_file\"\n        if [[ \"$STORAGE_METHOD\" == \"keyring\" ]]; then\n            _aws_wrapper_retrieve_credentials_keyring\n        elif [[ \"$STORAGE_METHOD\" == \"encrypted_file\" ]]; then\n            _aws_wrapper_retrieve_credentials_encrypted\n        fi\n    fi\n}\n\n# extract credential field from JSON using jq\n_aws_wrapper_extract_credential() {\n    local json=\"$1\"\n    local field=\"$2\"\n    echo \"$json\" | jq -r \".$field // \\\"\\\"\" 2>/dev/null\n}\n\n# wrapper function for aws\naws() {\n    local creds_json=$(_aws_wrapper_retrieve_credentials)\n    if [[ -n \"$creds_json\" ]]; then\n        local aws_access_key_id=$(_aws_wrapper_extract_credential \"$creds_json\" \"aws_access_key_id\")\n        local aws_secret_access_key=$(_aws_wrapper_extract_credential \"$creds_json\" \"aws_secret_access_key\")\n        local aws_session_token=$(_aws_wrapper_extract_credential \"$creds_json\" \"aws_session_token\")\n        local aws_region=$(_aws_wrapper_extract_credential \"$creds_json\" \"aws_region\")\n        \n        # Set environment variables for the aws command\n        if [[ -n \"$aws_session_token\" ]]; then\n            AWS_ACCESS_KEY_ID=\"$aws_access_key_id\" \\\n            AWS_SECRET_ACCESS_KEY=\"$aws_secret_access_key\" \\\n            AWS_SESSION_TOKEN=\"$aws_session_token\" \\\n            AWS_REGION=\"${aws_region:-us-east-1}\" \\\n            command aws \"$@\"\n        else\n            AWS_ACCESS_KEY_ID=\"$aws_access_key_id\" \\\n            AWS_SECRET_ACCESS_KEY=\"$aws_secret_access_key\" \\\n            AWS_REGION=\"${aws_region:-us-east-1}\" \\\n            command aws \"$@\"\n        fi\n    else\n        echo \"Error: Unable to retrieve AWS credentials. Please run 'flox activate' to set up AWS integration.\"\n        return 1\n    fi\n}\nBASH_EOF\n\n    # Create copy for zsh (same content)\n    cp \"$BASH_WRAPPER\" \"$ZSH_WRAPPER\"\n    \n    # Create fish wrapper with different syntax\n    cat > \"$FISH_WRAPPER\" << 'FISH_EOF'\n# detect operating system\nfunction _aws_wrapper_detect_os\n    switch (uname)\n        case Darwin\n            echo \"macos\"\n        case Linux\n            echo \"linux\"\n        case '*'\n            echo \"unsupported\"\n    end\nend\n\n# derive an encryption password from system information\nfunction _aws_wrapper_derive_password\n    # combine username, hostname and machine id for a unique but deterministic password\n    set -l user_info $USER\n    set -l host_info (hostname)\n    set -l machine_id \"\"\n    \n    if test -f \"/etc/machine-id\"\n        set machine_id (cat /etc/machine-id)\n    else if test -f \"/var/lib/dbus/machine-id\"\n        set machine_id (cat /var/lib/dbus/machine-id)\n    else if test (_aws_wrapper_detect_os) = \"macos\"\n        set machine_id (ioreg -rd1 -c IOPlatformExpertDevice | grep -E '(UUID)' | awk '{print $3}' | tr -d \\\")\n    end\n    \n    # combine and hash the information\n    echo -n \"$user_info$host_info$machine_idflox-aws-credentials\" | openssl dgst -sha256 | awk '{print $2}'\nend\n\n# retrieve credentials from system keyring\nfunction _aws_wrapper_retrieve_credentials_keyring\n    set -l os (_aws_wrapper_detect_os)\n    \n    if test $os = \"macos\"\n        security find-generic-password -s \"flox-aws\" -a \"$USER\" -w 2>/dev/null\n    else if test $os = \"linux\"\n        secret-tool lookup service flox-aws user \"$USER\" 2>/dev/null\n    end\nend\n\n# retrieve credentials from encrypted file\nfunction _aws_wrapper_retrieve_credentials_encrypted\n    set -l password (_aws_wrapper_derive_password)\n    set -l creds_file \"$FLOX_ENV_CACHE/aws_credentials.enc\"\n    test -z \"$FLOX_ENV_CACHE\"; and set creds_file \"$HOME/.cache/flox/aws_credentials.enc\"\n    \n    if test -f \"$creds_file\"\n        openssl enc -aes-256-cbc -d -salt -pbkdf2 -pass pass:\"$password\" -in \"$creds_file\" 2>/dev/null\n        return $status\n    end\n    return 1\nend\n\n# retrieve aws credentials\nfunction _aws_wrapper_retrieve_credentials\n    set -l config_file \"$FLOX_ENV_CACHE/aws_config\"\n    test -z \"$FLOX_ENV_CACHE\"; and set config_file \"$HOME/.cache/flox/aws_config\"\n    \n    if test -f \"$config_file\"\n        set -l storage_method (grep \"STORAGE_METHOD\" \"$config_file\" | cut -d '=' -f2)\n        \n        if test \"$storage_method\" = \"keyring\"\n            _aws_wrapper_retrieve_credentials_keyring\n        else if test \"$storage_method\" = \"encrypted_file\"\n            _aws_wrapper_retrieve_credentials_encrypted\n        end\n    end\nend\n\n# extract credential field from JSON using jq\nfunction _aws_wrapper_extract_credential\n    set -l json \"$argv[1]\"\n    set -l field \"$argv[2]\"\n    echo \"$json\" | jq -r \".$field // \\\"\\\"\" 2>/dev/null\nend\n\n# wrapper function for aws\nfunction aws\n    set -l creds_json (_aws_wrapper_retrieve_credentials)\n    if test -n \"$creds_json\"\n        set -l aws_access_key_id (_aws_wrapper_extract_credential \"$creds_json\" \"aws_access_key_id\")\n        set -l aws_secret_access_key (_aws_wrapper_extract_credential \"$creds_json\" \"aws_secret_access_key\")\n        set -l aws_session_token (_aws_wrapper_extract_credential \"$creds_json\" \"aws_session_token\")\n        set -l aws_region (_aws_wrapper_extract_credential \"$creds_json\" \"aws_region\")\n        test -z \"$aws_region\"; and set aws_region \"us-east-1\"\n        \n        if test -n \"$aws_session_token\"\n            env AWS_ACCESS_KEY_ID=\"$aws_access_key_id\" AWS_SECRET_ACCESS_KEY=\"$aws_secret_access_key\" AWS_SESSION_TOKEN=\"$aws_session_token\" AWS_REGION=\"$aws_region\" command aws $argv\n        else\n            env AWS_ACCESS_KEY_ID=\"$aws_access_key_id\" AWS_SECRET_ACCESS_KEY=\"$aws_secret_access_key\" AWS_REGION=\"$aws_region\" command aws $argv\n        end\n    else\n        echo \"Error: Unable to retrieve AWS credentials. Please run 'flox activate' to set up AWS integration.\"\n        return 1\n    end\nend\nFISH_EOF\n\n    # Set appropriate permissions\n    chmod 600 \"$BASH_WRAPPER\" \"$ZSH_WRAPPER\" \"$FISH_WRAPPER\"\n}\n\n# show welcome message\nshow_welcome_message() {\n    gum style \\\n        --border rounded \\\n        --border-foreground 240 \\\n        --padding \"1 2\" \\\n        --margin \"1 0\" \\\n        --width 96 \\\n        \"$(gum style --foreground 141 --bold 'F l o x  AWS CLI (More) Secure Local Auth Setup Wizard')\n\n👉  This wizard will guide you through setting up AWS CLI authentication using\n    secure local storage:\n\n    1.  System keyring/keychain (preferred)\n    2.  Encrypted local file (fallback)\n\n👉  You will need to provide:\n\n    •  Your AWS Access Key ID\n    •  Your AWS Secret Access Key\n    •  Optional: AWS Session Token (for temporary credentials)\n    •  AWS Region (default: us-east-1)\n    •  Optional: Profile Name (default: default)\n\nYour credentials will be securely stored and used to authenticate AWS CLI commands.\"\n\n    echo \"\"\n}\n\n# show instructions to obtain AWS credentials\nshow_credentials_instructions() {\n    gum style \\\n        --border rounded \\\n        --border-foreground 240 \\\n        --padding \"1 2\" \\\n        --margin \"1 0\" \\\n        --width 96 \\\n        \"$(gum style --foreground 141 --bold 'Creating AWS Access Keys')\n\n👉  To create AWS credentials:\n\n    1.  Log in to the AWS Management Console\n    2.  Go to IAM -> Users -> Your User\n    3.  Go to the 'Security credentials' tab\n    4.  Click 'Create access key'\n    5.  Select an appropriate use case\n    6.  Complete creation and save both the Access Key ID and Secret Access Key\n\n👉  Important Security Notes:\n    •  Store your keys securely\n    •  Do not share them with others\n    •  Consider using temporary credentials with a session token for enhanced security\"\n\n    echo \"\"\n}\n\n# show completion message\nshow_completion_message() {\n    local storage_method=\"$1\"\n    local needs_wrapper=\"$2\"\n    \n    local wrapper_status=\"will use a wrapper\"\n    \n    if [[ \"$needs_wrapper\" == \"false\" ]]; then\n        wrapper_status=\"will authenticate directly\"\n    fi\n    \n    gum style \\\n        --border rounded \\\n        --border-foreground 240 \\\n        --padding \"1 2\" \\\n        --margin \"1 0\" \\\n        --width 96 \\\n        \"$(gum style --foreground 141 --bold 'F l o x  AWS Integration Complete!')\n\n👉  Setup completed successfully!\n\n👉  Configuration Details:\n    Storage method: $(gum style --foreground 212 \"$storage_method\")\n    AWS CLI: $wrapper_status\n\n👉  You can now use these and other AWS CLI commands:\n    $(gum style --foreground 212 'aws s3 ls')             List S3 buckets\n    $(gum style --foreground 212 'aws ec2 describe-instances')    List EC2 instances\n    $(gum style --foreground 212 'aws iam list-users')    List IAM users\n\nYour credentials are securely stored and will be automatically used for AWS authentication.\"\n\n    echo \"\"\n}\n\n# main setup function\nsetup_aws_integration() {\n    # exit the shell if user opts not to continue\n    exit_shell() {\n        echo \"Exiting the shell. Please run 'flox activate' to restart the wizard.\"\n        exit 1\n    }\n    \n    # check for existing credentials\n    if check_existing_credentials; then\n        return 0\n    fi\n    \n    # aws credentials setup wizard\n    clear\n    show_welcome_message\n    \n    # prompt to continue with the setup wizard\n    if ! gum confirm \"Do you want to continue?\" --default=true; then\n        exit_shell\n    fi\n    \n    echo \"Type 'exit' or 'quit' at any prompt to exit the wizard.\"\n    \n    term_width=$(tput cols)\n    if [[ $term_width -gt 70 ]]; then\n        term_width=70\n    fi\n    \n    # check for skip command\n    check_skip() {\n        if [[ \"$1\" == \"exit\" || \"$1\" == \"quit\" ]]; then\n            echo \"Skipping the wizard. You can run 'flox activate' again to restart.\"\n            return 1\n        fi\n        return 0\n    }\n    \n    # display credentials creation instructions\n    show_credentials_instructions\n    \n    # collect aws credentials\n    local aws_access_key_id=\"\"\n    local aws_secret_access_key=\"\"\n    local aws_session_token=\"\"\n    local aws_region=\"\"\n    local profile_name=\"\"\n    \n    # collect access key ID\n    while true; do\n        aws_access_key_id=$(gum input --prompt \"Enter your AWS Access Key ID: \" --width \"$term_width\")\n        \n        if ! check_skip \"$aws_access_key_id\"; then\n            return 1\n        fi\n        \n        if [[ -z \"$aws_access_key_id\" ]]; then\n            echo \"Access Key ID cannot be empty. Please try again.\"\n            continue\n        fi\n        \n        # simple validation that it's in the right format (starts with AKIA)\n        if [[ ! \"$aws_access_key_id\" =~ ^[A-Z0-9]{20}$ ]]; then\n            echo \"Invalid Access Key ID format. It should be 20 characters long.\"\n            if ! gum confirm \"Continue anyway?\" --default=false; then\n                continue\n            fi\n        fi\n        \n        break\n    done\n    \n    # collect secret access key\n    while true; do\n        aws_secret_access_key=$(gum input --prompt \"Enter your AWS Secret Access Key: \" --password --width \"$term_width\")\n        \n        if ! check_skip \"$aws_secret_access_key\"; then\n            return 1\n        fi\n        \n        if [[ -z \"$aws_secret_access_key\" ]]; then\n            echo \"Secret Access Key cannot be empty. Please try again.\"\n            continue\n        fi\n        \n        break\n    done\n    \n    # collect session token (optional)\n    if gum confirm \"Do you want to provide a Session Token (for temporary credentials)?\" --default=false; then\n        aws_session_token=$(gum input --prompt \"Enter your AWS Session Token: \" --password --width \"$term_width\")\n        \n        if ! check_skip \"$aws_session_token\"; then\n            return 1\n        fi\n    fi\n    \n    # collect AWS region\n    aws_region=$(gum input --prompt \"Enter your AWS Region (default: us-east-1): \" --value \"us-east-1\" --width \"$term_width\")\n    \n    if ! check_skip \"$aws_region\"; then\n        return 1\n    fi\n    \n    # collect profile name\n    if gum confirm \"Do you want to specify a profile name?\" --default=false; then\n        profile_name=$(gum input --prompt \"Enter the profile name (default: default): \" --value \"default\" --width \"$term_width\")\n        \n        if ! check_skip \"$profile_name\"; then\n            return 1\n        fi\n    else\n        profile_name=\"default\"\n    fi\n    \n    echo \"Validating credentials...\"\n    if validate_aws_credentials \"$aws_access_key_id\" \"$aws_secret_access_key\" \"$aws_session_token\" \"$aws_region\"; then\n        echo \"Credentials validation successful!\"\n    else\n        echo \"Warning: Could not validate credentials. This could be due to:\"\n        echo \"- Invalid credentials\"\n        echo \"- Insufficient permissions\"\n        echo \"- Network connectivity issues\"\n        \n        if ! gum confirm \"Do you want to continue anyway?\" --default=false; then\n            echo \"Setup cancelled. Please check your credentials and try again.\"\n            exit_shell\n        fi\n    fi\n    \n    # try to store in system keyring first\n    echo \"Attempting to store credentials in system keyring...\"\n    if store_aws_credentials_keyring \"$aws_access_key_id\" \"$aws_secret_access_key\" \"$aws_session_token\" \"$aws_region\" \"$profile_name\"; then\n        # Always create shell wrappers for AWS CLI\n        echo \"Creating shell wrappers...\"\n        create_shell_wrappers\n        \n        show_completion_message \"system keyring\" \"true\"\n        return 0\n    else\n        # fallback to encrypted file if keyring fails\n        echo \"Unable to use system keyring/keychain.\"\n        \n        if gum confirm \"Do you want to store your AWS credentials in an encrypted local file?\" --default=true; then\n            echo \"Storing credentials in encrypted file...\"\n            store_aws_credentials_encrypted \"$aws_access_key_id\" \"$aws_secret_access_key\" \"$aws_session_token\" \"$aws_region\" \"$profile_name\"\n            \n            # create shell wrappers\n            echo \"Creating shell wrappers...\"\n            create_shell_wrappers\n            \n            show_completion_message \"encrypted file\" \"true\"\n            return 0\n        else\n            echo \"No storage method selected. AWS integration setup cancelled.\"\n            exit_shell\n        fi\n    fi\n}\n\n# create cache directory if it doesn't exist\nmkdir -p \"$(dirname \"$CONFIG_FILE\")\"\n\n# call the main setup function\nsetup_aws_integration\n"
+    },
+    "profile": {
+      "bash": "if [[ -f \"${FLOX_ENV_CACHE:-$HOME/.cache/flox}/aws_config\" ]]; then\n    source \"${FLOX_ENV_CACHE:-$HOME/.cache/flox}/aws_config\"\n    if [[ \"$NEEDS_WRAPPER\" == \"true\" && -f \"${FLOX_ENV_CACHE:-$HOME/.cache/flox}/aws_wrapper.bash\" ]]; then\n        source \"${FLOX_ENV_CACHE:-$HOME/.cache/flox}/aws_wrapper.bash\"\n    fi\nfi\n\nreadme() {\n  if [[ \"$1\" == \"--refresh\" ]] || [ ! -s \"$FLOX_ENV_PROJECT/README.md\" ]; then\n    curl -sL \"https://raw.githubusercontent.com/barstoolbluz/awscli/master/README.md\" > \"$FLOX_ENV_PROJECT/README.md\" 2>/dev/null\n    echo \"README updated from GitHub.\"\n  fi\n  bat --language markdown \"$FLOX_ENV_PROJECT/README.md\" 2>/dev/null\n}\n",
+      "zsh": "if [[ -f \"${FLOX_ENV_CACHE:-$HOME/.cache/flox}/aws_config\" ]]; then\n    source \"${FLOX_ENV_CACHE:-$HOME/.cache/flox}/aws_config\"\n    if [[ \"$NEEDS_WRAPPER\" == \"true\" && -f \"${FLOX_ENV_CACHE:-$HOME/.cache/flox}/aws_wrapper.zsh\" ]]; then\n        source \"${FLOX_ENV_CACHE:-$HOME/.cache/flox}/aws_wrapper.zsh\"\n    fi\nfi\n\nreadme() {\n  if [[ \"$1\" == \"--refresh\" ]] || [ ! -s \"$FLOX_ENV_PROJECT/README.md\" ]; then\n    curl -sL \"https://raw.githubusercontent.com/barstoolbluz/awscli/master/README.md\" > \"$FLOX_ENV_PROJECT/README.md\" 2>/dev/null\n    echo \"README updated from GitHub.\"\n  fi\n  bat --language markdown \"$FLOX_ENV_PROJECT/README.md\" 2>/dev/null\n}\n",
+      "fish": "if test -f \"${FLOX_ENV_CACHE:-$HOME/.cache/flox}/aws_config\"\n    set -l needs_wrapper (grep \"NEEDS_WRAPPER\" \"${FLOX_ENV_CACHE:-$HOME/.cache/flox}/aws_config\" | cut -d '=' -f2)\n    if test \"$needs_wrapper\" = \"true\"; and test -f \"${FLOX_ENV_CACHE:-$HOME/.cache/flox}/aws_wrapper.fish\"\n        source ${FLOX_ENV_CACHE:-$HOME/.cache/flox}/aws_wrapper.fish\n    end\nend\n\nfunction readme\n  if test \"$argv[1]\" = \"--refresh\"; or test ! -s \"$FLOX_ENV_PROJECT/README.md\"\n    curl -sL \"https://raw.githubusercontent.com/barstoolbluz/awscli/master/README.md\" > \"$FLOX_ENV_PROJECT/README.md\" 2>/dev/null\n    echo \"README updated from GitHub.\"\n  end\n  bat --language markdown \"$FLOX_ENV_PROJECT/README.md\" 2>/dev/null\nend\n"
+    },
+    "options": {
+      "systems": [
+        "aarch64-darwin",
+        "aarch64-linux",
+        "x86_64-darwin",
+        "x86_64-linux"
+      ]
+    }
+  },
+  "packages": [
+    {
+      "attr_path": "awscli2",
+      "broken": false,
+      "derivation": "/nix/store/ab0m88k4pgfx4ngh7r0455ycwdmpp2dg-awscli2-2.24.24.drv",
+      "description": "Unified tool to manage your AWS services",
+      "install_id": "awscli2",
+      "license": "Apache-2.0",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=a84ebe20c6bc2ecbcfb000a50776219f48d134cc",
+      "name": "awscli2-2.24.24",
+      "pname": "awscli2",
+      "rev": "a84ebe20c6bc2ecbcfb000a50776219f48d134cc",
+      "rev_count": 770807,
+      "rev_date": "2025-03-19T22:12:44Z",
+      "scrape_date": "2025-03-22T01:09:06.574545Z",
+      "stabilities": [
+        "unstable"
+      ],
+      "unfree": false,
+      "version": "2.24.24",
+      "outputs_to_install": [
+        "out"
+      ],
+      "outputs": {
+        "dist": "/nix/store/fg4r9a0flxcnxhnnmzp22fpy388fvnlp-awscli2-2.24.24-dist",
+        "out": "/nix/store/2yb8zaj343sxwvnibnvrkaga5w19bdj9-awscli2-2.24.24"
+      },
+      "system": "aarch64-darwin",
+      "group": "toplevel",
+      "priority": 5
+    },
+    {
+      "attr_path": "awscli2",
+      "broken": false,
+      "derivation": "/nix/store/xrzz5dqkc98nrxv9jydz5g4yr0mknp3r-awscli2-2.24.24.drv",
+      "description": "Unified tool to manage your AWS services",
+      "install_id": "awscli2",
+      "license": "Apache-2.0",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=a84ebe20c6bc2ecbcfb000a50776219f48d134cc",
+      "name": "awscli2-2.24.24",
+      "pname": "awscli2",
+      "rev": "a84ebe20c6bc2ecbcfb000a50776219f48d134cc",
+      "rev_count": 770807,
+      "rev_date": "2025-03-19T22:12:44Z",
+      "scrape_date": "2025-03-22T01:25:54.350035Z",
+      "stabilities": [
+        "unstable"
+      ],
+      "unfree": false,
+      "version": "2.24.24",
+      "outputs_to_install": [
+        "out"
+      ],
+      "outputs": {
+        "dist": "/nix/store/ays2panlk307bki0044wjhngci67hr6z-awscli2-2.24.24-dist",
+        "out": "/nix/store/753hysvhx2xg6wn2pdvfl0p572kb8nqy-awscli2-2.24.24"
+      },
+      "system": "aarch64-linux",
+      "group": "toplevel",
+      "priority": 5
+    },
+    {
+      "attr_path": "awscli2",
+      "broken": false,
+      "derivation": "/nix/store/2rjih6sajvzkmx5jvjhrf4hapkilk0yw-awscli2-2.24.24.drv",
+      "description": "Unified tool to manage your AWS services",
+      "install_id": "awscli2",
+      "license": "Apache-2.0",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=a84ebe20c6bc2ecbcfb000a50776219f48d134cc",
+      "name": "awscli2-2.24.24",
+      "pname": "awscli2",
+      "rev": "a84ebe20c6bc2ecbcfb000a50776219f48d134cc",
+      "rev_count": 770807,
+      "rev_date": "2025-03-19T22:12:44Z",
+      "scrape_date": "2025-03-22T01:41:11.084832Z",
+      "stabilities": [
+        "unstable"
+      ],
+      "unfree": false,
+      "version": "2.24.24",
+      "outputs_to_install": [
+        "out"
+      ],
+      "outputs": {
+        "dist": "/nix/store/48h2dzzzy7lrs9z2j8snvxx2jglqvyvi-awscli2-2.24.24-dist",
+        "out": "/nix/store/vxz0ljsa95sa5p4l31h608ac9yjafv9v-awscli2-2.24.24"
+      },
+      "system": "x86_64-darwin",
+      "group": "toplevel",
+      "priority": 5
+    },
+    {
+      "attr_path": "awscli2",
+      "broken": false,
+      "derivation": "/nix/store/jm4r8sd71vwfzagpjf7az061mx4hbbhh-awscli2-2.24.24.drv",
+      "description": "Unified tool to manage your AWS services",
+      "install_id": "awscli2",
+      "license": "Apache-2.0",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=a84ebe20c6bc2ecbcfb000a50776219f48d134cc",
+      "name": "awscli2-2.24.24",
+      "pname": "awscli2",
+      "rev": "a84ebe20c6bc2ecbcfb000a50776219f48d134cc",
+      "rev_count": 770807,
+      "rev_date": "2025-03-19T22:12:44Z",
+      "scrape_date": "2025-03-22T01:59:11.319791Z",
+      "stabilities": [
+        "unstable"
+      ],
+      "unfree": false,
+      "version": "2.24.24",
+      "outputs_to_install": [
+        "out"
+      ],
+      "outputs": {
+        "dist": "/nix/store/qkw3d8xa8bs8f1q9ppk9199gw8zp5z98-awscli2-2.24.24-dist",
+        "out": "/nix/store/i3vfwgkbp3a5qpl4zjga771r3mvk5aq7-awscli2-2.24.24"
+      },
+      "system": "x86_64-linux",
+      "group": "toplevel",
+      "priority": 5
+    },
+    {
+      "attr_path": "bat",
+      "broken": false,
+      "derivation": "/nix/store/q90c05si2n0czkdk4qw3s23vqsbfc11s-bat-0.25.0.drv",
+      "description": "Cat(1) clone with syntax highlighting and Git integration",
+      "install_id": "bat",
+      "license": "[ Apache-2.0, MIT ]",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=a84ebe20c6bc2ecbcfb000a50776219f48d134cc",
+      "name": "bat-0.25.0",
+      "pname": "bat",
+      "rev": "a84ebe20c6bc2ecbcfb000a50776219f48d134cc",
+      "rev_count": 770807,
+      "rev_date": "2025-03-19T22:12:44Z",
+      "scrape_date": "2025-03-22T01:09:06.586805Z",
+      "stabilities": [
+        "unstable"
+      ],
+      "unfree": false,
+      "version": "0.25.0",
+      "outputs_to_install": [
+        "out"
+      ],
+      "outputs": {
+        "out": "/nix/store/ai2vv20xlpmnn5q7f01pw9nyna7104bl-bat-0.25.0"
+      },
+      "system": "aarch64-darwin",
+      "group": "toplevel",
+      "priority": 5
+    },
+    {
+      "attr_path": "bat",
+      "broken": false,
+      "derivation": "/nix/store/7xl05mcnj375b14ygrj4c598pd7siqp7-bat-0.25.0.drv",
+      "description": "Cat(1) clone with syntax highlighting and Git integration",
+      "install_id": "bat",
+      "license": "[ Apache-2.0, MIT ]",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=a84ebe20c6bc2ecbcfb000a50776219f48d134cc",
+      "name": "bat-0.25.0",
+      "pname": "bat",
+      "rev": "a84ebe20c6bc2ecbcfb000a50776219f48d134cc",
+      "rev_count": 770807,
+      "rev_date": "2025-03-19T22:12:44Z",
+      "scrape_date": "2025-03-22T01:25:54.368092Z",
+      "stabilities": [
+        "unstable"
+      ],
+      "unfree": false,
+      "version": "0.25.0",
+      "outputs_to_install": [
+        "out"
+      ],
+      "outputs": {
+        "out": "/nix/store/ypvcjk8hznpb56azpjd6jm8a9jv7fp7g-bat-0.25.0"
+      },
+      "system": "aarch64-linux",
+      "group": "toplevel",
+      "priority": 5
+    },
+    {
+      "attr_path": "bat",
+      "broken": false,
+      "derivation": "/nix/store/j42xsxrgggr2vqxqv0aqs75czimqzvff-bat-0.25.0.drv",
+      "description": "Cat(1) clone with syntax highlighting and Git integration",
+      "install_id": "bat",
+      "license": "[ Apache-2.0, MIT ]",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=a84ebe20c6bc2ecbcfb000a50776219f48d134cc",
+      "name": "bat-0.25.0",
+      "pname": "bat",
+      "rev": "a84ebe20c6bc2ecbcfb000a50776219f48d134cc",
+      "rev_count": 770807,
+      "rev_date": "2025-03-19T22:12:44Z",
+      "scrape_date": "2025-03-22T01:41:11.097113Z",
+      "stabilities": [
+        "unstable"
+      ],
+      "unfree": false,
+      "version": "0.25.0",
+      "outputs_to_install": [
+        "out"
+      ],
+      "outputs": {
+        "out": "/nix/store/yixxzkspjsfrh88nykmzy9vfg6zcwjqc-bat-0.25.0"
+      },
+      "system": "x86_64-darwin",
+      "group": "toplevel",
+      "priority": 5
+    },
+    {
+      "attr_path": "bat",
+      "broken": false,
+      "derivation": "/nix/store/xr4xawjnfc980k521f8hiy67bxmb1v07-bat-0.25.0.drv",
+      "description": "Cat(1) clone with syntax highlighting and Git integration",
+      "install_id": "bat",
+      "license": "[ Apache-2.0, MIT ]",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=a84ebe20c6bc2ecbcfb000a50776219f48d134cc",
+      "name": "bat-0.25.0",
+      "pname": "bat",
+      "rev": "a84ebe20c6bc2ecbcfb000a50776219f48d134cc",
+      "rev_count": 770807,
+      "rev_date": "2025-03-19T22:12:44Z",
+      "scrape_date": "2025-03-22T01:59:11.338942Z",
+      "stabilities": [
+        "unstable"
+      ],
+      "unfree": false,
+      "version": "0.25.0",
+      "outputs_to_install": [
+        "out"
+      ],
+      "outputs": {
+        "out": "/nix/store/vf5hbnpkw8yy7q56kba8hl9cm25143cq-bat-0.25.0"
+      },
+      "system": "x86_64-linux",
+      "group": "toplevel",
+      "priority": 5
+    },
+    {
+      "attr_path": "curl",
+      "broken": false,
+      "derivation": "/nix/store/pgvbsfq3h5143bvdlhwm73dfniqqdykf-curl-8.12.1.drv",
+      "description": "Command line tool for transferring files with URL syntax",
+      "install_id": "curl",
+      "license": "curl",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=a84ebe20c6bc2ecbcfb000a50776219f48d134cc",
+      "name": "curl-8.12.1",
+      "pname": "curl",
+      "rev": "a84ebe20c6bc2ecbcfb000a50776219f48d134cc",
+      "rev_count": 770807,
+      "rev_date": "2025-03-19T22:12:44Z",
+      "scrape_date": "2025-03-22T01:09:06.840412Z",
+      "stabilities": [
+        "unstable"
+      ],
+      "unfree": false,
+      "version": "8.12.1",
+      "outputs_to_install": [
+        "bin",
+        "man"
+      ],
+      "outputs": {
+        "bin": "/nix/store/baiigsw3z45r6flc0sp3yfn2miy287cf-curl-8.12.1-bin",
+        "dev": "/nix/store/6105r6dknsdcv1bg2p7lclm7hp6vdcvi-curl-8.12.1-dev",
+        "devdoc": "/nix/store/zzr5ncacmpzxvh1vrh74iri5w630z23c-curl-8.12.1-devdoc",
+        "man": "/nix/store/rcjd846pvsdd4wkancjcnkjx29mxp9cj-curl-8.12.1-man",
+        "out": "/nix/store/j97v5hphlqwlifqhyipw7jj32a9fkhmp-curl-8.12.1"
+      },
+      "system": "aarch64-darwin",
+      "group": "toplevel",
+      "priority": 5
+    },
+    {
+      "attr_path": "curl",
+      "broken": false,
+      "derivation": "/nix/store/5hk16qr9w26k7382jm2iwjszjbbqv0k6-curl-8.12.1.drv",
+      "description": "Command line tool for transferring files with URL syntax",
+      "install_id": "curl",
+      "license": "curl",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=a84ebe20c6bc2ecbcfb000a50776219f48d134cc",
+      "name": "curl-8.12.1",
+      "pname": "curl",
+      "rev": "a84ebe20c6bc2ecbcfb000a50776219f48d134cc",
+      "rev_count": 770807,
+      "rev_date": "2025-03-19T22:12:44Z",
+      "scrape_date": "2025-03-22T01:25:54.695803Z",
+      "stabilities": [
+        "unstable"
+      ],
+      "unfree": false,
+      "version": "8.12.1",
+      "outputs_to_install": [
+        "bin",
+        "man"
+      ],
+      "outputs": {
+        "bin": "/nix/store/mky4ls4yyinks01394shqhk6alhn9xh6-curl-8.12.1-bin",
+        "debug": "/nix/store/0mn2mfyqjb3ybrp8sx1m0wadbvsl02z4-curl-8.12.1-debug",
+        "dev": "/nix/store/75li6f1pfd8w00ilffaqywpgn910z88l-curl-8.12.1-dev",
+        "devdoc": "/nix/store/mp9ny9x3608fbf3zcq8rqlc6lxhxjj49-curl-8.12.1-devdoc",
+        "man": "/nix/store/m18cmv4nl58giw3zalrlldw40ksil6kr-curl-8.12.1-man",
+        "out": "/nix/store/y1f35w8psglsf3scfwwr58mv4ai2j8p0-curl-8.12.1"
+      },
+      "system": "aarch64-linux",
+      "group": "toplevel",
+      "priority": 5
+    },
+    {
+      "attr_path": "curl",
+      "broken": false,
+      "derivation": "/nix/store/qcxc9gqd371yy2b6vdgci0z6s3ms8p6a-curl-8.12.1.drv",
+      "description": "Command line tool for transferring files with URL syntax",
+      "install_id": "curl",
+      "license": "curl",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=a84ebe20c6bc2ecbcfb000a50776219f48d134cc",
+      "name": "curl-8.12.1",
+      "pname": "curl",
+      "rev": "a84ebe20c6bc2ecbcfb000a50776219f48d134cc",
+      "rev_count": 770807,
+      "rev_date": "2025-03-19T22:12:44Z",
+      "scrape_date": "2025-03-22T01:41:11.301860Z",
+      "stabilities": [
+        "unstable"
+      ],
+      "unfree": false,
+      "version": "8.12.1",
+      "outputs_to_install": [
+        "bin",
+        "man"
+      ],
+      "outputs": {
+        "bin": "/nix/store/0r4yc6516kqylzccq9f35gni14hlpa3x-curl-8.12.1-bin",
+        "dev": "/nix/store/ylr090jisy6rcp6h7gz4j5s79xdga61y-curl-8.12.1-dev",
+        "devdoc": "/nix/store/dmmqlds05glry24fppkgnd6mkgbv13fx-curl-8.12.1-devdoc",
+        "man": "/nix/store/ahx6ha7fr19g4km7ckwg8m18bzrszccn-curl-8.12.1-man",
+        "out": "/nix/store/p2xnwb804lsv8azrkqrvs4ng7ivbaqmd-curl-8.12.1"
+      },
+      "system": "x86_64-darwin",
+      "group": "toplevel",
+      "priority": 5
+    },
+    {
+      "attr_path": "curl",
+      "broken": false,
+      "derivation": "/nix/store/258sxbzbxpgzgvy6pbr30akcx5l9m49i-curl-8.12.1.drv",
+      "description": "Command line tool for transferring files with URL syntax",
+      "install_id": "curl",
+      "license": "curl",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=a84ebe20c6bc2ecbcfb000a50776219f48d134cc",
+      "name": "curl-8.12.1",
+      "pname": "curl",
+      "rev": "a84ebe20c6bc2ecbcfb000a50776219f48d134cc",
+      "rev_count": 770807,
+      "rev_date": "2025-03-19T22:12:44Z",
+      "scrape_date": "2025-03-22T01:59:11.726806Z",
+      "stabilities": [
+        "unstable"
+      ],
+      "unfree": false,
+      "version": "8.12.1",
+      "outputs_to_install": [
+        "bin",
+        "man"
+      ],
+      "outputs": {
+        "bin": "/nix/store/ipyzblpplw889rdvmm7sw8r3kf24p6c2-curl-8.12.1-bin",
+        "debug": "/nix/store/c8dh5156hf1ikfnhihiiv97bj67fzkh0-curl-8.12.1-debug",
+        "dev": "/nix/store/adpdg2yhykxgm13r8nj9xqbj676vxv3n-curl-8.12.1-dev",
+        "devdoc": "/nix/store/m1kmbias4l6g6w5jifc0q1wc2sn7hj7c-curl-8.12.1-devdoc",
+        "man": "/nix/store/kf2jk2p8bf3lvasxy5pmib6irgs28rl2-curl-8.12.1-man",
+        "out": "/nix/store/xbxq9d2npfdb6954wdc5aa7skf2bpdxs-curl-8.12.1"
+      },
+      "system": "x86_64-linux",
+      "group": "toplevel",
+      "priority": 5
+    },
+    {
+      "attr_path": "gum",
+      "broken": false,
+      "derivation": "/nix/store/rs3gh60pcnvw9gfmgflinhqmyl8klwp5-gum-0.16.0.drv",
+      "description": "Tasty Bubble Gum for your shell",
+      "install_id": "gum",
+      "license": "MIT",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=a84ebe20c6bc2ecbcfb000a50776219f48d134cc",
+      "name": "gum-0.16.0",
+      "pname": "gum",
+      "rev": "a84ebe20c6bc2ecbcfb000a50776219f48d134cc",
+      "rev_count": 770807,
+      "rev_date": "2025-03-19T22:12:44Z",
+      "scrape_date": "2025-03-22T01:09:07.386038Z",
+      "stabilities": [
+        "unstable"
+      ],
+      "unfree": false,
+      "version": "0.16.0",
+      "outputs_to_install": [
+        "out"
+      ],
+      "outputs": {
+        "out": "/nix/store/kwkfj9ifihlfzv7damvf0x42w1l904ld-gum-0.16.0"
+      },
+      "system": "aarch64-darwin",
+      "group": "toplevel",
+      "priority": 5
+    },
+    {
+      "attr_path": "gum",
+      "broken": false,
+      "derivation": "/nix/store/rfdkq3mnxjbn28fr3w9a8wlb6id80lpy-gum-0.16.0.drv",
+      "description": "Tasty Bubble Gum for your shell",
+      "install_id": "gum",
+      "license": "MIT",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=a84ebe20c6bc2ecbcfb000a50776219f48d134cc",
+      "name": "gum-0.16.0",
+      "pname": "gum",
+      "rev": "a84ebe20c6bc2ecbcfb000a50776219f48d134cc",
+      "rev_count": 770807,
+      "rev_date": "2025-03-19T22:12:44Z",
+      "scrape_date": "2025-03-22T01:25:55.926011Z",
+      "stabilities": [
+        "unstable"
+      ],
+      "unfree": false,
+      "version": "0.16.0",
+      "outputs_to_install": [
+        "out"
+      ],
+      "outputs": {
+        "out": "/nix/store/fflgnfjyizrfp3kb9kg1rb13zh8iqgpa-gum-0.16.0"
+      },
+      "system": "aarch64-linux",
+      "group": "toplevel",
+      "priority": 5
+    },
+    {
+      "attr_path": "gum",
+      "broken": false,
+      "derivation": "/nix/store/lqp6sr5qq6zd802sfxrkb9m9jd63ymrz-gum-0.16.0.drv",
+      "description": "Tasty Bubble Gum for your shell",
+      "install_id": "gum",
+      "license": "MIT",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=a84ebe20c6bc2ecbcfb000a50776219f48d134cc",
+      "name": "gum-0.16.0",
+      "pname": "gum",
+      "rev": "a84ebe20c6bc2ecbcfb000a50776219f48d134cc",
+      "rev_count": 770807,
+      "rev_date": "2025-03-19T22:12:44Z",
+      "scrape_date": "2025-03-22T01:41:11.860263Z",
+      "stabilities": [
+        "unstable"
+      ],
+      "unfree": false,
+      "version": "0.16.0",
+      "outputs_to_install": [
+        "out"
+      ],
+      "outputs": {
+        "out": "/nix/store/854g6bmylzpaz7s1xdccfq9x2xkx6fcc-gum-0.16.0"
+      },
+      "system": "x86_64-darwin",
+      "group": "toplevel",
+      "priority": 5
+    },
+    {
+      "attr_path": "gum",
+      "broken": false,
+      "derivation": "/nix/store/24a1pj733gimjh92rd6biprlpql2fdaa-gum-0.16.0.drv",
+      "description": "Tasty Bubble Gum for your shell",
+      "install_id": "gum",
+      "license": "MIT",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=a84ebe20c6bc2ecbcfb000a50776219f48d134cc",
+      "name": "gum-0.16.0",
+      "pname": "gum",
+      "rev": "a84ebe20c6bc2ecbcfb000a50776219f48d134cc",
+      "rev_count": 770807,
+      "rev_date": "2025-03-19T22:12:44Z",
+      "scrape_date": "2025-03-22T01:59:13.062040Z",
+      "stabilities": [
+        "unstable"
+      ],
+      "unfree": false,
+      "version": "0.16.0",
+      "outputs_to_install": [
+        "out"
+      ],
+      "outputs": {
+        "out": "/nix/store/hn1dl52063dlljmzjlx0cw1f59yk5r2n-gum-0.16.0"
+      },
+      "system": "x86_64-linux",
+      "group": "toplevel",
+      "priority": 5
+    },
+    {
+      "attr_path": "jq",
+      "broken": false,
+      "derivation": "/nix/store/2sgjcciiqv9sqjhhkalvmk9gpdyz771m-jq-1.7.1.drv",
+      "description": "Lightweight and flexible command-line JSON processor",
+      "install_id": "jq",
+      "license": "MIT",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=a84ebe20c6bc2ecbcfb000a50776219f48d134cc",
+      "name": "jq-1.7.1",
+      "pname": "jq",
+      "rev": "a84ebe20c6bc2ecbcfb000a50776219f48d134cc",
+      "rev_count": 770807,
+      "rev_date": "2025-03-19T22:12:44Z",
+      "scrape_date": "2025-03-22T01:09:07.649789Z",
+      "stabilities": [
+        "unstable"
+      ],
+      "unfree": false,
+      "version": "1.7.1",
+      "outputs_to_install": [
+        "bin",
+        "man"
+      ],
+      "outputs": {
+        "bin": "/nix/store/a0d5735pbpxr817gjzvv6bdy2ycj38nf-jq-1.7.1-bin",
+        "dev": "/nix/store/yhykv5iafas7lp327w3xkj1gxkhifcbk-jq-1.7.1-dev",
+        "doc": "/nix/store/rqjr3mln9jmidha6izp07fq9fp30y4sx-jq-1.7.1-doc",
+        "man": "/nix/store/id3vbyr5wqz7ljylcdqjvrpdsiv4a02v-jq-1.7.1-man",
+        "out": "/nix/store/m0kqs2n6b4idvhpzcqad9jfz1cbwib2n-jq-1.7.1"
+      },
+      "system": "aarch64-darwin",
+      "group": "toplevel",
+      "priority": 5
+    },
+    {
+      "attr_path": "jq",
+      "broken": false,
+      "derivation": "/nix/store/s1swwzprx0gcybvzp3qn5wbxd91ilmch-jq-1.7.1.drv",
+      "description": "Lightweight and flexible command-line JSON processor",
+      "install_id": "jq",
+      "license": "MIT",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=a84ebe20c6bc2ecbcfb000a50776219f48d134cc",
+      "name": "jq-1.7.1",
+      "pname": "jq",
+      "rev": "a84ebe20c6bc2ecbcfb000a50776219f48d134cc",
+      "rev_count": 770807,
+      "rev_date": "2025-03-19T22:12:44Z",
+      "scrape_date": "2025-03-22T01:25:56.836686Z",
+      "stabilities": [
+        "unstable"
+      ],
+      "unfree": false,
+      "version": "1.7.1",
+      "outputs_to_install": [
+        "bin",
+        "man"
+      ],
+      "outputs": {
+        "bin": "/nix/store/64k31kawylkwbjh4r1bwxfq8zb0yzqyi-jq-1.7.1-bin",
+        "dev": "/nix/store/r5wikmfi7na32gcx46p3ncxmzns1f5xz-jq-1.7.1-dev",
+        "doc": "/nix/store/mhfyqmwvnqihqs5av778m4lic0p15hyf-jq-1.7.1-doc",
+        "man": "/nix/store/w29k8y3v6rfyy4kvx95dc79lyfcq7ikf-jq-1.7.1-man",
+        "out": "/nix/store/y3sdsgvnpmwp42d2kd9rq3d5anraccpy-jq-1.7.1"
+      },
+      "system": "aarch64-linux",
+      "group": "toplevel",
+      "priority": 5
+    },
+    {
+      "attr_path": "jq",
+      "broken": false,
+      "derivation": "/nix/store/bc4dsjfqaf4zhf2vkbqgk56j49v3kagm-jq-1.7.1.drv",
+      "description": "Lightweight and flexible command-line JSON processor",
+      "install_id": "jq",
+      "license": "MIT",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=a84ebe20c6bc2ecbcfb000a50776219f48d134cc",
+      "name": "jq-1.7.1",
+      "pname": "jq",
+      "rev": "a84ebe20c6bc2ecbcfb000a50776219f48d134cc",
+      "rev_count": 770807,
+      "rev_date": "2025-03-19T22:12:44Z",
+      "scrape_date": "2025-03-22T01:41:12.127535Z",
+      "stabilities": [
+        "unstable"
+      ],
+      "unfree": false,
+      "version": "1.7.1",
+      "outputs_to_install": [
+        "bin",
+        "man"
+      ],
+      "outputs": {
+        "bin": "/nix/store/p6ph78v4kf373vnsigwaqh7j3dlapnny-jq-1.7.1-bin",
+        "dev": "/nix/store/6lhl23njgh2pjh3sypxv4s0g6n0zdmqk-jq-1.7.1-dev",
+        "doc": "/nix/store/5md80wrj52gklrxwsf68dkqc9igmq928-jq-1.7.1-doc",
+        "man": "/nix/store/83f3x5240k5kqc8bw758nq4q6d3j7l5p-jq-1.7.1-man",
+        "out": "/nix/store/fbv7k9csv3m2af8chfblxzlv2mgaz8i0-jq-1.7.1"
+      },
+      "system": "x86_64-darwin",
+      "group": "toplevel",
+      "priority": 5
+    },
+    {
+      "attr_path": "jq",
+      "broken": false,
+      "derivation": "/nix/store/h4nhfds4cmrrb6565apsk3l2z7pgi1qq-jq-1.7.1.drv",
+      "description": "Lightweight and flexible command-line JSON processor",
+      "install_id": "jq",
+      "license": "MIT",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=a84ebe20c6bc2ecbcfb000a50776219f48d134cc",
+      "name": "jq-1.7.1",
+      "pname": "jq",
+      "rev": "a84ebe20c6bc2ecbcfb000a50776219f48d134cc",
+      "rev_count": 770807,
+      "rev_date": "2025-03-19T22:12:44Z",
+      "scrape_date": "2025-03-22T01:59:14.055127Z",
+      "stabilities": [
+        "unstable"
+      ],
+      "unfree": false,
+      "version": "1.7.1",
+      "outputs_to_install": [
+        "bin",
+        "man"
+      ],
+      "outputs": {
+        "bin": "/nix/store/134m2q047vsr9miwh5l227j7sh9jb130-jq-1.7.1-bin",
+        "dev": "/nix/store/94yz5x26ssx2pqn7gamlngp306s8mz60-jq-1.7.1-dev",
+        "doc": "/nix/store/byqqs2ayp67zvmd6dqi4jahwm1f779cj-jq-1.7.1-doc",
+        "man": "/nix/store/8vlqxykb9959nn5bl5vph99d2c4np9wg-jq-1.7.1-man",
+        "out": "/nix/store/6zy1hkwlwq9r97swjy616vf096dccrsr-jq-1.7.1"
+      },
+      "system": "x86_64-linux",
+      "group": "toplevel",
+      "priority": 5
+    },
+    {
+      "attr_path": "lzop",
+      "broken": false,
+      "derivation": "/nix/store/padqc4pfmff14q0xipzxvhf016jk2m5d-lzop-1.04.drv",
+      "description": "Fast file compressor",
+      "install_id": "lzop",
+      "license": "GPL-2.0-or-later",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=a84ebe20c6bc2ecbcfb000a50776219f48d134cc",
+      "name": "lzop-1.04",
+      "pname": "lzop",
+      "rev": "a84ebe20c6bc2ecbcfb000a50776219f48d134cc",
+      "rev_count": 770807,
+      "rev_date": "2025-03-19T22:12:44Z",
+      "scrape_date": "2025-03-22T01:09:08.756619Z",
+      "stabilities": [
+        "unstable"
+      ],
+      "unfree": false,
+      "version": "1.04",
+      "outputs_to_install": [
+        "out"
+      ],
+      "outputs": {
+        "out": "/nix/store/rbfdj8plnq9hj8y3gw9g6df3g9wmaps7-lzop-1.04"
+      },
+      "system": "aarch64-darwin",
+      "group": "toplevel",
+      "priority": 5
+    },
+    {
+      "attr_path": "lzop",
+      "broken": false,
+      "derivation": "/nix/store/j54mq4smxm316qsgl99kr5bqs07yblsg-lzop-1.04.drv",
+      "description": "Fast file compressor",
+      "install_id": "lzop",
+      "license": "GPL-2.0-or-later",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=a84ebe20c6bc2ecbcfb000a50776219f48d134cc",
+      "name": "lzop-1.04",
+      "pname": "lzop",
+      "rev": "a84ebe20c6bc2ecbcfb000a50776219f48d134cc",
+      "rev_count": 770807,
+      "rev_date": "2025-03-19T22:12:44Z",
+      "scrape_date": "2025-03-22T01:26:02.726308Z",
+      "stabilities": [
+        "unstable"
+      ],
+      "unfree": false,
+      "version": "1.04",
+      "outputs_to_install": [
+        "out"
+      ],
+      "outputs": {
+        "out": "/nix/store/q0xz2m44k9siqd6ybkbra5d2m0vls4yb-lzop-1.04"
+      },
+      "system": "aarch64-linux",
+      "group": "toplevel",
+      "priority": 5
+    },
+    {
+      "attr_path": "lzop",
+      "broken": false,
+      "derivation": "/nix/store/wsyalv7njg4zzvwlpm9cn39yk67lj1my-lzop-1.04.drv",
+      "description": "Fast file compressor",
+      "install_id": "lzop",
+      "license": "GPL-2.0-or-later",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=a84ebe20c6bc2ecbcfb000a50776219f48d134cc",
+      "name": "lzop-1.04",
+      "pname": "lzop",
+      "rev": "a84ebe20c6bc2ecbcfb000a50776219f48d134cc",
+      "rev_count": 770807,
+      "rev_date": "2025-03-19T22:12:44Z",
+      "scrape_date": "2025-03-22T01:41:13.236968Z",
+      "stabilities": [
+        "unstable"
+      ],
+      "unfree": false,
+      "version": "1.04",
+      "outputs_to_install": [
+        "out"
+      ],
+      "outputs": {
+        "out": "/nix/store/116dz2nl9yd9452inc9q20nfm3nzkf9s-lzop-1.04"
+      },
+      "system": "x86_64-darwin",
+      "group": "toplevel",
+      "priority": 5
+    },
+    {
+      "attr_path": "lzop",
+      "broken": false,
+      "derivation": "/nix/store/ch7wm5jhcg5rqvs6x9y2vnkq0hk1693w-lzop-1.04.drv",
+      "description": "Fast file compressor",
+      "install_id": "lzop",
+      "license": "GPL-2.0-or-later",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=a84ebe20c6bc2ecbcfb000a50776219f48d134cc",
+      "name": "lzop-1.04",
+      "pname": "lzop",
+      "rev": "a84ebe20c6bc2ecbcfb000a50776219f48d134cc",
+      "rev_count": 770807,
+      "rev_date": "2025-03-19T22:12:44Z",
+      "scrape_date": "2025-03-22T01:59:21.290685Z",
+      "stabilities": [
+        "unstable"
+      ],
+      "unfree": false,
+      "version": "1.04",
+      "outputs_to_install": [
+        "out"
+      ],
+      "outputs": {
+        "out": "/nix/store/i205ksb84vwrw05317ra4vgpw1ic50xc-lzop-1.04"
+      },
+      "system": "x86_64-linux",
+      "group": "toplevel",
+      "priority": 5
+    },
+    {
+      "attr_path": "openssl",
+      "broken": false,
+      "derivation": "/nix/store/dfr5msix3yzz344v3cdccp4kvfw7d8x4-openssl-3.4.1.drv",
+      "description": "Cryptographic library that implements the SSL and TLS protocols",
+      "install_id": "openssl",
+      "license": "Apache-2.0",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=a84ebe20c6bc2ecbcfb000a50776219f48d134cc",
+      "name": "openssl-3.4.1",
+      "pname": "openssl",
+      "rev": "a84ebe20c6bc2ecbcfb000a50776219f48d134cc",
+      "rev_count": 770807,
+      "rev_date": "2025-03-19T22:12:44Z",
+      "scrape_date": "2025-03-22T01:09:10.053144Z",
+      "stabilities": [
+        "unstable"
+      ],
+      "unfree": false,
+      "version": "3.4.1",
+      "outputs_to_install": [
+        "bin",
+        "man"
+      ],
+      "outputs": {
+        "bin": "/nix/store/3vww53wl93ykrzfpwiyh3qxkrq4csnws-openssl-3.4.1-bin",
+        "dev": "/nix/store/p5kl6l6yx56m1p3ngnrahb3s6sq2qqmj-openssl-3.4.1-dev",
+        "doc": "/nix/store/dhb33vzk1j5r8843747zgwpbsnbqky5r-openssl-3.4.1-doc",
+        "man": "/nix/store/ijl4khdrf2vfn6njjdp1mr4xmvgccwdx-openssl-3.4.1-man",
+        "out": "/nix/store/632hkjxqm9877a1l1fvbjw00hp5z9srw-openssl-3.4.1"
+      },
+      "system": "aarch64-darwin",
+      "group": "toplevel",
+      "priority": 5
+    },
+    {
+      "attr_path": "openssl",
+      "broken": false,
+      "derivation": "/nix/store/8xjjs6p2agpclayj3h4hv3k7bp4w8g2h-openssl-3.4.1.drv",
+      "description": "Cryptographic library that implements the SSL and TLS protocols",
+      "install_id": "openssl",
+      "license": "Apache-2.0",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=a84ebe20c6bc2ecbcfb000a50776219f48d134cc",
+      "name": "openssl-3.4.1",
+      "pname": "openssl",
+      "rev": "a84ebe20c6bc2ecbcfb000a50776219f48d134cc",
+      "rev_count": 770807,
+      "rev_date": "2025-03-19T22:12:44Z",
+      "scrape_date": "2025-03-22T01:26:05.785663Z",
+      "stabilities": [
+        "unstable"
+      ],
+      "unfree": false,
+      "version": "3.4.1",
+      "outputs_to_install": [
+        "bin",
+        "man"
+      ],
+      "outputs": {
+        "bin": "/nix/store/37qzbvcm4chvjkxa2bnzw49pvsmg5rbz-openssl-3.4.1-bin",
+        "debug": "/nix/store/460k0bdwz3hl8yw029xq2i04gvp5jg7x-openssl-3.4.1-debug",
+        "dev": "/nix/store/w767vxkkxk0a6w4q686rpa2jyrk7jwhh-openssl-3.4.1-dev",
+        "doc": "/nix/store/28n6x9fm46xw85z1s054cbz1s7zvdjjh-openssl-3.4.1-doc",
+        "man": "/nix/store/x7wxcgxgjkxz916rhyc69hq73ln036ic-openssl-3.4.1-man",
+        "out": "/nix/store/8qvch536iwkzgbfi9zp62qd3hhbp3y44-openssl-3.4.1"
+      },
+      "system": "aarch64-linux",
+      "group": "toplevel",
+      "priority": 5
+    },
+    {
+      "attr_path": "openssl",
+      "broken": false,
+      "derivation": "/nix/store/746y2jgwgcn8sch9j5ixq0vlgi06q2h8-openssl-3.4.1.drv",
+      "description": "Cryptographic library that implements the SSL and TLS protocols",
+      "install_id": "openssl",
+      "license": "Apache-2.0",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=a84ebe20c6bc2ecbcfb000a50776219f48d134cc",
+      "name": "openssl-3.4.1",
+      "pname": "openssl",
+      "rev": "a84ebe20c6bc2ecbcfb000a50776219f48d134cc",
+      "rev_count": 770807,
+      "rev_date": "2025-03-19T22:12:44Z",
+      "scrape_date": "2025-03-22T01:41:14.535542Z",
+      "stabilities": [
+        "unstable"
+      ],
+      "unfree": false,
+      "version": "3.4.1",
+      "outputs_to_install": [
+        "bin",
+        "man"
+      ],
+      "outputs": {
+        "bin": "/nix/store/8l7820d6x46w5x4c9rlmkl3w2fyg8x8x-openssl-3.4.1-bin",
+        "dev": "/nix/store/0v17cghlz8kqv1mgbslbcnfzbvryfxlb-openssl-3.4.1-dev",
+        "doc": "/nix/store/l1qrx626psi8nblpi4spmm2ix9vnz297-openssl-3.4.1-doc",
+        "man": "/nix/store/xxmr1pzq3ggrd4q5pwbvskh656r4ib05-openssl-3.4.1-man",
+        "out": "/nix/store/1mcrp132pjnfcmdvm1hb2sdvfl3yl2vx-openssl-3.4.1"
+      },
+      "system": "x86_64-darwin",
+      "group": "toplevel",
+      "priority": 5
+    },
+    {
+      "attr_path": "openssl",
+      "broken": false,
+      "derivation": "/nix/store/g6y4w8h8356bx9wphp187pvby4rdr8ar-openssl-3.4.1.drv",
+      "description": "Cryptographic library that implements the SSL and TLS protocols",
+      "install_id": "openssl",
+      "license": "Apache-2.0",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=a84ebe20c6bc2ecbcfb000a50776219f48d134cc",
+      "name": "openssl-3.4.1",
+      "pname": "openssl",
+      "rev": "a84ebe20c6bc2ecbcfb000a50776219f48d134cc",
+      "rev_count": 770807,
+      "rev_date": "2025-03-19T22:12:44Z",
+      "scrape_date": "2025-03-22T01:59:24.778788Z",
+      "stabilities": [
+        "unstable"
+      ],
+      "unfree": false,
+      "version": "3.4.1",
+      "outputs_to_install": [
+        "bin",
+        "man"
+      ],
+      "outputs": {
+        "bin": "/nix/store/nc9zks4mdn9bkpmhkgvn02xbm965fcd6-openssl-3.4.1-bin",
+        "debug": "/nix/store/k4l54afpk14dwk61xm6hpa8gmc6yafwk-openssl-3.4.1-debug",
+        "dev": "/nix/store/9lq31bk3niis5sfaaqxw8z9rxnh0x3fj-openssl-3.4.1-dev",
+        "doc": "/nix/store/4j9l1ry4byrd71j79c86vk3spmwv1ass-openssl-3.4.1-doc",
+        "man": "/nix/store/y6bmrdlnyhafsa4xmq57zs5am3d1dag6-openssl-3.4.1-man",
+        "out": "/nix/store/99cizfcv53x3mjb15cx7kmdxsglp17hc-openssl-3.4.1"
+      },
+      "system": "x86_64-linux",
+      "group": "toplevel",
+      "priority": 5
+    }
+  ]
+}

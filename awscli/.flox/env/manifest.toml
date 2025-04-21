@@ -1,0 +1,847 @@
+## Flox Environment Manifest -----------------------------------------
+##
+##   _Everything_ you need to know about the _manifest_ is here:
+##
+##               https://flox.dev/docs/concepts/manifest
+##
+## -------------------------------------------------------------------
+# Flox manifest version managed by Flox CLI
+version = 1
+
+
+## Install Packages --------------------------------------------------
+##  $ flox install gum  <- puts a package in [install] section below
+##  $ flox search gum   <- search for a package
+##  $ flox show gum     <- show all versions of a package
+## -------------------------------------------------------------------
+[install]
+awscli2.pkg-path = "awscli2"
+gum.pkg-path = "gum"
+bat.pkg-path = "bat"
+curl.pkg-path = "curl"
+openssl.pkg-path = "openssl"
+jq.pkg-path = "jq"
+lzop.pkg-path = "lzop"
+
+
+## Environment Variables ---------------------------------------------
+##  ... available for use in the activated environment
+##      as well as [hook], [profile] scripts and [services] below.
+## -------------------------------------------------------------------
+[vars]
+PYTHON = "python3"
+
+
+## Activation Hook ---------------------------------------------------
+##  ... run by _bash_ shell when you run 'flox activate'.
+## -------------------------------------------------------------------
+[hook]
+on-activate = '''
+# define paths
+CONFIG_FILE="${FLOX_ENV_CACHE:-$HOME/.cache/flox}/aws_config"
+ENCRYPTED_CREDS_FILE="${FLOX_ENV_CACHE:-$HOME/.cache/flox}/aws_credentials.enc"
+BASH_WRAPPER="${FLOX_ENV_CACHE:-$HOME/.cache/flox}/aws_wrapper.bash"
+ZSH_WRAPPER="${FLOX_ENV_CACHE:-$HOME/.cache/flox}/aws_wrapper.zsh"
+FISH_WRAPPER="${FLOX_ENV_CACHE:-$HOME/.cache/flox}/aws_wrapper.fish"
+
+# detect operating system
+detect_os() {
+    if [[ "$OSTYPE" == "darwin"* ]]; then
+        echo "macos"
+    elif [[ "$OSTYPE" == "linux-gnu"* ]]; then
+        echo "linux"
+    else
+        echo "unsupported"
+    fi
+}
+
+# derive an encryption password from system information
+derive_password() {
+    # combine username, hostname and machine id for a unique but deterministic password
+    local user_info="$USER"
+    local host_info=$(hostname)
+    local machine_id=""
+    
+    if [[ -f "/etc/machine-id" ]]; then
+        machine_id=$(cat /etc/machine-id)
+    elif [[ -f "/var/lib/dbus/machine-id" ]]; then
+        machine_id=$(cat /var/lib/dbus/machine-id)
+    elif [[ "$(detect_os)" == "macos" ]]; then
+        machine_id=$(ioreg -rd1 -c IOPlatformExpertDevice | grep -E '(UUID)' | awk '{print $3}' | tr -d \")
+    fi
+    
+    # combine and hash the information
+    echo -n "${user_info}${host_info}${machine_id}flox-aws-credentials" | openssl dgst -sha256 | awk '{print $2}'
+}
+
+# store credentials in system keyring
+store_aws_credentials_keyring() {
+    local aws_access_key_id="$1"
+    local aws_secret_access_key="$2"
+    local aws_session_token="$3"
+    local aws_region="$4"
+    local profile_name="$5"
+    local os=$(detect_os)
+    
+    # Create JSON structure for credentials
+    local creds_json="{\"aws_access_key_id\":\"$aws_access_key_id\",\"aws_secret_access_key\":\"$aws_secret_access_key\""
+    
+    if [[ -n "$aws_session_token" ]]; then
+        creds_json="$creds_json,\"aws_session_token\":\"$aws_session_token\""
+    fi
+    
+    if [[ -n "$aws_region" ]]; then
+        creds_json="$creds_json,\"aws_region\":\"$aws_region\""
+    else
+        creds_json="$creds_json,\"aws_region\":\"us-east-1\""
+    fi
+    
+    if [[ -n "$profile_name" ]]; then
+        creds_json="$creds_json,\"profile_name\":\"$profile_name\""
+    else
+        creds_json="$creds_json,\"profile_name\":\"default\""
+    fi
+    
+    creds_json="$creds_json}"
+    
+    if [[ "$os" == "macos" ]]; then
+        if security add-generic-password -s "flox-aws" -a "$USER" -w "$creds_json" -U; then
+            # Always create wrapper for AWS CLI - it doesn't support keyring directly
+            mkdir -p "$(dirname "$CONFIG_FILE")"
+            echo "AWS_CREDS_STORED=true" > "$CONFIG_FILE"
+            echo "STORAGE_METHOD=keyring" >> "$CONFIG_FILE"
+            echo "NEEDS_WRAPPER=true" >> "$CONFIG_FILE"
+            
+            echo "AWS credentials stored successfully in system keyring/keychain."
+            return 0
+        else
+            return 1
+        fi
+    elif [[ "$os" == "linux" ]]; then
+        if echo -n "$creds_json" | secret-tool store --label="Flox AWS Credentials" service flox-aws user "$USER"; then
+            # Always create wrapper for AWS CLI - it doesn't support keyring directly
+            mkdir -p "$(dirname "$CONFIG_FILE")"
+            echo "AWS_CREDS_STORED=true" > "$CONFIG_FILE"
+            echo "STORAGE_METHOD=keyring" >> "$CONFIG_FILE"
+            echo "NEEDS_WRAPPER=true" >> "$CONFIG_FILE"
+            
+            echo "AWS credentials stored successfully in system keyring/keychain."
+            return 0
+        else
+            return 1
+        fi
+    else
+        echo "Error: Unsupported operating system."
+        return 1
+    fi
+}
+
+# store credentials in encrypted file as fallback
+store_aws_credentials_encrypted() {
+    local aws_access_key_id="$1"
+    local aws_secret_access_key="$2"
+    local aws_session_token="$3"
+    local aws_region="$4"
+    local profile_name="$5"
+    local password=$(derive_password)
+    
+    # Create JSON structure for credentials
+    local creds_json="{\"aws_access_key_id\":\"$aws_access_key_id\",\"aws_secret_access_key\":\"$aws_secret_access_key\""
+    
+    if [[ -n "$aws_session_token" ]]; then
+        creds_json="$creds_json,\"aws_session_token\":\"$aws_session_token\""
+    fi
+    
+    if [[ -n "$aws_region" ]]; then
+        creds_json="$creds_json,\"aws_region\":\"$aws_region\""
+    else
+        creds_json="$creds_json,\"aws_region\":\"us-east-1\""
+    fi
+    
+    if [[ -n "$profile_name" ]]; then
+        creds_json="$creds_json,\"profile_name\":\"$profile_name\""
+    else
+        creds_json="$creds_json,\"profile_name\":\"default\""
+    fi
+    
+    creds_json="$creds_json}"
+    
+    # create directory if it doesn't exist
+    mkdir -p "$(dirname "$ENCRYPTED_CREDS_FILE")"
+    
+    # encrypt credentials with openssl
+    echo -n "$creds_json" | openssl enc -aes-256-cbc -salt -pbkdf2 -pass pass:"$password" -out "$ENCRYPTED_CREDS_FILE"
+    
+    # Set appropriate permissions on credentials file
+    chmod 600 "$ENCRYPTED_CREDS_FILE"
+    
+    # record that credentials have been stored in encrypted file
+    mkdir -p "$(dirname "$CONFIG_FILE")"
+    echo "AWS_CREDS_STORED=true" > "$CONFIG_FILE"
+    echo "STORAGE_METHOD=encrypted_file" >> "$CONFIG_FILE"
+    echo "NEEDS_WRAPPER=true" >> "$CONFIG_FILE"
+    
+    # Set appropriate permissions on config file
+    chmod 600 "$CONFIG_FILE"
+    
+    echo "AWS credentials stored successfully in encrypted file."
+    return 0
+}
+
+# retrieve credentials from system keyring
+retrieve_aws_credentials_keyring() {
+    local os=$(detect_os)
+    
+    if [[ "$os" == "macos" ]]; then
+        security find-generic-password -s "flox-aws" -a "$USER" -w 2>/dev/null
+    elif [[ "$os" == "linux" ]]; then
+        secret-tool lookup service flox-aws user "$USER" 2>/dev/null
+    fi
+}
+
+# retrieve credentials from encrypted file
+retrieve_aws_credentials_encrypted() {
+    local password=$(derive_password)
+    
+    if [[ -f "$ENCRYPTED_CREDS_FILE" ]]; then
+        openssl enc -aes-256-cbc -d -salt -pbkdf2 -pass pass:"$password" -in "$ENCRYPTED_CREDS_FILE" 2>/dev/null
+        return $?
+    fi
+    return 1
+}
+
+# retrieve aws credentials from appropriate storage
+retrieve_aws_credentials() {
+    if [[ -f "$CONFIG_FILE" ]]; then
+        source "$CONFIG_FILE"
+        if [[ "$STORAGE_METHOD" == "keyring" ]]; then
+            retrieve_aws_credentials_keyring
+        elif [[ "$STORAGE_METHOD" == "encrypted_file" ]]; then
+            retrieve_aws_credentials_encrypted
+        fi
+    fi
+}
+
+# check if credentials exist
+aws_credentials_exist() {
+    local creds_json=$(retrieve_aws_credentials)
+    [[ -n "$creds_json" ]]
+}
+
+# extract individual credential components from JSON using jq
+extract_aws_credentials() {
+    local creds_json="$1"
+    local key="$2"
+    
+    echo "$creds_json" | jq -r ".$key // \"\"" 2>/dev/null
+}
+
+# validate aws credentials with api
+validate_aws_credentials() {
+    local aws_access_key_id="$1"
+    local aws_secret_access_key="$2"
+    local aws_session_token="$3"
+    local aws_region="$4"
+    
+    echo "Validating AWS credentials..."
+    
+    # test credentials with a simple api request
+    AWS_ACCESS_KEY_ID="$aws_access_key_id" \
+    AWS_SECRET_ACCESS_KEY="$aws_secret_access_key" \
+    AWS_SESSION_TOKEN="$aws_session_token" \
+    AWS_REGION="${aws_region:-us-east-1}" \
+    aws sts get-caller-identity &>/dev/null
+    
+    return $?
+}
+
+# check for existing credentials and validate
+check_existing_credentials() {
+    if [[ -f "$CONFIG_FILE" ]] && source "$CONFIG_FILE" && [[ "$AWS_CREDS_STORED" == "true" ]]; then
+        # Always assume wrapper is needed for AWS CLI
+        # verify the credentials still work
+        local creds_json=$(retrieve_aws_credentials)
+        if [[ -n "$creds_json" ]]; then
+            local aws_access_key_id=$(extract_aws_credentials "$creds_json" "aws_access_key_id")
+            local aws_secret_access_key=$(extract_aws_credentials "$creds_json" "aws_secret_access_key")
+            local aws_session_token=$(extract_aws_credentials "$creds_json" "aws_session_token")
+            local aws_region=$(extract_aws_credentials "$creds_json" "aws_region")
+            
+            if validate_aws_credentials "$aws_access_key_id" "$aws_secret_access_key" "$aws_session_token" "$aws_region"; then
+                # create shell wrappers if they don't exist
+                if [[ ! -f "$BASH_WRAPPER" ]]; then
+                    create_shell_wrappers
+                fi
+                # Fix config file if NEEDS_WRAPPER is incorrectly set
+                if [[ "$NEEDS_WRAPPER" != "true" ]]; then
+                    sed -i 's/NEEDS_WRAPPER=false/NEEDS_WRAPPER=true/' "$CONFIG_FILE"
+                    echo "Fixing configuration to enable wrapper."
+                fi
+                return 0
+            else
+                echo "Stored AWS credentials are invalid or expired."
+                return 1
+            fi
+        else
+            echo "Failed to retrieve AWS credentials."
+            return 1
+        fi
+    fi
+    return 1
+}
+
+# create wrappers for different shells
+create_shell_wrappers() {
+    # create bash/zsh wrapper
+    cat > "$BASH_WRAPPER" << 'BASH_EOF'
+# detect operating system
+_aws_wrapper_detect_os() {
+    if [[ "$OSTYPE" == "darwin"* ]]; then
+        echo "macos"
+    elif [[ "$OSTYPE" == "linux-gnu"* ]]; then
+        echo "linux"
+    else
+        echo "unsupported"
+    fi
+}
+
+# derive an encryption password from system information
+_aws_wrapper_derive_password() {
+    # combine username, hostname and machine id for a unique but deterministic password
+    local user_info="$USER"
+    local host_info=$(hostname)
+    local machine_id=""
+    
+    if [[ -f "/etc/machine-id" ]]; then
+        machine_id=$(cat /etc/machine-id)
+    elif [[ -f "/var/lib/dbus/machine-id" ]]; then
+        machine_id=$(cat /var/lib/dbus/machine-id)
+    elif [[ "$(_aws_wrapper_detect_os)" == "macos" ]]; then
+        machine_id=$(ioreg -rd1 -c IOPlatformExpertDevice | grep -E '(UUID)' | awk '{print $3}' | tr -d \")
+    fi
+    
+    # combine and hash the information
+    echo -n "${user_info}${host_info}${machine_id}flox-aws-credentials" | openssl dgst -sha256 | awk '{print $2}'
+}
+
+# retrieve credentials from system keyring
+_aws_wrapper_retrieve_credentials_keyring() {
+    local os=$(_aws_wrapper_detect_os)
+    
+    if [[ "$os" == "macos" ]]; then
+        security find-generic-password -s "flox-aws" -a "$USER" -w 2>/dev/null
+    elif [[ "$os" == "linux" ]]; then
+        secret-tool lookup service flox-aws user "$USER" 2>/dev/null
+    fi
+}
+
+# retrieve credentials from encrypted file
+_aws_wrapper_retrieve_credentials_encrypted() {
+    local password=$(_aws_wrapper_derive_password)
+    local creds_file="${FLOX_ENV_CACHE:-$HOME/.cache/flox}/aws_credentials.enc"
+    
+    if [[ -f "$creds_file" ]]; then
+        openssl enc -aes-256-cbc -d -salt -pbkdf2 -pass pass:"$password" -in "$creds_file" 2>/dev/null
+        return $?
+    fi
+    return 1
+}
+
+# retrieve aws credentials
+_aws_wrapper_retrieve_credentials() {
+    local config_file="${FLOX_ENV_CACHE:-$HOME/.cache/flox}/aws_config"
+    
+    if [[ -f "$config_file" ]]; then
+        source "$config_file"
+        if [[ "$STORAGE_METHOD" == "keyring" ]]; then
+            _aws_wrapper_retrieve_credentials_keyring
+        elif [[ "$STORAGE_METHOD" == "encrypted_file" ]]; then
+            _aws_wrapper_retrieve_credentials_encrypted
+        fi
+    fi
+}
+
+# extract credential field from JSON using jq
+_aws_wrapper_extract_credential() {
+    local json="$1"
+    local field="$2"
+    echo "$json" | jq -r ".$field // \"\"" 2>/dev/null
+}
+
+# wrapper function for aws
+aws() {
+    local creds_json=$(_aws_wrapper_retrieve_credentials)
+    if [[ -n "$creds_json" ]]; then
+        local aws_access_key_id=$(_aws_wrapper_extract_credential "$creds_json" "aws_access_key_id")
+        local aws_secret_access_key=$(_aws_wrapper_extract_credential "$creds_json" "aws_secret_access_key")
+        local aws_session_token=$(_aws_wrapper_extract_credential "$creds_json" "aws_session_token")
+        local aws_region=$(_aws_wrapper_extract_credential "$creds_json" "aws_region")
+        
+        # Set environment variables for the aws command
+        if [[ -n "$aws_session_token" ]]; then
+            AWS_ACCESS_KEY_ID="$aws_access_key_id" \
+            AWS_SECRET_ACCESS_KEY="$aws_secret_access_key" \
+            AWS_SESSION_TOKEN="$aws_session_token" \
+            AWS_REGION="${aws_region:-us-east-1}" \
+            command aws "$@"
+        else
+            AWS_ACCESS_KEY_ID="$aws_access_key_id" \
+            AWS_SECRET_ACCESS_KEY="$aws_secret_access_key" \
+            AWS_REGION="${aws_region:-us-east-1}" \
+            command aws "$@"
+        fi
+    else
+        echo "Error: Unable to retrieve AWS credentials. Please run 'flox activate' to set up AWS integration."
+        return 1
+    fi
+}
+BASH_EOF
+
+    # Create copy for zsh (same content)
+    cp "$BASH_WRAPPER" "$ZSH_WRAPPER"
+    
+    # Create fish wrapper with different syntax
+    cat > "$FISH_WRAPPER" << 'FISH_EOF'
+# detect operating system
+function _aws_wrapper_detect_os
+    switch (uname)
+        case Darwin
+            echo "macos"
+        case Linux
+            echo "linux"
+        case '*'
+            echo "unsupported"
+    end
+end
+
+# derive an encryption password from system information
+function _aws_wrapper_derive_password
+    # combine username, hostname and machine id for a unique but deterministic password
+    set -l user_info $USER
+    set -l host_info (hostname)
+    set -l machine_id ""
+    
+    if test -f "/etc/machine-id"
+        set machine_id (cat /etc/machine-id)
+    else if test -f "/var/lib/dbus/machine-id"
+        set machine_id (cat /var/lib/dbus/machine-id)
+    else if test (_aws_wrapper_detect_os) = "macos"
+        set machine_id (ioreg -rd1 -c IOPlatformExpertDevice | grep -E '(UUID)' | awk '{print $3}' | tr -d \")
+    end
+    
+    # combine and hash the information
+    echo -n "$user_info$host_info$machine_idflox-aws-credentials" | openssl dgst -sha256 | awk '{print $2}'
+end
+
+# retrieve credentials from system keyring
+function _aws_wrapper_retrieve_credentials_keyring
+    set -l os (_aws_wrapper_detect_os)
+    
+    if test $os = "macos"
+        security find-generic-password -s "flox-aws" -a "$USER" -w 2>/dev/null
+    else if test $os = "linux"
+        secret-tool lookup service flox-aws user "$USER" 2>/dev/null
+    end
+end
+
+# retrieve credentials from encrypted file
+function _aws_wrapper_retrieve_credentials_encrypted
+    set -l password (_aws_wrapper_derive_password)
+    set -l creds_file "$FLOX_ENV_CACHE/aws_credentials.enc"
+    test -z "$FLOX_ENV_CACHE"; and set creds_file "$HOME/.cache/flox/aws_credentials.enc"
+    
+    if test -f "$creds_file"
+        openssl enc -aes-256-cbc -d -salt -pbkdf2 -pass pass:"$password" -in "$creds_file" 2>/dev/null
+        return $status
+    end
+    return 1
+end
+
+# retrieve aws credentials
+function _aws_wrapper_retrieve_credentials
+    set -l config_file "$FLOX_ENV_CACHE/aws_config"
+    test -z "$FLOX_ENV_CACHE"; and set config_file "$HOME/.cache/flox/aws_config"
+    
+    if test -f "$config_file"
+        set -l storage_method (grep "STORAGE_METHOD" "$config_file" | cut -d '=' -f2)
+        
+        if test "$storage_method" = "keyring"
+            _aws_wrapper_retrieve_credentials_keyring
+        else if test "$storage_method" = "encrypted_file"
+            _aws_wrapper_retrieve_credentials_encrypted
+        end
+    end
+end
+
+# extract credential field from JSON using jq
+function _aws_wrapper_extract_credential
+    set -l json "$argv[1]"
+    set -l field "$argv[2]"
+    echo "$json" | jq -r ".$field // \"\"" 2>/dev/null
+end
+
+# wrapper function for aws
+function aws
+    set -l creds_json (_aws_wrapper_retrieve_credentials)
+    if test -n "$creds_json"
+        set -l aws_access_key_id (_aws_wrapper_extract_credential "$creds_json" "aws_access_key_id")
+        set -l aws_secret_access_key (_aws_wrapper_extract_credential "$creds_json" "aws_secret_access_key")
+        set -l aws_session_token (_aws_wrapper_extract_credential "$creds_json" "aws_session_token")
+        set -l aws_region (_aws_wrapper_extract_credential "$creds_json" "aws_region")
+        test -z "$aws_region"; and set aws_region "us-east-1"
+        
+        if test -n "$aws_session_token"
+            env AWS_ACCESS_KEY_ID="$aws_access_key_id" AWS_SECRET_ACCESS_KEY="$aws_secret_access_key" AWS_SESSION_TOKEN="$aws_session_token" AWS_REGION="$aws_region" command aws $argv
+        else
+            env AWS_ACCESS_KEY_ID="$aws_access_key_id" AWS_SECRET_ACCESS_KEY="$aws_secret_access_key" AWS_REGION="$aws_region" command aws $argv
+        end
+    else
+        echo "Error: Unable to retrieve AWS credentials. Please run 'flox activate' to set up AWS integration."
+        return 1
+    end
+end
+FISH_EOF
+
+    # Set appropriate permissions
+    chmod 600 "$BASH_WRAPPER" "$ZSH_WRAPPER" "$FISH_WRAPPER"
+}
+
+# show welcome message
+show_welcome_message() {
+    gum style \
+        --border rounded \
+        --border-foreground 240 \
+        --padding "1 2" \
+        --margin "1 0" \
+        --width 96 \
+        "$(gum style --foreground 141 --bold 'F l o x  AWS CLI (More) Secure Local Auth Setup Wizard')
+
+👉  This wizard will guide you through setting up AWS CLI authentication using
+    secure local storage:
+
+    1.  System keyring/keychain (preferred)
+    2.  Encrypted local file (fallback)
+
+👉  You will need to provide:
+
+    •  Your AWS Access Key ID
+    •  Your AWS Secret Access Key
+    •  Optional: AWS Session Token (for temporary credentials)
+    •  AWS Region (default: us-east-1)
+    •  Optional: Profile Name (default: default)
+
+Your credentials will be securely stored and used to authenticate AWS CLI commands."
+
+    echo ""
+}
+
+# show instructions to obtain AWS credentials
+show_credentials_instructions() {
+    gum style \
+        --border rounded \
+        --border-foreground 240 \
+        --padding "1 2" \
+        --margin "1 0" \
+        --width 96 \
+        "$(gum style --foreground 141 --bold 'Creating AWS Access Keys')
+
+👉  To create AWS credentials:
+
+    1.  Log in to the AWS Management Console
+    2.  Go to IAM -> Users -> Your User
+    3.  Go to the 'Security credentials' tab
+    4.  Click 'Create access key'
+    5.  Select an appropriate use case
+    6.  Complete creation and save both the Access Key ID and Secret Access Key
+
+👉  Important Security Notes:
+    •  Store your keys securely
+    •  Do not share them with others
+    •  Consider using temporary credentials with a session token for enhanced security"
+
+    echo ""
+}
+
+# show completion message
+show_completion_message() {
+    local storage_method="$1"
+    local needs_wrapper="$2"
+    
+    local wrapper_status="will use a wrapper"
+    
+    if [[ "$needs_wrapper" == "false" ]]; then
+        wrapper_status="will authenticate directly"
+    fi
+    
+    gum style \
+        --border rounded \
+        --border-foreground 240 \
+        --padding "1 2" \
+        --margin "1 0" \
+        --width 96 \
+        "$(gum style --foreground 141 --bold 'F l o x  AWS Integration Complete!')
+
+👉  Setup completed successfully!
+
+👉  Configuration Details:
+    Storage method: $(gum style --foreground 212 "$storage_method")
+    AWS CLI: $wrapper_status
+
+👉  You can now use these and other AWS CLI commands:
+    $(gum style --foreground 212 'aws s3 ls')             List S3 buckets
+    $(gum style --foreground 212 'aws ec2 describe-instances')    List EC2 instances
+    $(gum style --foreground 212 'aws iam list-users')    List IAM users
+
+Your credentials are securely stored and will be automatically used for AWS authentication."
+
+    echo ""
+}
+
+# main setup function
+setup_aws_integration() {
+    # exit the shell if user opts not to continue
+    exit_shell() {
+        echo "Exiting the shell. Please run 'flox activate' to restart the wizard."
+        exit 1
+    }
+    
+    # check for existing credentials
+    if check_existing_credentials; then
+        return 0
+    fi
+    
+    # aws credentials setup wizard
+    clear
+    show_welcome_message
+    
+    # prompt to continue with the setup wizard
+    if ! gum confirm "Do you want to continue?" --default=true; then
+        exit_shell
+    fi
+    
+    echo "Type 'exit' or 'quit' at any prompt to exit the wizard."
+    
+    term_width=$(tput cols)
+    if [[ $term_width -gt 70 ]]; then
+        term_width=70
+    fi
+    
+    # check for skip command
+    check_skip() {
+        if [[ "$1" == "exit" || "$1" == "quit" ]]; then
+            echo "Skipping the wizard. You can run 'flox activate' again to restart."
+            return 1
+        fi
+        return 0
+    }
+    
+    # display credentials creation instructions
+    show_credentials_instructions
+    
+    # collect aws credentials
+    local aws_access_key_id=""
+    local aws_secret_access_key=""
+    local aws_session_token=""
+    local aws_region=""
+    local profile_name=""
+    
+    # collect access key ID
+    while true; do
+        aws_access_key_id=$(gum input --prompt "Enter your AWS Access Key ID: " --width "$term_width")
+        
+        if ! check_skip "$aws_access_key_id"; then
+            return 1
+        fi
+        
+        if [[ -z "$aws_access_key_id" ]]; then
+            echo "Access Key ID cannot be empty. Please try again."
+            continue
+        fi
+        
+        # simple validation that it's in the right format (starts with AKIA)
+        if [[ ! "$aws_access_key_id" =~ ^[A-Z0-9]{20}$ ]]; then
+            echo "Invalid Access Key ID format. It should be 20 characters long."
+            if ! gum confirm "Continue anyway?" --default=false; then
+                continue
+            fi
+        fi
+        
+        break
+    done
+    
+    # collect secret access key
+    while true; do
+        aws_secret_access_key=$(gum input --prompt "Enter your AWS Secret Access Key: " --password --width "$term_width")
+        
+        if ! check_skip "$aws_secret_access_key"; then
+            return 1
+        fi
+        
+        if [[ -z "$aws_secret_access_key" ]]; then
+            echo "Secret Access Key cannot be empty. Please try again."
+            continue
+        fi
+        
+        break
+    done
+    
+    # collect session token (optional)
+    if gum confirm "Do you want to provide a Session Token (for temporary credentials)?" --default=false; then
+        aws_session_token=$(gum input --prompt "Enter your AWS Session Token: " --password --width "$term_width")
+        
+        if ! check_skip "$aws_session_token"; then
+            return 1
+        fi
+    fi
+    
+    # collect AWS region
+    aws_region=$(gum input --prompt "Enter your AWS Region (default: us-east-1): " --value "us-east-1" --width "$term_width")
+    
+    if ! check_skip "$aws_region"; then
+        return 1
+    fi
+    
+    # collect profile name
+    if gum confirm "Do you want to specify a profile name?" --default=false; then
+        profile_name=$(gum input --prompt "Enter the profile name (default: default): " --value "default" --width "$term_width")
+        
+        if ! check_skip "$profile_name"; then
+            return 1
+        fi
+    else
+        profile_name="default"
+    fi
+    
+    echo "Validating credentials..."
+    if validate_aws_credentials "$aws_access_key_id" "$aws_secret_access_key" "$aws_session_token" "$aws_region"; then
+        echo "Credentials validation successful!"
+    else
+        echo "Warning: Could not validate credentials. This could be due to:"
+        echo "- Invalid credentials"
+        echo "- Insufficient permissions"
+        echo "- Network connectivity issues"
+        
+        if ! gum confirm "Do you want to continue anyway?" --default=false; then
+            echo "Setup cancelled. Please check your credentials and try again."
+            exit_shell
+        fi
+    fi
+    
+    # try to store in system keyring first
+    echo "Attempting to store credentials in system keyring..."
+    if store_aws_credentials_keyring "$aws_access_key_id" "$aws_secret_access_key" "$aws_session_token" "$aws_region" "$profile_name"; then
+        # Always create shell wrappers for AWS CLI
+        echo "Creating shell wrappers..."
+        create_shell_wrappers
+        
+        show_completion_message "system keyring" "true"
+        return 0
+    else
+        # fallback to encrypted file if keyring fails
+        echo "Unable to use system keyring/keychain."
+        
+        if gum confirm "Do you want to store your AWS credentials in an encrypted local file?" --default=true; then
+            echo "Storing credentials in encrypted file..."
+            store_aws_credentials_encrypted "$aws_access_key_id" "$aws_secret_access_key" "$aws_session_token" "$aws_region" "$profile_name"
+            
+            # create shell wrappers
+            echo "Creating shell wrappers..."
+            create_shell_wrappers
+            
+            show_completion_message "encrypted file" "true"
+            return 0
+        else
+            echo "No storage method selected. AWS integration setup cancelled."
+            exit_shell
+        fi
+    fi
+}
+
+# create cache directory if it doesn't exist
+mkdir -p "$(dirname "$CONFIG_FILE")"
+
+# call the main setup function
+setup_aws_integration
+'''
+
+## ... sourced by _your shell_ when you run 'flox activate'.
+## -------------------------------------------------------------------
+[profile]
+# common = '''
+#   gum style \
+#   --foreground 212 --border-foreground 212 --border double \
+#   --align center --width 50 --margin "1 2" --padding "2 4" \
+#     $INTRO_MESSAGE
+# '''
+## Shell specific profiles go here:
+bash = '''
+if [[ -f "${FLOX_ENV_CACHE:-$HOME/.cache/flox}/aws_config" ]]; then
+    source "${FLOX_ENV_CACHE:-$HOME/.cache/flox}/aws_config"
+    if [[ "$NEEDS_WRAPPER" == "true" && -f "${FLOX_ENV_CACHE:-$HOME/.cache/flox}/aws_wrapper.bash" ]]; then
+        source "${FLOX_ENV_CACHE:-$HOME/.cache/flox}/aws_wrapper.bash"
+    fi
+fi
+
+readme() {
+  if [[ "$1" == "--refresh" ]] || [ ! -s "$FLOX_ENV_PROJECT/README.md" ]; then
+    curl -sL "https://raw.githubusercontent.com/barstoolbluz/awscli/master/README.md" > "$FLOX_ENV_PROJECT/README.md" 2>/dev/null
+    echo "README updated from GitHub."
+  fi
+  bat --language markdown "$FLOX_ENV_PROJECT/README.md" 2>/dev/null
+}
+'''
+
+zsh = '''
+if [[ -f "${FLOX_ENV_CACHE:-$HOME/.cache/flox}/aws_config" ]]; then
+    source "${FLOX_ENV_CACHE:-$HOME/.cache/flox}/aws_config"
+    if [[ "$NEEDS_WRAPPER" == "true" && -f "${FLOX_ENV_CACHE:-$HOME/.cache/flox}/aws_wrapper.zsh" ]]; then
+        source "${FLOX_ENV_CACHE:-$HOME/.cache/flox}/aws_wrapper.zsh"
+    fi
+fi
+
+readme() {
+  if [[ "$1" == "--refresh" ]] || [ ! -s "$FLOX_ENV_PROJECT/README.md" ]; then
+    curl -sL "https://raw.githubusercontent.com/barstoolbluz/awscli/master/README.md" > "$FLOX_ENV_PROJECT/README.md" 2>/dev/null
+    echo "README updated from GitHub."
+  fi
+  bat --language markdown "$FLOX_ENV_PROJECT/README.md" 2>/dev/null
+}
+'''
+
+fish = '''
+if test -f "${FLOX_ENV_CACHE:-$HOME/.cache/flox}/aws_config"
+    set -l needs_wrapper (grep "NEEDS_WRAPPER" "${FLOX_ENV_CACHE:-$HOME/.cache/flox}/aws_config" | cut -d '=' -f2)
+    if test "$needs_wrapper" = "true"; and test -f "${FLOX_ENV_CACHE:-$HOME/.cache/flox}/aws_wrapper.fish"
+        source ${FLOX_ENV_CACHE:-$HOME/.cache/flox}/aws_wrapper.fish
+    end
+end
+
+function readme
+  if test "$argv[1]" = "--refresh"; or test ! -s "$FLOX_ENV_PROJECT/README.md"
+    curl -sL "https://raw.githubusercontent.com/barstoolbluz/awscli/master/README.md" > "$FLOX_ENV_PROJECT/README.md" 2>/dev/null
+    echo "README updated from GitHub."
+  end
+  bat --language markdown "$FLOX_ENV_PROJECT/README.md" 2>/dev/null
+end
+'''
+
+## Services ----------------------------------------------------------
+##  $ flox services start             <- Starts all services
+##  $ flox services status            <- Status of running services
+##  $ flox activate --start-services  <- Activates & starts all
+## -------------------------------------------------------------------
+[services]
+# myservice.command = "python3 -m http.server"
+
+
+## Other Environment Options -----------------------------------------
+[options]
+# Systems that environment is compatible with
+systems = [
+  "aarch64-darwin",
+  "aarch64-linux",
+  "x86_64-darwin",
+  "x86_64-linux",
+]
+# Uncomment to disable CUDA detection.
+# cuda-detection = false
