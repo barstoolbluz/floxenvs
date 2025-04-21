@@ -21,6 +21,10 @@ gum.pkg-path = "gum"
 bat.pkg-path = "bat"
 curl.pkg-path = "curl"
 openssl.pkg-path = "openssl"
+gnused.pkg-path = "gnused"
+gawk.pkg-path = "gawk"
+gnugrep.pkg-path = "gnugrep"
+coreutils.pkg-path = "coreutils"
 
 ## Environment Variables ---------------------------------------------
 ##  ... available for use in the activated environment

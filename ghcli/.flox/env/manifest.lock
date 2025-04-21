@@ -6,14 +6,26 @@
       "bat": {
         "pkg-path": "bat"
       },
+      "coreutils": {
+        "pkg-path": "coreutils"
+      },
       "curl": {
         "pkg-path": "curl"
+      },
+      "gawk": {
+        "pkg-path": "gawk"
       },
       "gh": {
         "pkg-path": "gh"
       },
       "git": {
         "pkg-path": "git"
+      },
+      "gnugrep": {
+        "pkg-path": "gnugrep"
+      },
+      "gnused": {
+        "pkg-path": "gnused"
       },
       "gum": {
         "pkg-path": "gum"
@@ -47,13 +59,13 @@
       "description": "Cat(1) clone with syntax highlighting and Git integration",
       "install_id": "bat",
       "license": "[ Apache-2.0, MIT ]",
-      "locked_url": "https://github.com/flox/nixpkgs?rev=b6eaf97c6960d97350c584de1b6dcff03c9daf42",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=a84ebe20c6bc2ecbcfb000a50776219f48d134cc",
       "name": "bat-0.25.0",
       "pname": "bat",
-      "rev": "b6eaf97c6960d97350c584de1b6dcff03c9daf42",
-      "rev_count": 769969,
-      "rev_date": "2025-03-18T09:06:34Z",
-      "scrape_date": "2025-03-20T01:09:44.326Z",
+      "rev": "a84ebe20c6bc2ecbcfb000a50776219f48d134cc",
+      "rev_count": 770807,
+      "rev_date": "2025-03-19T22:12:44Z",
+      "scrape_date": "2025-03-22T01:09:06.586805Z",
       "stabilities": [
         "unstable"
       ],
@@ -76,13 +88,13 @@
       "description": "Cat(1) clone with syntax highlighting and Git integration",
       "install_id": "bat",
       "license": "[ Apache-2.0, MIT ]",
-      "locked_url": "https://github.com/flox/nixpkgs?rev=b6eaf97c6960d97350c584de1b6dcff03c9daf42",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=a84ebe20c6bc2ecbcfb000a50776219f48d134cc",
       "name": "bat-0.25.0",
       "pname": "bat",
-      "rev": "b6eaf97c6960d97350c584de1b6dcff03c9daf42",
-      "rev_count": 769969,
-      "rev_date": "2025-03-18T09:06:34Z",
-      "scrape_date": "2025-03-20T01:28:04.129468Z",
+      "rev": "a84ebe20c6bc2ecbcfb000a50776219f48d134cc",
+      "rev_count": 770807,
+      "rev_date": "2025-03-19T22:12:44Z",
+      "scrape_date": "2025-03-22T01:25:54.368092Z",
       "stabilities": [
         "unstable"
       ],
@@ -105,13 +117,13 @@
       "description": "Cat(1) clone with syntax highlighting and Git integration",
       "install_id": "bat",
       "license": "[ Apache-2.0, MIT ]",
-      "locked_url": "https://github.com/flox/nixpkgs?rev=b6eaf97c6960d97350c584de1b6dcff03c9daf42",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=a84ebe20c6bc2ecbcfb000a50776219f48d134cc",
       "name": "bat-0.25.0",
       "pname": "bat",
-      "rev": "b6eaf97c6960d97350c584de1b6dcff03c9daf42",
-      "rev_count": 769969,
-      "rev_date": "2025-03-18T09:06:34Z",
-      "scrape_date": "2025-03-20T01:44:38.199237Z",
+      "rev": "a84ebe20c6bc2ecbcfb000a50776219f48d134cc",
+      "rev_count": 770807,
+      "rev_date": "2025-03-19T22:12:44Z",
+      "scrape_date": "2025-03-22T01:41:11.097113Z",
       "stabilities": [
         "unstable"
       ],
@@ -134,13 +146,13 @@
       "description": "Cat(1) clone with syntax highlighting and Git integration",
       "install_id": "bat",
       "license": "[ Apache-2.0, MIT ]",
-      "locked_url": "https://github.com/flox/nixpkgs?rev=b6eaf97c6960d97350c584de1b6dcff03c9daf42",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=a84ebe20c6bc2ecbcfb000a50776219f48d134cc",
       "name": "bat-0.25.0",
       "pname": "bat",
-      "rev": "b6eaf97c6960d97350c584de1b6dcff03c9daf42",
-      "rev_count": 769969,
-      "rev_date": "2025-03-18T09:06:34Z",
-      "scrape_date": "2025-03-20T02:04:09.835002Z",
+      "rev": "a84ebe20c6bc2ecbcfb000a50776219f48d134cc",
+      "rev_count": 770807,
+      "rev_date": "2025-03-19T22:12:44Z",
+      "scrape_date": "2025-03-22T01:59:11.338942Z",
       "stabilities": [
         "unstable"
       ],
@@ -157,19 +169,141 @@
       "priority": 5
     },
     {
+      "attr_path": "coreutils",
+      "broken": false,
+      "derivation": "/nix/store/sh06wr55kazqfpz0lc3r4kjp00wsj3ks-coreutils-9.6.drv",
+      "description": "GNU Core Utilities",
+      "install_id": "coreutils",
+      "license": "GPL-3.0-or-later",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=a84ebe20c6bc2ecbcfb000a50776219f48d134cc",
+      "name": "coreutils-9.6",
+      "pname": "coreutils",
+      "rev": "a84ebe20c6bc2ecbcfb000a50776219f48d134cc",
+      "rev_count": 770807,
+      "rev_date": "2025-03-19T22:12:44Z",
+      "scrape_date": "2025-03-22T01:09:06.813221Z",
+      "stabilities": [
+        "unstable"
+      ],
+      "unfree": false,
+      "version": "9.6",
+      "outputs_to_install": [
+        "out"
+      ],
+      "outputs": {
+        "info": "/nix/store/65m47sn1g6yv3g6ncmf0x4gsw5wl880g-coreutils-9.6-info",
+        "out": "/nix/store/a8lb0q3y83n0bn5s4gayyvfkgjn13ial-coreutils-9.6"
+      },
+      "system": "aarch64-darwin",
+      "group": "toplevel",
+      "priority": 5
+    },
+    {
+      "attr_path": "coreutils",
+      "broken": false,
+      "derivation": "/nix/store/pjyw4w3z7i6ansg34b72a8ykj3h9m9yv-coreutils-9.6.drv",
+      "description": "GNU Core Utilities",
+      "install_id": "coreutils",
+      "license": "GPL-3.0-or-later",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=a84ebe20c6bc2ecbcfb000a50776219f48d134cc",
+      "name": "coreutils-9.6",
+      "pname": "coreutils",
+      "rev": "a84ebe20c6bc2ecbcfb000a50776219f48d134cc",
+      "rev_count": 770807,
+      "rev_date": "2025-03-19T22:12:44Z",
+      "scrape_date": "2025-03-22T01:25:54.636334Z",
+      "stabilities": [
+        "unstable"
+      ],
+      "unfree": false,
+      "version": "9.6",
+      "outputs_to_install": [
+        "out"
+      ],
+      "outputs": {
+        "debug": "/nix/store/inl1iq5cgy3rxx22apxcjkrk1lq9scjz-coreutils-9.6-debug",
+        "info": "/nix/store/njr94ajn51h23kvwqsxpqf8n7q7qkrvi-coreutils-9.6-info",
+        "out": "/nix/store/c9cz24jydkkk3w1iqdy1vcd1886slp1z-coreutils-9.6"
+      },
+      "system": "aarch64-linux",
+      "group": "toplevel",
+      "priority": 5
+    },
+    {
+      "attr_path": "coreutils",
+      "broken": false,
+      "derivation": "/nix/store/acvn96kghjs069i9js8z1ykc0vd3g1qp-coreutils-9.6.drv",
+      "description": "GNU Core Utilities",
+      "install_id": "coreutils",
+      "license": "GPL-3.0-or-later",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=a84ebe20c6bc2ecbcfb000a50776219f48d134cc",
+      "name": "coreutils-9.6",
+      "pname": "coreutils",
+      "rev": "a84ebe20c6bc2ecbcfb000a50776219f48d134cc",
+      "rev_count": 770807,
+      "rev_date": "2025-03-19T22:12:44Z",
+      "scrape_date": "2025-03-22T01:41:11.276978Z",
+      "stabilities": [
+        "unstable"
+      ],
+      "unfree": false,
+      "version": "9.6",
+      "outputs_to_install": [
+        "out"
+      ],
+      "outputs": {
+        "info": "/nix/store/35b050qms17afzs3hspjcmmc5knvnlds-coreutils-9.6-info",
+        "out": "/nix/store/dylz6jypr1wcicja4d64gsgl5ncqwl5y-coreutils-9.6"
+      },
+      "system": "x86_64-darwin",
+      "group": "toplevel",
+      "priority": 5
+    },
+    {
+      "attr_path": "coreutils",
+      "broken": false,
+      "derivation": "/nix/store/y0kvispp5rspdq7w1krdn71crwkdmxv5-coreutils-9.6.drv",
+      "description": "GNU Core Utilities",
+      "install_id": "coreutils",
+      "license": "GPL-3.0-or-later",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=a84ebe20c6bc2ecbcfb000a50776219f48d134cc",
+      "name": "coreutils-9.6",
+      "pname": "coreutils",
+      "rev": "a84ebe20c6bc2ecbcfb000a50776219f48d134cc",
+      "rev_count": 770807,
+      "rev_date": "2025-03-19T22:12:44Z",
+      "scrape_date": "2025-03-22T01:59:11.638466Z",
+      "stabilities": [
+        "unstable"
+      ],
+      "unfree": false,
+      "version": "9.6",
+      "outputs_to_install": [
+        "out"
+      ],
+      "outputs": {
+        "debug": "/nix/store/lcvs98533i7plnqgra5v9y7ar93g571n-coreutils-9.6-debug",
+        "info": "/nix/store/drpnpibm22qiqby1y9cqngp100hlzd25-coreutils-9.6-info",
+        "out": "/nix/store/vz67zaqyfln2jcqwar682kdlrxfx9vq1-coreutils-9.6"
+      },
+      "system": "x86_64-linux",
+      "group": "toplevel",
+      "priority": 5
+    },
+    {
       "attr_path": "curl",
       "broken": false,
       "derivation": "/nix/store/pgvbsfq3h5143bvdlhwm73dfniqqdykf-curl-8.12.1.drv",
       "description": "Command line tool for transferring files with URL syntax",
       "install_id": "curl",
       "license": "curl",
-      "locked_url": "https://github.com/flox/nixpkgs?rev=b6eaf97c6960d97350c584de1b6dcff03c9daf42",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=a84ebe20c6bc2ecbcfb000a50776219f48d134cc",
       "name": "curl-8.12.1",
       "pname": "curl",
-      "rev": "b6eaf97c6960d97350c584de1b6dcff03c9daf42",
-      "rev_count": 769969,
-      "rev_date": "2025-03-18T09:06:34Z",
-      "scrape_date": "2025-03-20T01:09:44.541824Z",
+      "rev": "a84ebe20c6bc2ecbcfb000a50776219f48d134cc",
+      "rev_count": 770807,
+      "rev_date": "2025-03-19T22:12:44Z",
+      "scrape_date": "2025-03-22T01:09:06.840412Z",
       "stabilities": [
         "unstable"
       ],
@@ -197,13 +331,13 @@
       "description": "Command line tool for transferring files with URL syntax",
       "install_id": "curl",
       "license": "curl",
-      "locked_url": "https://github.com/flox/nixpkgs?rev=b6eaf97c6960d97350c584de1b6dcff03c9daf42",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=a84ebe20c6bc2ecbcfb000a50776219f48d134cc",
       "name": "curl-8.12.1",
       "pname": "curl",
-      "rev": "b6eaf97c6960d97350c584de1b6dcff03c9daf42",
-      "rev_count": 769969,
-      "rev_date": "2025-03-18T09:06:34Z",
-      "scrape_date": "2025-03-20T01:28:04.492782Z",
+      "rev": "a84ebe20c6bc2ecbcfb000a50776219f48d134cc",
+      "rev_count": 770807,
+      "rev_date": "2025-03-19T22:12:44Z",
+      "scrape_date": "2025-03-22T01:25:54.695803Z",
       "stabilities": [
         "unstable"
       ],
@@ -232,13 +366,13 @@
       "description": "Command line tool for transferring files with URL syntax",
       "install_id": "curl",
       "license": "curl",
-      "locked_url": "https://github.com/flox/nixpkgs?rev=b6eaf97c6960d97350c584de1b6dcff03c9daf42",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=a84ebe20c6bc2ecbcfb000a50776219f48d134cc",
       "name": "curl-8.12.1",
       "pname": "curl",
-      "rev": "b6eaf97c6960d97350c584de1b6dcff03c9daf42",
-      "rev_count": 769969,
-      "rev_date": "2025-03-18T09:06:34Z",
-      "scrape_date": "2025-03-20T01:44:38.404911Z",
+      "rev": "a84ebe20c6bc2ecbcfb000a50776219f48d134cc",
+      "rev_count": 770807,
+      "rev_date": "2025-03-19T22:12:44Z",
+      "scrape_date": "2025-03-22T01:41:11.301860Z",
       "stabilities": [
         "unstable"
       ],
@@ -266,13 +400,13 @@
       "description": "Command line tool for transferring files with URL syntax",
       "install_id": "curl",
       "license": "curl",
-      "locked_url": "https://github.com/flox/nixpkgs?rev=b6eaf97c6960d97350c584de1b6dcff03c9daf42",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=a84ebe20c6bc2ecbcfb000a50776219f48d134cc",
       "name": "curl-8.12.1",
       "pname": "curl",
-      "rev": "b6eaf97c6960d97350c584de1b6dcff03c9daf42",
-      "rev_count": 769969,
-      "rev_date": "2025-03-18T09:06:34Z",
-      "scrape_date": "2025-03-20T02:04:10.200756Z",
+      "rev": "a84ebe20c6bc2ecbcfb000a50776219f48d134cc",
+      "rev_count": 770807,
+      "rev_date": "2025-03-19T22:12:44Z",
+      "scrape_date": "2025-03-22T01:59:11.726806Z",
       "stabilities": [
         "unstable"
       ],
@@ -295,19 +429,147 @@
       "priority": 5
     },
     {
+      "attr_path": "gawk",
+      "broken": false,
+      "derivation": "/nix/store/xpv6v7jqnljlxq7mrkw1667czf2cll57-gawk-5.3.1.drv",
+      "description": "GNU implementation of the Awk programming language",
+      "install_id": "gawk",
+      "license": "GPL-3.0-or-later",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=a84ebe20c6bc2ecbcfb000a50776219f48d134cc",
+      "name": "gawk-5.3.1",
+      "pname": "gawk",
+      "rev": "a84ebe20c6bc2ecbcfb000a50776219f48d134cc",
+      "rev_count": 770807,
+      "rev_date": "2025-03-19T22:12:44Z",
+      "scrape_date": "2025-03-22T01:09:07.140086Z",
+      "stabilities": [
+        "unstable"
+      ],
+      "unfree": false,
+      "version": "5.3.1",
+      "outputs_to_install": [
+        "man",
+        "out"
+      ],
+      "outputs": {
+        "info": "/nix/store/9qaddqv849nnvgx1b95n1wk2nl5dm9md-gawk-5.3.1-info",
+        "man": "/nix/store/vmf1kiaib0lr9a3lcrf30wzzk5kdxz47-gawk-5.3.1-man",
+        "out": "/nix/store/cjrwi8jyb44s314vgxv3136kc2jal255-gawk-5.3.1"
+      },
+      "system": "aarch64-darwin",
+      "group": "toplevel",
+      "priority": 5
+    },
+    {
+      "attr_path": "gawk",
+      "broken": false,
+      "derivation": "/nix/store/66brnwc5v8533h1x2q4dh6sb1lks9s39-gawk-5.3.1.drv",
+      "description": "GNU implementation of the Awk programming language",
+      "install_id": "gawk",
+      "license": "GPL-3.0-or-later",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=a84ebe20c6bc2ecbcfb000a50776219f48d134cc",
+      "name": "gawk-5.3.1",
+      "pname": "gawk",
+      "rev": "a84ebe20c6bc2ecbcfb000a50776219f48d134cc",
+      "rev_count": 770807,
+      "rev_date": "2025-03-19T22:12:44Z",
+      "scrape_date": "2025-03-22T01:25:55.281090Z",
+      "stabilities": [
+        "unstable"
+      ],
+      "unfree": false,
+      "version": "5.3.1",
+      "outputs_to_install": [
+        "man",
+        "out"
+      ],
+      "outputs": {
+        "info": "/nix/store/l1qvv84mza5mgb9njw1bqyx8h26q1l17-gawk-5.3.1-info",
+        "man": "/nix/store/fl0iai1iwr5g8d02hqnl308zrhkxf34d-gawk-5.3.1-man",
+        "out": "/nix/store/lv90ixb2c6569mfi0lsx34zwjqw1gr1v-gawk-5.3.1"
+      },
+      "system": "aarch64-linux",
+      "group": "toplevel",
+      "priority": 5
+    },
+    {
+      "attr_path": "gawk",
+      "broken": false,
+      "derivation": "/nix/store/7arzvxlb4vka37pqzxiy6yfjv2rszx3d-gawk-5.3.1.drv",
+      "description": "GNU implementation of the Awk programming language",
+      "install_id": "gawk",
+      "license": "GPL-3.0-or-later",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=a84ebe20c6bc2ecbcfb000a50776219f48d134cc",
+      "name": "gawk-5.3.1",
+      "pname": "gawk",
+      "rev": "a84ebe20c6bc2ecbcfb000a50776219f48d134cc",
+      "rev_count": 770807,
+      "rev_date": "2025-03-19T22:12:44Z",
+      "scrape_date": "2025-03-22T01:41:11.594558Z",
+      "stabilities": [
+        "unstable"
+      ],
+      "unfree": false,
+      "version": "5.3.1",
+      "outputs_to_install": [
+        "man",
+        "out"
+      ],
+      "outputs": {
+        "info": "/nix/store/birkp7pmvlk9kwyyjcyxyxf60pmkrac5-gawk-5.3.1-info",
+        "man": "/nix/store/w0riasfpqjjq4d11ldsflpzlvvvqq8p3-gawk-5.3.1-man",
+        "out": "/nix/store/p1csz6q6kl4ip06kxbypaf14i4xjcbnr-gawk-5.3.1"
+      },
+      "system": "x86_64-darwin",
+      "group": "toplevel",
+      "priority": 5
+    },
+    {
+      "attr_path": "gawk",
+      "broken": false,
+      "derivation": "/nix/store/5gbvhkp4pyv9djxn2k54jvak75cykg1p-gawk-5.3.1.drv",
+      "description": "GNU implementation of the Awk programming language",
+      "install_id": "gawk",
+      "license": "GPL-3.0-or-later",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=a84ebe20c6bc2ecbcfb000a50776219f48d134cc",
+      "name": "gawk-5.3.1",
+      "pname": "gawk",
+      "rev": "a84ebe20c6bc2ecbcfb000a50776219f48d134cc",
+      "rev_count": 770807,
+      "rev_date": "2025-03-19T22:12:44Z",
+      "scrape_date": "2025-03-22T01:59:12.343386Z",
+      "stabilities": [
+        "unstable"
+      ],
+      "unfree": false,
+      "version": "5.3.1",
+      "outputs_to_install": [
+        "man",
+        "out"
+      ],
+      "outputs": {
+        "info": "/nix/store/wfkb3i5zywf5rl91ajm5g3a74sccxjxf-gawk-5.3.1-info",
+        "man": "/nix/store/wfqn707y78gyl58s31dx1gf5c92yxb08-gawk-5.3.1-man",
+        "out": "/nix/store/kz9cfpxf08fdsgxgh6zp1k1y5npsnjpr-gawk-5.3.1"
+      },
+      "system": "x86_64-linux",
+      "group": "toplevel",
+      "priority": 5
+    },
+    {
       "attr_path": "gh",
       "broken": false,
       "derivation": "/nix/store/phav4p4vyw976n24sw5xmwf2vcczchfb-gh-2.68.1.drv",
       "description": "GitHub CLI tool",
       "install_id": "gh",
       "license": "MIT",
-      "locked_url": "https://github.com/flox/nixpkgs?rev=b6eaf97c6960d97350c584de1b6dcff03c9daf42",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=a84ebe20c6bc2ecbcfb000a50776219f48d134cc",
       "name": "gh-2.68.1",
       "pname": "gh",
-      "rev": "b6eaf97c6960d97350c584de1b6dcff03c9daf42",
-      "rev_count": 769969,
-      "rev_date": "2025-03-18T09:06:34Z",
-      "scrape_date": "2025-03-20T01:09:44.865134Z",
+      "rev": "a84ebe20c6bc2ecbcfb000a50776219f48d134cc",
+      "rev_count": 770807,
+      "rev_date": "2025-03-19T22:12:44Z",
+      "scrape_date": "2025-03-22T01:09:07.180201Z",
       "stabilities": [
         "unstable"
       ],
@@ -330,13 +592,13 @@
       "description": "GitHub CLI tool",
       "install_id": "gh",
       "license": "MIT",
-      "locked_url": "https://github.com/flox/nixpkgs?rev=b6eaf97c6960d97350c584de1b6dcff03c9daf42",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=a84ebe20c6bc2ecbcfb000a50776219f48d134cc",
       "name": "gh-2.68.1",
       "pname": "gh",
-      "rev": "b6eaf97c6960d97350c584de1b6dcff03c9daf42",
-      "rev_count": 769969,
-      "rev_date": "2025-03-18T09:06:34Z",
-      "scrape_date": "2025-03-20T01:28:05.102489Z",
+      "rev": "a84ebe20c6bc2ecbcfb000a50776219f48d134cc",
+      "rev_count": 770807,
+      "rev_date": "2025-03-19T22:12:44Z",
+      "scrape_date": "2025-03-22T01:25:55.338786Z",
       "stabilities": [
         "unstable"
       ],
@@ -359,13 +621,13 @@
       "description": "GitHub CLI tool",
       "install_id": "gh",
       "license": "MIT",
-      "locked_url": "https://github.com/flox/nixpkgs?rev=b6eaf97c6960d97350c584de1b6dcff03c9daf42",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=a84ebe20c6bc2ecbcfb000a50776219f48d134cc",
       "name": "gh-2.68.1",
       "pname": "gh",
-      "rev": "b6eaf97c6960d97350c584de1b6dcff03c9daf42",
-      "rev_count": 769969,
-      "rev_date": "2025-03-18T09:06:34Z",
-      "scrape_date": "2025-03-20T01:44:38.733949Z",
+      "rev": "a84ebe20c6bc2ecbcfb000a50776219f48d134cc",
+      "rev_count": 770807,
+      "rev_date": "2025-03-19T22:12:44Z",
+      "scrape_date": "2025-03-22T01:41:11.631074Z",
       "stabilities": [
         "unstable"
       ],
@@ -388,13 +650,13 @@
       "description": "GitHub CLI tool",
       "install_id": "gh",
       "license": "MIT",
-      "locked_url": "https://github.com/flox/nixpkgs?rev=b6eaf97c6960d97350c584de1b6dcff03c9daf42",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=a84ebe20c6bc2ecbcfb000a50776219f48d134cc",
       "name": "gh-2.68.1",
       "pname": "gh",
-      "rev": "b6eaf97c6960d97350c584de1b6dcff03c9daf42",
-      "rev_count": 769969,
-      "rev_date": "2025-03-18T09:06:34Z",
-      "scrape_date": "2025-03-20T02:04:10.878797Z",
+      "rev": "a84ebe20c6bc2ecbcfb000a50776219f48d134cc",
+      "rev_count": 770807,
+      "rev_date": "2025-03-19T22:12:44Z",
+      "scrape_date": "2025-03-22T01:59:12.406818Z",
       "stabilities": [
         "unstable"
       ],
@@ -417,13 +679,13 @@
       "description": "Distributed version control system",
       "install_id": "git",
       "license": "GPL-2.0",
-      "locked_url": "https://github.com/flox/nixpkgs?rev=b6eaf97c6960d97350c584de1b6dcff03c9daf42",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=a84ebe20c6bc2ecbcfb000a50776219f48d134cc",
       "name": "git-2.48.1",
       "pname": "git",
-      "rev": "b6eaf97c6960d97350c584de1b6dcff03c9daf42",
-      "rev_count": 769969,
-      "rev_date": "2025-03-18T09:06:34Z",
-      "scrape_date": "2025-03-20T01:09:44.883262Z",
+      "rev": "a84ebe20c6bc2ecbcfb000a50776219f48d134cc",
+      "rev_count": 770807,
+      "rev_date": "2025-03-19T22:12:44Z",
+      "scrape_date": "2025-03-22T01:09:07.198496Z",
       "stabilities": [
         "unstable"
       ],
@@ -447,13 +709,13 @@
       "description": "Distributed version control system",
       "install_id": "git",
       "license": "GPL-2.0",
-      "locked_url": "https://github.com/flox/nixpkgs?rev=b6eaf97c6960d97350c584de1b6dcff03c9daf42",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=a84ebe20c6bc2ecbcfb000a50776219f48d134cc",
       "name": "git-2.48.1",
       "pname": "git",
-      "rev": "b6eaf97c6960d97350c584de1b6dcff03c9daf42",
-      "rev_count": 769969,
-      "rev_date": "2025-03-18T09:06:34Z",
-      "scrape_date": "2025-03-20T01:28:05.128774Z",
+      "rev": "a84ebe20c6bc2ecbcfb000a50776219f48d134cc",
+      "rev_count": 770807,
+      "rev_date": "2025-03-19T22:12:44Z",
+      "scrape_date": "2025-03-22T01:25:55.365092Z",
       "stabilities": [
         "unstable"
       ],
@@ -478,13 +740,13 @@
       "description": "Distributed version control system",
       "install_id": "git",
       "license": "GPL-2.0",
-      "locked_url": "https://github.com/flox/nixpkgs?rev=b6eaf97c6960d97350c584de1b6dcff03c9daf42",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=a84ebe20c6bc2ecbcfb000a50776219f48d134cc",
       "name": "git-2.48.1",
       "pname": "git",
-      "rev": "b6eaf97c6960d97350c584de1b6dcff03c9daf42",
-      "rev_count": 769969,
-      "rev_date": "2025-03-18T09:06:34Z",
-      "scrape_date": "2025-03-20T01:44:38.752942Z",
+      "rev": "a84ebe20c6bc2ecbcfb000a50776219f48d134cc",
+      "rev_count": 770807,
+      "rev_date": "2025-03-19T22:12:44Z",
+      "scrape_date": "2025-03-22T01:41:11.650027Z",
       "stabilities": [
         "unstable"
       ],
@@ -508,13 +770,13 @@
       "description": "Distributed version control system",
       "install_id": "git",
       "license": "GPL-2.0",
-      "locked_url": "https://github.com/flox/nixpkgs?rev=b6eaf97c6960d97350c584de1b6dcff03c9daf42",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=a84ebe20c6bc2ecbcfb000a50776219f48d134cc",
       "name": "git-2.48.1",
       "pname": "git",
-      "rev": "b6eaf97c6960d97350c584de1b6dcff03c9daf42",
-      "rev_count": 769969,
-      "rev_date": "2025-03-18T09:06:34Z",
-      "scrape_date": "2025-03-20T02:04:10.907467Z",
+      "rev": "a84ebe20c6bc2ecbcfb000a50776219f48d134cc",
+      "rev_count": 770807,
+      "rev_date": "2025-03-19T22:12:44Z",
+      "scrape_date": "2025-03-22T01:59:12.435500Z",
       "stabilities": [
         "unstable"
       ],
@@ -533,19 +795,259 @@
       "priority": 5
     },
     {
+      "attr_path": "gnugrep",
+      "broken": false,
+      "derivation": "/nix/store/mhklpmk30b9ydzsn5qhhll1x62pj3l8q-gnugrep-3.11.drv",
+      "description": "GNU implementation of the Unix grep command",
+      "install_id": "gnugrep",
+      "license": "GPL-3.0-or-later",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=a84ebe20c6bc2ecbcfb000a50776219f48d134cc",
+      "name": "gnugrep-3.11",
+      "pname": "gnugrep",
+      "rev": "a84ebe20c6bc2ecbcfb000a50776219f48d134cc",
+      "rev_count": 770807,
+      "rev_date": "2025-03-19T22:12:44Z",
+      "scrape_date": "2025-03-22T01:09:07.262752Z",
+      "stabilities": [
+        "unstable"
+      ],
+      "unfree": false,
+      "version": "3.11",
+      "outputs_to_install": [
+        "out"
+      ],
+      "outputs": {
+        "info": "/nix/store/n402l2x9sii312v7qa3dbyvbaqvqwd7f-gnugrep-3.11-info",
+        "out": "/nix/store/rc5aqp4axf0qdpr45w3m4mmambk230lk-gnugrep-3.11"
+      },
+      "system": "aarch64-darwin",
+      "group": "toplevel",
+      "priority": 5
+    },
+    {
+      "attr_path": "gnugrep",
+      "broken": false,
+      "derivation": "/nix/store/kzxbg74cvmglbhjhlnj49vsd0p4c63w9-gnugrep-3.11.drv",
+      "description": "GNU implementation of the Unix grep command",
+      "install_id": "gnugrep",
+      "license": "GPL-3.0-or-later",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=a84ebe20c6bc2ecbcfb000a50776219f48d134cc",
+      "name": "gnugrep-3.11",
+      "pname": "gnugrep",
+      "rev": "a84ebe20c6bc2ecbcfb000a50776219f48d134cc",
+      "rev_count": 770807,
+      "rev_date": "2025-03-19T22:12:44Z",
+      "scrape_date": "2025-03-22T01:25:55.704026Z",
+      "stabilities": [
+        "unstable"
+      ],
+      "unfree": false,
+      "version": "3.11",
+      "outputs_to_install": [
+        "out"
+      ],
+      "outputs": {
+        "info": "/nix/store/bhbdcysaf647qmagi925rw2hmxm5j6wx-gnugrep-3.11-info",
+        "out": "/nix/store/mablxd907kzvrcz7xqgaj5494c3zvm36-gnugrep-3.11"
+      },
+      "system": "aarch64-linux",
+      "group": "toplevel",
+      "priority": 5
+    },
+    {
+      "attr_path": "gnugrep",
+      "broken": false,
+      "derivation": "/nix/store/8amsbjjvkxs14lnscbq409iav4583d24-gnugrep-3.11.drv",
+      "description": "GNU implementation of the Unix grep command",
+      "install_id": "gnugrep",
+      "license": "GPL-3.0-or-later",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=a84ebe20c6bc2ecbcfb000a50776219f48d134cc",
+      "name": "gnugrep-3.11",
+      "pname": "gnugrep",
+      "rev": "a84ebe20c6bc2ecbcfb000a50776219f48d134cc",
+      "rev_count": 770807,
+      "rev_date": "2025-03-19T22:12:44Z",
+      "scrape_date": "2025-03-22T01:41:11.738204Z",
+      "stabilities": [
+        "unstable"
+      ],
+      "unfree": false,
+      "version": "3.11",
+      "outputs_to_install": [
+        "out"
+      ],
+      "outputs": {
+        "info": "/nix/store/q07aryyr1qfqfzr8985g3lzwq5vbhg8d-gnugrep-3.11-info",
+        "out": "/nix/store/my5dwk1fymfjb1s0qr37p9s1sv1zxgzg-gnugrep-3.11"
+      },
+      "system": "x86_64-darwin",
+      "group": "toplevel",
+      "priority": 5
+    },
+    {
+      "attr_path": "gnugrep",
+      "broken": false,
+      "derivation": "/nix/store/v1yahd8zbwh5yfzzl02rs397jcfchxj2-gnugrep-3.11.drv",
+      "description": "GNU implementation of the Unix grep command",
+      "install_id": "gnugrep",
+      "license": "GPL-3.0-or-later",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=a84ebe20c6bc2ecbcfb000a50776219f48d134cc",
+      "name": "gnugrep-3.11",
+      "pname": "gnugrep",
+      "rev": "a84ebe20c6bc2ecbcfb000a50776219f48d134cc",
+      "rev_count": 770807,
+      "rev_date": "2025-03-19T22:12:44Z",
+      "scrape_date": "2025-03-22T01:59:12.820580Z",
+      "stabilities": [
+        "unstable"
+      ],
+      "unfree": false,
+      "version": "3.11",
+      "outputs_to_install": [
+        "out"
+      ],
+      "outputs": {
+        "info": "/nix/store/yj694hy4qcdly6lxbn9mw68yry3nd16r-gnugrep-3.11-info",
+        "out": "/nix/store/h3xhfhg0vv3k3hvkcwkmdg99r4zm9mcl-gnugrep-3.11"
+      },
+      "system": "x86_64-linux",
+      "group": "toplevel",
+      "priority": 5
+    },
+    {
+      "attr_path": "gnused",
+      "broken": false,
+      "derivation": "/nix/store/yrlfc3bi99linimlfnsbzf2g9kr0kbbg-gnused-4.9.drv",
+      "description": "GNU sed, a batch stream editor",
+      "install_id": "gnused",
+      "license": "GPL-3.0-or-later",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=a84ebe20c6bc2ecbcfb000a50776219f48d134cc",
+      "name": "gnused-4.9",
+      "pname": "gnused",
+      "rev": "a84ebe20c6bc2ecbcfb000a50776219f48d134cc",
+      "rev_count": 770807,
+      "rev_date": "2025-03-19T22:12:44Z",
+      "scrape_date": "2025-03-22T01:09:07.267138Z",
+      "stabilities": [
+        "unstable"
+      ],
+      "unfree": false,
+      "version": "4.9",
+      "outputs_to_install": [
+        "out"
+      ],
+      "outputs": {
+        "info": "/nix/store/zqjnjbaxb451kh68yh08gslxxq90lp4i-gnused-4.9-info",
+        "out": "/nix/store/l36ajfp1f0bkj85b5z9bd58nbavp6pjp-gnused-4.9"
+      },
+      "system": "aarch64-darwin",
+      "group": "toplevel",
+      "priority": 5
+    },
+    {
+      "attr_path": "gnused",
+      "broken": false,
+      "derivation": "/nix/store/43lb7388cm58mgpvr5p6x7n7wr3q8npl-gnused-4.9.drv",
+      "description": "GNU sed, a batch stream editor",
+      "install_id": "gnused",
+      "license": "GPL-3.0-or-later",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=a84ebe20c6bc2ecbcfb000a50776219f48d134cc",
+      "name": "gnused-4.9",
+      "pname": "gnused",
+      "rev": "a84ebe20c6bc2ecbcfb000a50776219f48d134cc",
+      "rev_count": 770807,
+      "rev_date": "2025-03-19T22:12:44Z",
+      "scrape_date": "2025-03-22T01:25:55.711499Z",
+      "stabilities": [
+        "unstable"
+      ],
+      "unfree": false,
+      "version": "4.9",
+      "outputs_to_install": [
+        "out"
+      ],
+      "outputs": {
+        "info": "/nix/store/rdkw8cmcwr3gqiqwgayp27bhx893i4nn-gnused-4.9-info",
+        "out": "/nix/store/kmfzghfpqmfl98mgx802994q58vys2bf-gnused-4.9"
+      },
+      "system": "aarch64-linux",
+      "group": "toplevel",
+      "priority": 5
+    },
+    {
+      "attr_path": "gnused",
+      "broken": false,
+      "derivation": "/nix/store/7nxd6ps40qazchpgzq2pg7lm0ck76zra-gnused-4.9.drv",
+      "description": "GNU sed, a batch stream editor",
+      "install_id": "gnused",
+      "license": "GPL-3.0-or-later",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=a84ebe20c6bc2ecbcfb000a50776219f48d134cc",
+      "name": "gnused-4.9",
+      "pname": "gnused",
+      "rev": "a84ebe20c6bc2ecbcfb000a50776219f48d134cc",
+      "rev_count": 770807,
+      "rev_date": "2025-03-19T22:12:44Z",
+      "scrape_date": "2025-03-22T01:41:11.742710Z",
+      "stabilities": [
+        "unstable"
+      ],
+      "unfree": false,
+      "version": "4.9",
+      "outputs_to_install": [
+        "out"
+      ],
+      "outputs": {
+        "info": "/nix/store/rjs0jvmajngahs5v91c23065jj5n0icn-gnused-4.9-info",
+        "out": "/nix/store/7142bhav585h987gizv30f3qjbhan0wn-gnused-4.9"
+      },
+      "system": "x86_64-darwin",
+      "group": "toplevel",
+      "priority": 5
+    },
+    {
+      "attr_path": "gnused",
+      "broken": false,
+      "derivation": "/nix/store/3gnhnw5ahybj9xbfkkq96bk6gmd958hl-gnused-4.9.drv",
+      "description": "GNU sed, a batch stream editor",
+      "install_id": "gnused",
+      "license": "GPL-3.0-or-later",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=a84ebe20c6bc2ecbcfb000a50776219f48d134cc",
+      "name": "gnused-4.9",
+      "pname": "gnused",
+      "rev": "a84ebe20c6bc2ecbcfb000a50776219f48d134cc",
+      "rev_count": 770807,
+      "rev_date": "2025-03-19T22:12:44Z",
+      "scrape_date": "2025-03-22T01:59:12.828475Z",
+      "stabilities": [
+        "unstable"
+      ],
+      "unfree": false,
+      "version": "4.9",
+      "outputs_to_install": [
+        "out"
+      ],
+      "outputs": {
+        "info": "/nix/store/nhsypq4v5gs3c92qrjwkgkx239m68nf4-gnused-4.9-info",
+        "out": "/nix/store/l97jblhqk9ga2dl01ysd3wf51mwqcd6s-gnused-4.9"
+      },
+      "system": "x86_64-linux",
+      "group": "toplevel",
+      "priority": 5
+    },
+    {
       "attr_path": "gum",
       "broken": false,
       "derivation": "/nix/store/rs3gh60pcnvw9gfmgflinhqmyl8klwp5-gum-0.16.0.drv",
       "description": "Tasty Bubble Gum for your shell",
       "install_id": "gum",
       "license": "MIT",
-      "locked_url": "https://github.com/flox/nixpkgs?rev=b6eaf97c6960d97350c584de1b6dcff03c9daf42",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=a84ebe20c6bc2ecbcfb000a50776219f48d134cc",
       "name": "gum-0.16.0",
       "pname": "gum",
-      "rev": "b6eaf97c6960d97350c584de1b6dcff03c9daf42",
-      "rev_count": 769969,
-      "rev_date": "2025-03-18T09:06:34Z",
-      "scrape_date": "2025-03-20T01:09:45.087690Z",
+      "rev": "a84ebe20c6bc2ecbcfb000a50776219f48d134cc",
+      "rev_count": 770807,
+      "rev_date": "2025-03-19T22:12:44Z",
+      "scrape_date": "2025-03-22T01:09:07.386038Z",
       "stabilities": [
         "unstable"
       ],
@@ -568,13 +1070,13 @@
       "description": "Tasty Bubble Gum for your shell",
       "install_id": "gum",
       "license": "MIT",
-      "locked_url": "https://github.com/flox/nixpkgs?rev=b6eaf97c6960d97350c584de1b6dcff03c9daf42",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=a84ebe20c6bc2ecbcfb000a50776219f48d134cc",
       "name": "gum-0.16.0",
       "pname": "gum",
-      "rev": "b6eaf97c6960d97350c584de1b6dcff03c9daf42",
-      "rev_count": 769969,
-      "rev_date": "2025-03-18T09:06:34Z",
-      "scrape_date": "2025-03-20T01:28:05.764040Z",
+      "rev": "a84ebe20c6bc2ecbcfb000a50776219f48d134cc",
+      "rev_count": 770807,
+      "rev_date": "2025-03-19T22:12:44Z",
+      "scrape_date": "2025-03-22T01:25:55.926011Z",
       "stabilities": [
         "unstable"
       ],
@@ -597,13 +1099,13 @@
       "description": "Tasty Bubble Gum for your shell",
       "install_id": "gum",
       "license": "MIT",
-      "locked_url": "https://github.com/flox/nixpkgs?rev=b6eaf97c6960d97350c584de1b6dcff03c9daf42",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=a84ebe20c6bc2ecbcfb000a50776219f48d134cc",
       "name": "gum-0.16.0",
       "pname": "gum",
-      "rev": "b6eaf97c6960d97350c584de1b6dcff03c9daf42",
-      "rev_count": 769969,
-      "rev_date": "2025-03-18T09:06:34Z",
-      "scrape_date": "2025-03-20T01:44:38.963224Z",
+      "rev": "a84ebe20c6bc2ecbcfb000a50776219f48d134cc",
+      "rev_count": 770807,
+      "rev_date": "2025-03-19T22:12:44Z",
+      "scrape_date": "2025-03-22T01:41:11.860263Z",
       "stabilities": [
         "unstable"
       ],
@@ -626,13 +1128,13 @@
       "description": "Tasty Bubble Gum for your shell",
       "install_id": "gum",
       "license": "MIT",
-      "locked_url": "https://github.com/flox/nixpkgs?rev=b6eaf97c6960d97350c584de1b6dcff03c9daf42",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=a84ebe20c6bc2ecbcfb000a50776219f48d134cc",
       "name": "gum-0.16.0",
       "pname": "gum",
-      "rev": "b6eaf97c6960d97350c584de1b6dcff03c9daf42",
-      "rev_count": 769969,
-      "rev_date": "2025-03-18T09:06:34Z",
-      "scrape_date": "2025-03-20T02:04:11.534944Z",
+      "rev": "a84ebe20c6bc2ecbcfb000a50776219f48d134cc",
+      "rev_count": 770807,
+      "rev_date": "2025-03-19T22:12:44Z",
+      "scrape_date": "2025-03-22T01:59:13.062040Z",
       "stabilities": [
         "unstable"
       ],
@@ -655,13 +1157,13 @@
       "description": "Cryptographic library that implements the SSL and TLS protocols",
       "install_id": "openssl",
       "license": "Apache-2.0",
-      "locked_url": "https://github.com/flox/nixpkgs?rev=b6eaf97c6960d97350c584de1b6dcff03c9daf42",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=a84ebe20c6bc2ecbcfb000a50776219f48d134cc",
       "name": "openssl-3.4.1",
       "pname": "openssl",
-      "rev": "b6eaf97c6960d97350c584de1b6dcff03c9daf42",
-      "rev_count": 769969,
-      "rev_date": "2025-03-18T09:06:34Z",
-      "scrape_date": "2025-03-20T01:09:47.697852Z",
+      "rev": "a84ebe20c6bc2ecbcfb000a50776219f48d134cc",
+      "rev_count": 770807,
+      "rev_date": "2025-03-19T22:12:44Z",
+      "scrape_date": "2025-03-22T01:09:10.053144Z",
       "stabilities": [
         "unstable"
       ],
@@ -689,13 +1191,13 @@
       "description": "Cryptographic library that implements the SSL and TLS protocols",
       "install_id": "openssl",
       "license": "Apache-2.0",
-      "locked_url": "https://github.com/flox/nixpkgs?rev=b6eaf97c6960d97350c584de1b6dcff03c9daf42",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=a84ebe20c6bc2ecbcfb000a50776219f48d134cc",
       "name": "openssl-3.4.1",
       "pname": "openssl",
-      "rev": "b6eaf97c6960d97350c584de1b6dcff03c9daf42",
-      "rev_count": 769969,
-      "rev_date": "2025-03-18T09:06:34Z",
-      "scrape_date": "2025-03-20T01:28:15.637226Z",
+      "rev": "a84ebe20c6bc2ecbcfb000a50776219f48d134cc",
+      "rev_count": 770807,
+      "rev_date": "2025-03-19T22:12:44Z",
+      "scrape_date": "2025-03-22T01:26:05.785663Z",
       "stabilities": [
         "unstable"
       ],
@@ -724,13 +1226,13 @@
       "description": "Cryptographic library that implements the SSL and TLS protocols",
       "install_id": "openssl",
       "license": "Apache-2.0",
-      "locked_url": "https://github.com/flox/nixpkgs?rev=b6eaf97c6960d97350c584de1b6dcff03c9daf42",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=a84ebe20c6bc2ecbcfb000a50776219f48d134cc",
       "name": "openssl-3.4.1",
       "pname": "openssl",
-      "rev": "b6eaf97c6960d97350c584de1b6dcff03c9daf42",
-      "rev_count": 769969,
-      "rev_date": "2025-03-18T09:06:34Z",
-      "scrape_date": "2025-03-20T01:44:41.640122Z",
+      "rev": "a84ebe20c6bc2ecbcfb000a50776219f48d134cc",
+      "rev_count": 770807,
+      "rev_date": "2025-03-19T22:12:44Z",
+      "scrape_date": "2025-03-22T01:41:14.535542Z",
       "stabilities": [
         "unstable"
       ],
@@ -758,13 +1260,13 @@
       "description": "Cryptographic library that implements the SSL and TLS protocols",
       "install_id": "openssl",
       "license": "Apache-2.0",
-      "locked_url": "https://github.com/flox/nixpkgs?rev=b6eaf97c6960d97350c584de1b6dcff03c9daf42",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=a84ebe20c6bc2ecbcfb000a50776219f48d134cc",
       "name": "openssl-3.4.1",
       "pname": "openssl",
-      "rev": "b6eaf97c6960d97350c584de1b6dcff03c9daf42",
-      "rev_count": 769969,
-      "rev_date": "2025-03-18T09:06:34Z",
-      "scrape_date": "2025-03-20T02:04:23.230781Z",
+      "rev": "a84ebe20c6bc2ecbcfb000a50776219f48d134cc",
+      "rev_count": 770807,
+      "rev_date": "2025-03-19T22:12:44Z",
+      "scrape_date": "2025-03-22T01:59:24.778788Z",
       "stabilities": [
         "unstable"
       ],
