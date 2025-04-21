@@ -6,8 +6,17 @@
       "bat": {
         "pkg-path": "bat"
       },
+      "coreutils": {
+        "pkg-path": "coreutils"
+      },
       "curl": {
         "pkg-path": "curl"
+      },
+      "gawk": {
+        "pkg-path": "gawk"
+      },
+      "gnused": {
+        "pkg-path": "gnused"
       },
       "gum": {
         "pkg-path": "gum"
@@ -102,6 +111,68 @@
       "priority": 5
     },
     {
+      "attr_path": "coreutils",
+      "broken": false,
+      "derivation": "/nix/store/nwwcs1c805a51ihrhx4lzxvk2jm4crfh-coreutils-9.6.drv",
+      "description": "GNU Core Utilities",
+      "install_id": "coreutils",
+      "license": "GPL-3.0-or-later",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=1e5b653dff12029333a6546c11e108ede13052eb",
+      "name": "coreutils-9.6",
+      "pname": "coreutils",
+      "rev": "1e5b653dff12029333a6546c11e108ede13052eb",
+      "rev_count": 772522,
+      "rev_date": "2025-03-22T18:57:23Z",
+      "scrape_date": "2025-03-24T01:34:59.859830Z",
+      "stabilities": [
+        "unstable"
+      ],
+      "unfree": false,
+      "version": "9.6",
+      "outputs_to_install": [
+        "out"
+      ],
+      "outputs": {
+        "debug": "/nix/store/r82rf3iq14gpcgn134snrrvjfc7cwxhs-coreutils-9.6-debug",
+        "info": "/nix/store/zi75ncfk3kanibc2rz5ym2vdf1ph47q7-coreutils-9.6-info",
+        "out": "/nix/store/ch9dmykfvimybpb0qm7ppi3zap8fx5s0-coreutils-9.6"
+      },
+      "system": "aarch64-linux",
+      "group": "toplevel",
+      "priority": 5
+    },
+    {
+      "attr_path": "coreutils",
+      "broken": false,
+      "derivation": "/nix/store/5h55gpcb1nljrqg6hzrp7bblgjk47h1s-coreutils-9.6.drv",
+      "description": "GNU Core Utilities",
+      "install_id": "coreutils",
+      "license": "GPL-3.0-or-later",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=1e5b653dff12029333a6546c11e108ede13052eb",
+      "name": "coreutils-9.6",
+      "pname": "coreutils",
+      "rev": "1e5b653dff12029333a6546c11e108ede13052eb",
+      "rev_count": 772522,
+      "rev_date": "2025-03-22T18:57:23Z",
+      "scrape_date": "2025-03-24T02:16:49.352271Z",
+      "stabilities": [
+        "unstable"
+      ],
+      "unfree": false,
+      "version": "9.6",
+      "outputs_to_install": [
+        "out"
+      ],
+      "outputs": {
+        "debug": "/nix/store/m6z0fyhip7nhls7bg65fzdpnzb4dyw42-coreutils-9.6-debug",
+        "info": "/nix/store/g1jlc3r1ca84cw21kggs3cq3vr677rhr-coreutils-9.6-info",
+        "out": "/nix/store/yh6qg1nsi5h2xblcr67030pz58fsaxx3-coreutils-9.6"
+      },
+      "system": "x86_64-linux",
+      "group": "toplevel",
+      "priority": 5
+    },
+    {
       "attr_path": "curl",
       "broken": false,
       "derivation": "/nix/store/g8l0vbzmxrr6qw44wgqllb4mw5sl8g5s-curl-8.12.1.drv",
@@ -166,6 +237,130 @@
         "devdoc": "/nix/store/ynv5wahwnghzk8v4zfbk8rmdn96cx4cf-curl-8.12.1-devdoc",
         "man": "/nix/store/03skkhbdzmivfr8c99rqbb9s5clfi0sy-curl-8.12.1-man",
         "out": "/nix/store/l6hzv5ms9fi7mx2j3xh0i42anyjcgpp8-curl-8.12.1"
+      },
+      "system": "x86_64-linux",
+      "group": "toplevel",
+      "priority": 5
+    },
+    {
+      "attr_path": "gawk",
+      "broken": false,
+      "derivation": "/nix/store/rz1dwizhw1c10m7zskynr2cvjdh6867a-gawk-5.3.1.drv",
+      "description": "GNU implementation of the Awk programming language",
+      "install_id": "gawk",
+      "license": "GPL-3.0-or-later",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=1e5b653dff12029333a6546c11e108ede13052eb",
+      "name": "gawk-5.3.1",
+      "pname": "gawk",
+      "rev": "1e5b653dff12029333a6546c11e108ede13052eb",
+      "rev_count": 772522,
+      "rev_date": "2025-03-22T18:57:23Z",
+      "scrape_date": "2025-03-24T01:35:00.515834Z",
+      "stabilities": [
+        "unstable"
+      ],
+      "unfree": false,
+      "version": "5.3.1",
+      "outputs_to_install": [
+        "man",
+        "out"
+      ],
+      "outputs": {
+        "info": "/nix/store/wsn1ip06qh675c6v8qww2ldrjk9r7qcf-gawk-5.3.1-info",
+        "man": "/nix/store/z1qyf99rha83xf8873r5xkgr777rflfy-gawk-5.3.1-man",
+        "out": "/nix/store/9v34jwx998aphj7mzc6lz65p32n5dkly-gawk-5.3.1"
+      },
+      "system": "aarch64-linux",
+      "group": "toplevel",
+      "priority": 5
+    },
+    {
+      "attr_path": "gawk",
+      "broken": false,
+      "derivation": "/nix/store/l653msqq4fhgz73b8xzvf1myzxhxd5v1-gawk-5.3.1.drv",
+      "description": "GNU implementation of the Awk programming language",
+      "install_id": "gawk",
+      "license": "GPL-3.0-or-later",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=1e5b653dff12029333a6546c11e108ede13052eb",
+      "name": "gawk-5.3.1",
+      "pname": "gawk",
+      "rev": "1e5b653dff12029333a6546c11e108ede13052eb",
+      "rev_count": 772522,
+      "rev_date": "2025-03-22T18:57:23Z",
+      "scrape_date": "2025-03-24T02:16:50.036269Z",
+      "stabilities": [
+        "unstable"
+      ],
+      "unfree": false,
+      "version": "5.3.1",
+      "outputs_to_install": [
+        "man",
+        "out"
+      ],
+      "outputs": {
+        "info": "/nix/store/y7sgqkf7kyk8akjhpbpfxyvypf108r24-gawk-5.3.1-info",
+        "man": "/nix/store/qsr8hy7mlbayj6afglsqx2vh9fsx89p9-gawk-5.3.1-man",
+        "out": "/nix/store/r66s4mjwqi7zkqqyry5yhhv0wm5rw96a-gawk-5.3.1"
+      },
+      "system": "x86_64-linux",
+      "group": "toplevel",
+      "priority": 5
+    },
+    {
+      "attr_path": "gnused",
+      "broken": false,
+      "derivation": "/nix/store/d6i5ypjbrwdkjrvf4a8kc4ayhbsjzrqy-gnused-4.9.drv",
+      "description": "GNU sed, a batch stream editor",
+      "install_id": "gnused",
+      "license": "GPL-3.0-or-later",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=1e5b653dff12029333a6546c11e108ede13052eb",
+      "name": "gnused-4.9",
+      "pname": "gnused",
+      "rev": "1e5b653dff12029333a6546c11e108ede13052eb",
+      "rev_count": 772522,
+      "rev_date": "2025-03-22T18:57:23Z",
+      "scrape_date": "2025-03-24T01:35:00.938886Z",
+      "stabilities": [
+        "unstable"
+      ],
+      "unfree": false,
+      "version": "4.9",
+      "outputs_to_install": [
+        "out"
+      ],
+      "outputs": {
+        "info": "/nix/store/cfncvncp131kmshlplgblzj2ijba4yqp-gnused-4.9-info",
+        "out": "/nix/store/4c59cgm460f3sjk7964vf50lm22cvs1y-gnused-4.9"
+      },
+      "system": "aarch64-linux",
+      "group": "toplevel",
+      "priority": 5
+    },
+    {
+      "attr_path": "gnused",
+      "broken": false,
+      "derivation": "/nix/store/pbj06z1dx3jc9fkgnqh4v84gkvdxak4b-gnused-4.9.drv",
+      "description": "GNU sed, a batch stream editor",
+      "install_id": "gnused",
+      "license": "GPL-3.0-or-later",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=1e5b653dff12029333a6546c11e108ede13052eb",
+      "name": "gnused-4.9",
+      "pname": "gnused",
+      "rev": "1e5b653dff12029333a6546c11e108ede13052eb",
+      "rev_count": 772522,
+      "rev_date": "2025-03-22T18:57:23Z",
+      "scrape_date": "2025-03-24T02:16:50.518266Z",
+      "stabilities": [
+        "unstable"
+      ],
+      "unfree": false,
+      "version": "4.9",
+      "outputs_to_install": [
+        "out"
+      ],
+      "outputs": {
+        "info": "/nix/store/pcdrsxc6qy2nphlmhagbmbj4h55x18c1-gnused-4.9-info",
+        "out": "/nix/store/xhql0ilzbiqwnmz4z8y0phk611wynxf2-gnused-4.9"
       },
       "system": "x86_64-linux",
       "group": "toplevel",

@@ -9,6 +9,9 @@ gum.pkg-path = "gum"
 spark.pkg-path = "spark"
 pip.pkg-path = "python312Packages.pip"
 jdk.pkg-path = "jdk"
+gnused.pkg-path = "gnused"
+gawk.pkg-path = "gawk"
+coreutils.pkg-path = "coreutils"
 
 [vars]
 
