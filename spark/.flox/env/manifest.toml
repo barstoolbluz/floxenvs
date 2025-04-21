@@ -258,18 +258,18 @@ show_spark_help() {
         "$(gum style --foreground 141 --bold 'This is a  F l o x  Apache Spark Environment')
 
 👉  Configure Spark:
-    $(gum style --foreground 212 'bootstrap')                          Interactive Spark configuration wizard
-    $(gum style --foreground 212 'flox services')                      Manage Spark services
+    $(gum style --foreground 212 'bootstrap')                              Interactive Spark configuration wizard
+    $(gum style --foreground 212 'flox services <start|stop|restart>')     Manage Spark services
 
 👉  Spark Commands:
-    $(gum style --foreground 212 'spark-shell')                        Interactive Scala shell for Spark
-    $(gum style --foreground 212 'pyspark')                            Interactive Python shell for Spark
-    $(gum style --foreground 212 'spark-submit')                       Submit a Spark application
+    $(gum style --foreground 212 'spark-shell')                            Interactive Scala shell for Spark
+    $(gum style --foreground 212 'pyspark')                                Interactive Python shell for Spark
+    $(gum style --foreground 212 'spark-submit')                           Submit a Spark application
 
 👉  Cluster Management:
-    $(gum style --foreground 212 'flox services start')                Start all Spark services
-    $(gum style --foreground 212 'flox services stop')                 Stop all Spark services
-    $(gum style --foreground 212 'flox services status')               Check Spark services status
+    $(gum style --foreground 212 'flox services start')                    Start all Spark services
+    $(gum style --foreground 212 'flox services stop')                     Stop all Spark services
+    $(gum style --foreground 212 'flox services status')                   Check Spark services status
     
 👉  Environment Details:
 $(echo -e "$env_details")"
