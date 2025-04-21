@@ -21,9 +21,6 @@ gum.pkg-path = "gum"
 bat.pkg-path = "bat"
 curl.pkg-path = "curl"
 openssl.pkg-path = "openssl"
-# gum.pkg-path = "gum"
-# gum.version = "^0.14.5"
-
 
 ## Environment Variables ---------------------------------------------
 ##  ... available for use in the activated environment
@@ -39,11 +36,13 @@ openssl.pkg-path = "openssl"
 [hook]
 on-activate = '''
 # define paths
-CONFIG_FILE="${FLOX_ENV_CACHE:-$HOME/.cache/flox}/github_config"
-ENCRYPTED_TOKEN_FILE="${FLOX_ENV_CACHE:-$HOME/.cache/flox}/github_token.enc"
-BASH_WRAPPER="${FLOX_ENV_CACHE:-$HOME/.cache/flox}/gh_wrapper.bash"
-ZSH_WRAPPER="${FLOX_ENV_CACHE:-$HOME/.cache/flox}/gh_wrapper.zsh"
-FISH_WRAPPER="${FLOX_ENV_CACHE:-$HOME/.cache/flox}/gh_wrapper.fish"
+CONFIG_DIR="$HOME/.cache/flox/ghcli"
+CONFIG_FILE="$CONFIG_DIR/github_config"
+ENCRYPTED_TOKEN_FILE="$CONFIG_DIR/github_token.enc"
+GIT_CREDENTIALS_FILE="$CONFIG_DIR/git_credentials.enc"
+BASH_WRAPPER="$CONFIG_DIR/gh_wrapper.bash"
+ZSH_WRAPPER="$CONFIG_DIR/gh_wrapper.zsh"
+FISH_WRAPPER="$CONFIG_DIR/gh_wrapper.fish"
 
 # detect operating system
 detect_os() {
@@ -409,8 +408,7 @@ end
 # retrieve token from encrypted file
 function _gh_wrapper_retrieve_github_token_encrypted
     set -l password (_gh_wrapper_derive_password)
-    set -l token_file "$FLOX_ENV_CACHE/github_token.enc"
-    test -z "$FLOX_ENV_CACHE"; and set token_file "$HOME/.cache/flox/github_token.enc"
+    set -l token_file "$HOME/.cache/flox/ghcli/github_token.enc"
     
     if test -f "$token_file"
         openssl enc -aes-256-cbc -d -salt -pbkdf2 -pass pass:"$password" -in "$token_file" 2>/dev/null
@@ -421,8 +419,7 @@ end
 
 # retrieve github token
 function _gh_wrapper_retrieve_github_token
-    set -l config_file "$FLOX_ENV_CACHE/github_config"
-    test -z "$FLOX_ENV_CACHE"; and set config_file "$HOME/.cache/flox/github_config"
+    set -l config_file "$HOME/.cache/flox/ghcli/github_config"
     
     if test -f "$config_file"
         set -l storage_method (grep "STORAGE_METHOD" "$config_file" | cut -d '=' -f2)
@@ -448,6 +445,265 @@ end
 FISH_EOF
 }
 
+# Configure Git credentials
+configure_git_credentials() {
+    local os=$(detect_os)
+    local username="$1"
+    local password="$2"
+    
+    # Check and configure git user.name and user.email if needed
+    check_and_configure_git_user_info
+    
+    # Configure git credential helper based on OS
+    if [[ "$os" == "macos" ]]; then
+        # Use the macOS keychain helper
+        git config --global credential.helper osxkeychain
+        
+        # Store credentials in the keychain
+        # Create a temporary file to pass to git credential
+        local temp_file=$(mktemp)
+        cat > "$temp_file" << EOF
+protocol=https
+host=github.com
+username=$username
+password=$password
+EOF
+        
+        # Store credentials
+        cat "$temp_file" | git credential approve
+        
+        # Remove temporary file
+        rm "$temp_file"
+        
+        echo "Git credentials stored in macOS keychain."
+        return 0
+    elif [[ "$os" == "linux" ]]; then
+        # Check if secret-tool is available for keyring storage
+        if command -v secret-tool &> /dev/null; then
+            git config --global credential.helper store
+            
+            # Use secret-tool to store credentials
+            echo -n "$password" | secret-tool store --label="Git Credentials" service git-https host github.com user "$username"
+            
+            # Create a credential helper script that uses secret-tool
+            local git_credential_helper="$CONFIG_DIR/git-credential-flox-helper"
+            
+            cat > "$git_credential_helper" << 'EOF'
+#!/bin/bash
+
+if [ "$1" = "get" ]; then
+    # Read the input to extract username
+    while read line; do
+        if [[ "$line" =~ ^username=(.*)$ ]]; then
+            username="${BASH_REMATCH[1]}"
+        fi
+        if [[ "$line" =~ ^host=(.*)$ ]]; then
+            host="${BASH_REMATCH[1]}"
+        fi
+        if [[ -z "$line" ]]; then
+            break
+        fi
+    done
+    
+    # Try to get password from secret-tool
+    if [[ -n "$username" && -n "$host" ]]; then
+        password=$(secret-tool lookup service git-https host "$host" user "$username" 2>/dev/null)
+        if [[ -n "$password" ]]; then
+            echo "password=$password"
+        fi
+    fi
+fi
+EOF
+            
+            chmod +x "$git_credential_helper"
+            git config --global credential.helper "$git_credential_helper"
+            
+            echo "Git credentials stored in keyring using secret-tool."
+            return 0
+        else
+            # Use encrypted storage as fallback
+            local password_derive=$(derive_password)
+            
+            # Create credentials file content
+            local credentials="https://$username:$password@github.com"
+            
+            # Encrypt credentials
+            echo -n "$credentials" | openssl enc -aes-256-cbc -salt -pbkdf2 -pass pass:"$password_derive" -out "$GIT_CREDENTIALS_FILE"
+            
+            # Create a credential helper script
+            local git_credential_helper="$CONFIG_DIR/git-credential-flox-helper"
+            
+            cat > "$git_credential_helper" << 'EOF'
+#!/bin/bash
+
+# Path to encrypted credentials file
+CREDENTIALS_FILE="$HOME/.cache/flox/ghcli/git_credentials.enc"
+
+# Function to derive password
+derive_password() {
+    # combine username, hostname and machine id for a unique but deterministic password
+    local user_info="$USER"
+    local host_info=$(hostname)
+    local machine_id=""
+    
+    if [[ -f "/etc/machine-id" ]]; then
+        machine_id=$(cat /etc/machine-id)
+    elif [[ -f "/var/lib/dbus/machine-id" ]]; then
+        machine_id=$(cat /var/lib/dbus/machine-id)
+    fi
+    
+    # combine and hash the information
+    echo -n "${user_info}${host_info}${machine_id}flox-github-token" | openssl dgst -sha256 | awk '{print $2}'
+}
+
+if [ "$1" = "get" ]; then
+    # Read input to ensure we're being asked about GitHub
+    is_github=false
+    while read line; do
+        if [[ "$line" =~ ^host=github.com$ ]]; then
+            is_github=true
+        fi
+        if [[ -z "$line" ]]; then
+            break
+        fi
+    done
+    
+    if [ "$is_github" = true ] && [ -f "$CREDENTIALS_FILE" ]; then
+        # Decrypt the credentials file
+        password=$(derive_password)
+        credentials=$(openssl enc -aes-256-cbc -d -salt -pbkdf2 -pass pass:"$password" -in "$CREDENTIALS_FILE" 2>/dev/null)
+        
+        if [[ $? -eq 0 && -n "$credentials" ]]; then
+            # Extract username and password from credentials
+            if [[ "$credentials" =~ https://([^:]+):([^@]+)@github.com ]]; then
+                username="${BASH_REMATCH[1]}"
+                password="${BASH_REMATCH[2]}"
+                
+                echo "username=$username"
+                echo "password=$password"
+            fi
+        fi
+    fi
+fi
+EOF
+            
+            chmod +x "$git_credential_helper"
+            git config --global credential.helper "$git_credential_helper"
+            
+            echo "Git credentials stored in encrypted file."
+            return 0
+        fi
+    else
+        echo "Error: Unsupported operating system for Git credential setup."
+        return 1
+    fi
+}
+
+# Check and configure Git user.name and user.email if needed
+check_and_configure_git_user_info() {
+    local git_user_name=$(git config --global user.name)
+    local git_user_email=$(git config --global user.email)
+    local need_setup=false
+    
+    if [[ -z "$git_user_name" || -z "$git_user_email" ]]; then
+        need_setup=true
+    fi
+    
+    if [[ "$need_setup" == "true" ]]; then
+        gum style \
+            --border rounded \
+            --border-foreground 240 \
+            --padding "1 2" \
+            --margin "1 0" \
+            --width 96 \
+            "$(gum style --foreground 141 --bold 'Git User Configuration')
+
+👉  Your Git user.name and/or user.email are not configured.
+    These are needed for making commits to Git repositories.
+"
+        echo ""
+        
+        if gum confirm "Do you want to configure Git user information now?" --default=true; then
+            # Configure git user.name if needed
+            if [[ -z "$git_user_name" ]]; then
+                while true; do
+                    git_user_name=$(gum input --prompt "Enter your full name for Git commits: " --placeholder "John Doe")
+                    
+                    if [[ "$git_user_name" == "exit" || "$git_user_name" == "quit" ]]; then
+                        echo "Skipping Git user name configuration."
+                        break
+                    fi
+                    
+                    if [[ -z "$git_user_name" ]]; then
+                        echo "Name cannot be empty. Please try again or type 'exit' to skip."
+                        continue
+                    fi
+                    
+                    git config --global user.name "$git_user_name"
+                    echo "Git user.name set to: $git_user_name"
+                    break
+                done
+            fi
+            
+            # Configure git user.email if needed
+            if [[ -z "$git_user_email" ]]; then
+                while true; do
+                    git_user_email=$(gum input --prompt "Enter your email for Git commits: " --placeholder "john.doe@example.com")
+                    
+                    if [[ "$git_user_email" == "exit" || "$git_user_email" == "quit" ]]; then
+                        echo "Skipping Git user email configuration."
+                        break
+                    fi
+                    
+                    if [[ -z "$git_user_email" ]]; then
+                        echo "Email cannot be empty. Please try again or type 'exit' to skip."
+                        continue
+                    fi
+                    
+                    # Basic email validation
+                    if [[ ! "$git_user_email" =~ ^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$ ]]; then
+                        echo "Invalid email format. Please try again."
+                        continue
+                    fi
+                    
+                    git config --global user.email "$git_user_email"
+                    echo "Git user.email set to: $git_user_email"
+                    break
+                done
+            fi
+            
+            echo "Git user configuration complete."
+        else
+            echo "Skipping Git user configuration."
+        fi
+    fi
+}
+
+# this explains how we create a token
+show_git_instructions() {
+    gum style \
+        --border rounded \
+        --border-foreground 240 \
+        --padding "1 2" \
+        --margin "1 0" \
+        --width 96 \
+        "$(gum style --foreground 141 --bold 'Setting up Git credentials')
+
+👉  You'll need your GitHub username and password or personal access token.
+
+👉  For GitHub, a personal access token is recommended:
+
+    1.  Go to $(gum style --foreground 212 --underline 'https://github.com/settings/tokens')
+    2.  Click 'Generate new token' (classic)
+    3.  Add a note like 'Git Authentication'
+    4.  Select appropriate scopes:
+         •  $(gum style --foreground 212 'repo')
+    5.  Click 'Generate token'
+    6.  Copy the generated token (this will be your password)"
+
+    echo ""
+}
+
 # wilkommen / bienvenue / witamy / welcome
 show_welcome_message() {
     gum style \
@@ -456,19 +712,61 @@ show_welcome_message() {
         --padding "1 2" \
         --margin "1 0" \
         --width 96 \
-        "$(gum style --foreground 141 --bold 'F l o x  GitHub CLI (More) Secure Local Auth Setup Wizard')
+        "$(gum style --foreground 141 --bold 'F l o x  GitHub & Git Authentication Setup Wizard')
 
-👉  This wizard will guide you through setting up GitHub CLI (gh) authentication using
-    secure local storage:
+👉  This wizard will guide you through setting up authentication for:
 
-    1.  System keyring/keychain (preferred)
-    2.  Encrypted local file (fallback)
+    1.  GitHub CLI (gh) commands
+    2.  Git operations (push, pull, clone, etc.)
 
 👉  You will need to provide:
 
     •  Your GitHub Personal Access Token with appropriate permissions
+    •  Your Git credentials for GitHub
 
-Your token will be securely stored and used to authenticate GitHub CLI commands."
+Your credentials will be securely stored and used to authenticate GitHub CLI and Git commands."
+
+    echo ""
+}
+
+# this is our completion message
+show_completion_message() {
+    local gh_storage_method="$1"
+    local needs_wrapper="$2"
+    local git_configured="$3"
+    
+    local wrapper_status="will use a wrapper"
+    
+    if [[ "$needs_wrapper" == "false" ]]; then
+        wrapper_status="will authenticate directly"
+    fi
+    
+    local git_status="Git credentials were not configured"
+    if [[ "$git_configured" == "true" ]]; then
+        git_status="Git credentials successfully configured"
+    fi
+    
+    gum style \
+        --border rounded \
+        --border-foreground 240 \
+        --padding "1 2" \
+        --margin "1 0" \
+        --width 96 \
+        "$(gum style --foreground 141 --bold 'F l o x  GitHub & Git Integration Complete!')
+
+👉  Setup completed successfully!
+
+👉  Configuration Details:
+    GitHub CLI token storage: $(gum style --foreground 212 "$gh_storage_method")
+    GitHub CLI: $wrapper_status
+    Git: $git_status
+
+👉  You can now use these commands:
+    $(gum style --foreground 212 'gh repo create')      Create a new repository
+    $(gum style --foreground 212 'git push')            Push to GitHub repositories
+    $(gum style --foreground 212 'git pull')            Pull from GitHub repositories
+
+Your credentials are securely stored and will be automatically used for authentication."
 
     echo ""
 }
@@ -497,15 +795,71 @@ show_token_instructions() {
     echo ""
 }
 
+# this explains how we create a token
+show_git_instructions() {
+    gum style \
+        --border rounded \
+        --border-foreground 240 \
+        --padding "1 2" \
+        --margin "1 0" \
+        --width 96 \
+        "$(gum style --foreground 141 --bold 'Setting up Git credentials')
+
+👉  You'll need your GitHub username and password or personal access token.
+
+👉  For GitHub, a personal access token is recommended:
+
+    1.  Go to $(gum style --foreground 212 --underline 'https://github.com/settings/tokens')
+    2.  Click 'Generate new token' (classic)
+    3.  Add a note like 'Git Authentication'
+    4.  Select appropriate scopes:
+         •  $(gum style --foreground 212 'repo')
+    5.  Click 'Generate token'
+    6.  Copy the generated token (this will be your password)"
+
+    echo ""
+}
+
+# wilkommen / bienvenue / witamy / welcome
+show_welcome_message() {
+    gum style \
+        --border rounded \
+        --border-foreground 240 \
+        --padding "1 2" \
+        --margin "1 0" \
+        --width 96 \
+        "$(gum style --foreground 141 --bold 'F l o x  GitHub & Git Authentication Setup Wizard')
+
+👉  This wizard will guide you through setting up authentication for:
+
+    1.  GitHub CLI (gh) commands
+    2.  Git operations (push, pull, clone, etc.)
+
+👉  You will need to provide:
+
+    •  Your GitHub Personal Access Token with appropriate permissions
+    •  Your Git credentials for GitHub
+
+Your credentials will be securely stored and used to authenticate GitHub CLI and Git commands."
+
+    echo ""
+}
+
 # this is our completion message
 show_completion_message() {
-    local storage_method="$1"
+    local gh_storage_method="$1"
     local needs_wrapper="$2"
+    local git_configured="$3"
     
     local wrapper_status="will use a wrapper"
     
     if [[ "$needs_wrapper" == "false" ]]; then
         wrapper_status="will authenticate directly"
+    fi
+    
+    local git_status="Git credentials were not configured"
+    if [[ "$git_configured" == "true" ]]; then
+        git_status="Git credentials successfully configured"
     fi
     
     gum style \
@@ -514,20 +868,21 @@ show_completion_message() {
         --padding "1 2" \
         --margin "1 0" \
         --width 96 \
-        "$(gum style --foreground 141 --bold 'F l o x  GitHub Integration Complete!')
+        "$(gum style --foreground 141 --bold 'F l o x  GitHub & Git Integration Complete!')
 
 👉  Setup completed successfully!
 
 👉  Configuration Details:
-    Storage method: $(gum style --foreground 212 "$storage_method")
+    GitHub CLI token storage: $(gum style --foreground 212 "$gh_storage_method")
     GitHub CLI: $wrapper_status
+    Git: $git_status
 
-👉  You can now use these and other GitHub CLI commands:
+👉  You can now use these commands:
     $(gum style --foreground 212 'gh repo create')      Create a new repository
-    $(gum style --foreground 212 'gh pr list')          List pull requests
-    $(gum style --foreground 212 'gh issue view')       View issue details
+    $(gum style --foreground 212 'git push')            Push to GitHub repositories
+    $(gum style --foreground 212 'git pull')            Pull from GitHub repositories
 
-Your token is securely stored and will be automatically used for GitHub authentication."
+Your credentials are securely stored and will be automatically used for authentication."
 
     echo ""
 }
@@ -596,8 +951,68 @@ setup_github_integration() {
         fi
     done
     
-    # try to store in system keyring first
-    echo "Attempting to store token in system keyring..."
+    # Variable to track if git credentials were configured
+    local git_configured="false"
+    
+    # Ask if user wants to set up Git credentials
+    if gum confirm "Do you also want to set up Git credentials for GitHub?" --default=true; then
+        # Display Git credentials setup instructions
+        show_git_instructions
+        
+        # Collect Git username
+        local git_username=""
+        while true; do
+            git_username=$(gum input --prompt "Enter your GitHub username: " --width "$term_width")
+            
+            if ! check_skip "$git_username"; then
+                break
+            fi
+            
+            if [[ -z "$git_username" ]]; then
+                echo "Username cannot be empty. Please try again."
+                continue
+            fi
+            
+            break
+        done
+        
+        # If we have a valid username, collect password/token
+        if [[ -n "$git_username" && "$git_username" != "exit" && "$git_username" != "quit" ]]; then
+            # Collect Git password/token
+            local git_password=""
+            
+            # Ask if they want to use the same token for Git
+            if gum confirm "Do you want to use the same token for Git authentication?" --default=true; then
+                git_password="$github_token"
+            else {
+                while true; do
+                    git_password=$(gum input --prompt "Enter your GitHub password or token: " --password --width "$term_width")
+                    
+                    if ! check_skip "$git_password"; then
+                        break
+                    fi
+                    
+                    if [[ -z "$git_password" ]]; then
+                        echo "Password cannot be empty. Please try again."
+                        continue
+                    fi
+                    
+                    break
+                done
+            }
+            fi
+            
+            # Configure Git credentials if we have both username and password
+            if [[ -n "$git_username" && -n "$git_password" && "$git_username" != "exit" && "$git_username" != "quit" && "$git_password" != "exit" && "$git_password" != "quit" ]]; then
+                if configure_git_credentials "$git_username" "$git_password"; then
+                    git_configured="true"
+                fi
+            fi
+        fi
+    fi
+    
+    # try to store GitHub token in system keyring first
+    echo "Attempting to store GitHub token in system keyring..."
     if store_github_token "$github_token"; then
         # source config to get NEEDS_WRAPPER
         source "$CONFIG_FILE"
@@ -610,12 +1025,12 @@ setup_github_integration() {
             echo "Creating shell wrappers..."
             create_shell_wrappers
             
-            show_completion_message "system keyring" "true"
+            show_completion_message "system keyring" "true" "$git_configured"
         else
             # No wrapper needed, make sure we don't have any leftover wrapper files
             rm -f "$BASH_WRAPPER" "$ZSH_WRAPPER" "$FISH_WRAPPER" 2>/dev/null || true
             
-            show_completion_message "system keyring" "false"
+            show_completion_message "system keyring" "false" "$git_configured"
         fi
         return 0
     else
@@ -633,7 +1048,7 @@ setup_github_integration() {
             echo "Creating shell wrappers..."
             create_shell_wrappers
             
-            show_completion_message "encrypted file" "true"
+            show_completion_message "encrypted file" "true" "$git_configured"
             return 0
         else
             echo "No storage method selected. GitHub integration setup cancelled."
@@ -660,10 +1075,10 @@ setup_github_integration
 # '''
 ## Shell specific profiles go here:
 bash = '''
-if [[ -f "${FLOX_ENV_CACHE:-$HOME/.cache/flox}/github_config" ]]; then
-    source "${FLOX_ENV_CACHE:-$HOME/.cache/flox}/github_config"
-    if [[ "$NEEDS_WRAPPER" == "true" && -f "${FLOX_ENV_CACHE:-$HOME/.cache/flox}/gh_wrapper.bash" ]]; then
-        source "${FLOX_ENV_CACHE:-$HOME/.cache/flox}/gh_wrapper.bash"
+if [[ -f "$HOME/.cache/flox/ghcli/github_config" ]]; then
+    source "$HOME/.cache/flox/ghcli/github_config"
+    if [[ "$NEEDS_WRAPPER" == "true" && -f "$HOME/.cache/flox/ghcli/gh_wrapper.bash" ]]; then
+        source "$HOME/.cache/flox/ghcli/gh_wrapper.bash"
     fi
 fi
 
@@ -677,10 +1092,10 @@ readme() {
 '''
 
 zsh = '''
-if [[ -f "${FLOX_ENV_CACHE:-$HOME/.cache/flox}/github_config" ]]; then
-    source "${FLOX_ENV_CACHE:-$HOME/.cache/flox}/github_config"
-    if [[ "$NEEDS_WRAPPER" == "true" && -f "${FLOX_ENV_CACHE:-$HOME/.cache/flox}/gh_wrapper.zsh" ]]; then
-        source "${FLOX_ENV_CACHE:-$HOME/.cache/flox}/gh_wrapper.zsh"
+if [[ -f "$HOME/.cache/flox/ghcli/github_config" ]]; then
+    source "$HOME/.cache/flox/ghcli/github_config"
+    if [[ "$NEEDS_WRAPPER" == "true" && -f "$HOME/.cache/flox/ghcli/gh_wrapper.zsh" ]]; then
+        source "$HOME/.cache/flox/ghcli/gh_wrapper.zsh"
     fi
 fi
 
@@ -694,10 +1109,10 @@ readme() {
 '''
 
 fish = '''
-if test -f "${FLOX_ENV_CACHE:-$HOME/.cache/flox}/github_config"
-    set -l needs_wrapper (grep "NEEDS_WRAPPER" "${FLOX_ENV_CACHE:-$HOME/.cache/flox}/github_config" | cut -d '=' -f2)
-    if test "$needs_wrapper" = "true"; and test -f "${FLOX_ENV_CACHE:-$HOME/.cache/flox}/gh_wrapper.fish"
-        source ${FLOX_ENV_CACHE:-$HOME/.cache/flox}/gh_wrapper.fish
+if test -f "$HOME/.cache/flox/ghcli/github_config"
+    set -l needs_wrapper (grep "NEEDS_WRAPPER" "$HOME/.cache/flox/ghcli/github_config" | cut -d '=' -f2)
+    if test "$needs_wrapper" = "true"; and test -f "$HOME/.cache/flox/ghcli/gh_wrapper.fish"
+        source $HOME/.cache/flox/ghcli/gh_wrapper.fish
     end
 end
 
