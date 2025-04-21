@@ -117,12 +117,41 @@ run_configuration() {
     echo ""
     echo "$(gum style --foreground 240 'Configuring network settings:')"
 
-    # Get the machine's IP address (first non-loopback address)
-    DETECTED_IP=$(hostname -I | awk '{print $1}')
+    # Detect OS type for IP detection
+    OS_TYPE=$(uname -s)
+    
+    # Get the machine's IP address (first non-loopback address) based on OS
+    if [ "$OS_TYPE" = "Darwin" ]; then
+        # macOS specific approach
+        DETECTED_IP=$(ifconfig | grep "inet " | grep -v 127.0.0.1 | head -n 1 | awk '{print $2}')
+    elif [ "$OS_TYPE" = "Linux" ]; then
+        # Try hostname -I first (Linux specific)
+        DETECTED_IP=$(hostname -I 2>/dev/null | awk '{print $1}')
+        
+        # If hostname -I fails, try ifconfig
+        if [ -z "$DETECTED_IP" ]; then
+            if command -v ifconfig >/dev/null 2>&1; then
+                DETECTED_IP=$(ifconfig | grep -Eo 'inet (addr:)?([0-9]*\.){3}[0-9]*' | grep -Eo '([0-9]*\.){3}[0-9]*' | grep -v '127.0.0.1' | head -n 1)
+            elif command -v ip >/dev/null 2>&1; then
+                DETECTED_IP=$(ip -4 addr show | grep -oP '(?<=inet\s)\d+(\.\d+){3}' | grep -v '127.0.0.1' | head -n 1)
+            fi
+        fi
+    else
+        # Fallback for other OS types
+        DETECTED_IP=$(ifconfig 2>/dev/null | grep -Eo 'inet (addr:)?([0-9]*\.){3}[0-9]*' | grep -Eo '([0-9]*\.){3}[0-9]*' | grep -v '127.0.0.1' | head -n 1)
+    fi
+    
+    # If all methods fail, fallback to localhost
+    if [ -z "$DETECTED_IP" ]; then
+        DETECTED_IP="127.0.0.1"
+        echo "$(gum style --foreground 214 'Warning: Could not detect IP address, using 127.0.0.1 as fallback.')"
+    fi
 
+    # Always show the detected IP and ask for confirmation (for both master and worker)
+    echo "$(gum style --foreground 240 "Detected IP address: ${DETECTED_IP}")"
+    
     if [ "$SPARK_MODE" = "master" ]; then
         # Ask if user wants to use the detected IP or specify a different one
-        echo "$(gum style --foreground 240 "Detected IP address: ${DETECTED_IP}")"
         if gum confirm "$(gum style --foreground 240 'Use this IP address for advertising the Spark master?')" --default=true; then
             SPARK_ADVERTISE_IP="$DETECTED_IP"
         else
@@ -135,8 +164,12 @@ run_configuration() {
         # Update master URL to use the advertised IP
         SPARK_MASTER_URL="spark://$SPARK_ADVERTISE_IP:$SPARK_PORT"
     else
-        # For worker mode
-        SPARK_LOCAL_IP="$DETECTED_IP"
+        # For worker mode - now also ask for confirmation
+        if gum confirm "$(gum style --foreground 240 'Use this IP address for the worker node?')" --default=true; then
+            SPARK_LOCAL_IP="$DETECTED_IP"
+        else
+            SPARK_LOCAL_IP=$(gum input --placeholder "[${DETECTED_IP}]" --value "$DETECTED_IP" --prompt "Worker IP: ")
+        fi
         SPARK_ADVERTISE_IP="$SPARK_LOCAL_IP"
     fi
 
