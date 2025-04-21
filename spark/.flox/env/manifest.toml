@@ -1,4 +1,3 @@
-
 # Flox manifest version managed by Flox CLI
 version = 1
 
@@ -9,34 +8,29 @@ gum.pkg-path = "gum"
 spark.pkg-path = "spark"
 pip.pkg-path = "python312Packages.pip"
 jdk.pkg-path = "jdk"
-gnused.pkg-path = "gnused"
-gawk.pkg-path = "gawk"
-coreutils.pkg-path = "coreutils"
 
 [vars]
 
 [hook]
 on-activate = '''
-# fetches reconfigure.sh from github
-fetch_reconfigure_sh() {
+# creates reconfigure.sh script in cache directory
+create_reconfigure_script() {
     local scripts_dir="$FLOX_ENV_CACHE/shell-scripts"
     local script_path="$scripts_dir/reconfigure.sh"
-    local script_url="https://raw.githubusercontent.com/barstoolbluz/floxenvs/main/spark/.flox/cache/shell-scripts/reconfigure.sh"
     
+    # creates directory if doesn't exist
     mkdir -p "$scripts_dir"
     
+    # only create the script if it doesn't exist
     if [ ! -f "$script_path" ]; then
-        echo "Downloading reconfigure.sh script..."
-        curl -s -o "$script_path" "$script_url"
-        chmod +x "$script_path"
-        echo "Download complete."
-    fi
-}
+        cat > "$script_path" << 'RECONFIGURESCRIPT'
+#!/bin/bash
+# reconfigure.sh - Interactive Spark configuration wizard for Flox environment
 
-# sets up the spark environment configuration
-bootstrap_spark() {
+# Function to run the configuration/bootstrap process
+run_configuration() {
     clear
-    
+
     gum style \
         --border rounded \
         --border-foreground 240 \
@@ -45,10 +39,10 @@ bootstrap_spark() {
         --width 70 \
         "$(gum style --foreground 27 --bold 'Apache Spark Configuration')
         
-$(gum style --foreground 240 'First-time setup for your Apache Spark cluster')"
-    
-    # sets defaults
-    DEFAULT_SPARK_MODE="master"
+    $(gum style --foreground 240 'First-time setup for your Apache Spark cluster')"
+
+    # Ensure defaults are set
+    DEFAULT_SPARK_MODE="worker"
     DEFAULT_SPARK_HOST="localhost"
     DEFAULT_SPARK_PORT="7077"
     DEFAULT_SPARK_WEBUI_PORT="8080"
@@ -56,11 +50,11 @@ $(gum style --foreground 240 'First-time setup for your Apache Spark cluster')"
     DEFAULT_SPARK_WORKER_MEMORY="2g"
     DEFAULT_SPARK_DATA_DIR="${FLOX_ENV_CACHE}/spark-data"
     DEFAULT_SPARK_LOG_DIR="${FLOX_ENV_CACHE}/spark-logs"
-    
-    # creates dirs
+
+    # Create directories
     mkdir -p "$DEFAULT_SPARK_DATA_DIR" >/dev/null 2>&1
     mkdir -p "$DEFAULT_SPARK_LOG_DIR" >/dev/null 2>&1
-    
+
     echo ""
     if gum confirm "$(gum style --foreground 240 'Would you like to customize your Spark configuration?')" --default=false; then
         echo "$(gum style --foreground 240 'Press Enter to accept the default values shown in [brackets]')"
@@ -73,7 +67,7 @@ $(gum style --foreground 240 'First-time setup for your Apache Spark cluster')"
             SPARK_PORT=$(gum input --placeholder "[${DEFAULT_SPARK_PORT}]" --value "$DEFAULT_SPARK_PORT" --prompt "Port: ")
             SPARK_WEBUI_PORT=$(gum input --placeholder "[${DEFAULT_SPARK_WEBUI_PORT}]" --value "$DEFAULT_SPARK_WEBUI_PORT" --prompt "Web UI Port: ")
             
-            # builds the master's url
+            # Build the master URL
             SPARK_MASTER_URL="spark://$SPARK_HOST:$SPARK_PORT"
         else
             SPARK_HOST="worker"
@@ -91,14 +85,14 @@ $(gum style --foreground 240 'First-time setup for your Apache Spark cluster')"
             SPARK_DATA_DIR=$(gum input --placeholder "[${DEFAULT_SPARK_DATA_DIR}]" --value "$DEFAULT_SPARK_DATA_DIR" --prompt "Spark Data Directory: ")
             SPARK_LOG_DIR=$(gum input --placeholder "[${DEFAULT_SPARK_LOG_DIR}]" --value "$DEFAULT_SPARK_LOG_DIR" --prompt "Spark Log Directory: ")
             
-            # creates custom directories if not exist
+            # Create custom directories if they don't exist
             mkdir -p "$SPARK_DATA_DIR" >/dev/null 2>&1
             mkdir -p "$SPARK_LOG_DIR" >/dev/null 2>&1
         fi
     else
         echo "$(gum style --foreground 240 'Using default configuration:')"
         
-        # defaults to master mode in the non-interactive path
+        # For simplicity, default to worker mode in the non-interactive path
         SPARK_MODE="$DEFAULT_SPARK_MODE"
         SPARK_HOST="$DEFAULT_SPARK_HOST"
         SPARK_PORT="$DEFAULT_SPARK_PORT"
@@ -118,16 +112,16 @@ $(gum style --foreground 240 'First-time setup for your Apache Spark cluster')"
         echo "$(gum style --foreground 240 "  Log Directory: ${SPARK_LOG_DIR}")"
         echo ""
     fi
-    
-    # determines network configuration
+
+    # Determine the network configuration
     echo ""
     echo "$(gum style --foreground 240 'Configuring network settings:')"
-    
-    # gets the nodes ip address as first non-loopback address
+
+    # Get the machine's IP address (first non-loopback address)
     DETECTED_IP=$(hostname -I | awk '{print $1}')
-    
+
     if [ "$SPARK_MODE" = "master" ]; then
-        # asks does user want to use the detected IP? specify a different ip?
+        # Ask if user wants to use the detected IP or specify a different one
         echo "$(gum style --foreground 240 "Detected IP address: ${DETECTED_IP}")"
         if gum confirm "$(gum style --foreground 240 'Use this IP address for advertising the Spark master?')" --default=true; then
             SPARK_ADVERTISE_IP="$DETECTED_IP"
@@ -135,20 +129,20 @@ $(gum style --foreground 240 'First-time setup for your Apache Spark cluster')"
             SPARK_ADVERTISE_IP=$(gum input --placeholder "[${DETECTED_IP}]" --value "$DETECTED_IP" --prompt "Advertise IP: ")
         fi
         
-        # sets the local binding ip
+        # Set the local binding IP
         SPARK_LOCAL_IP="0.0.0.0"  # Bind to all interfaces
         
-        # updates the master's url to use the advertised ip
+        # Update master URL to use the advertised IP
         SPARK_MASTER_URL="spark://$SPARK_ADVERTISE_IP:$SPARK_PORT"
     else
-        # sets ip settings for worker mode
+        # For worker mode
         SPARK_LOCAL_IP="$DETECTED_IP"
         SPARK_ADVERTISE_IP="$SPARK_LOCAL_IP"
     fi
-    
-    # saves config
+
+    # Save configuration
     cat > "$FLOX_ENV_CACHE/spark_config.sh" << EOF
-# sets the spark config generated by bootstrapping
+# Spark configuration generated by Flox environment
 SPARK_MODE="$SPARK_MODE"
 SPARK_HOST="$SPARK_HOST"
 SPARK_PORT="$SPARK_PORT"
@@ -162,7 +156,7 @@ SPARK_LOCAL_IP="$SPARK_LOCAL_IP"
 SPARK_ADVERTISE_IP="$SPARK_ADVERTISE_IP"
 EOF
 
-    # exports env vars for the current session
+    # Export environment variables for current session
     export SPARK_HOME="$(dirname $(which spark-submit))/.."
     export SPARK_LOG_DIR="$SPARK_LOG_DIR"
     export SPARK_WORKER_DIR="$SPARK_DATA_DIR"
@@ -175,10 +169,109 @@ EOF
     export SPARK_MASTER_URL="$SPARK_MASTER_URL"
     export SPARK_LOCAL_IP="$SPARK_LOCAL_IP"
     export SPARK_ADVERTISE_IP="$SPARK_ADVERTISE_IP"
-    
+
+    # Set master-specific variables if in master mode
+    if [ "$SPARK_MODE" = "master" ]; then
+        export SPARK_MASTER_HOST="$SPARK_ADVERTISE_IP"
+        export SPARK_MASTER_PORT="$SPARK_PORT"
+        export SPARK_MASTER_WEBUI_PORT="$SPARK_WEBUI_PORT"
+    fi
+
     echo ""
     echo "$(gum style --foreground 34 --bold "✓ Spark configuration saved!")"
     echo "$(gum style --foreground 212 "You can now start Spark with: flox services start")"
+}
+
+# Displays help information and status for the Spark environment
+info() {
+    # Gets current spark master and workers if available
+    local spark_master_status="Not running"
+    local spark_workers="None"
+    
+    if [ -f "$FLOX_ENV_CACHE/spark_config.sh" ]; then
+        # Source the config to get environment variables
+        source "$FLOX_ENV_CACHE/spark_config.sh"
+        
+        # checks is master running?
+        if [ "$SPARK_MODE" = "master" ] && pgrep -f "org.apache.spark.deploy.master.Master" > /dev/null; then
+            spark_master_status="Running at $SPARK_MASTER_URL"
+        elif [ "$SPARK_MODE" = "worker" ]; then
+            spark_master_status="Configured to connect to $SPARK_MASTER_URL"
+        fi
+        
+        # if master, checks for connected workers
+        if [ "$SPARK_MODE" = "master" ] && command -v curl > /dev/null; then
+            local connected_workers=$(curl -s "http://$SPARK_ADVERTISE_IP:$SPARK_WEBUI_PORT/json/" 2>/dev/null | jq '.workers | length' 2>/dev/null)
+            if [ ! -z "$connected_workers" ] && [ "$connected_workers" != "null" ]; then
+                spark_workers="$connected_workers workers connected"
+            fi
+        fi
+    fi
+
+    # builds environment details section dynamically
+    local env_details="    Spark Mode:      $(gum style --foreground 212 "${SPARK_MODE:-Not configured}")\n    Spark Master:    $(gum style --foreground 212 "${spark_master_status}")"
+    
+    # if master, adds connected workers info
+    if [ "$SPARK_MODE" = "master" ]; then
+        env_details+="\n    Workers:         $(gum style --foreground 212 "${spark_workers}")"
+    fi
+    
+    env_details+="\n    Data Directory:  $(gum style --foreground 212 "$FLOX_ENV_CACHE/spark-data")\n    Network Bind:    $(gum style --foreground 212 "${SPARK_LOCAL_IP:-Not configured}")\n    Advertised As:   $(gum style --foreground 212 "${SPARK_ADVERTISE_IP:-Not configured}")"
+
+    gum style \
+        --border rounded \
+        --border-foreground 240 \
+        --padding "1 2" \
+        --margin "1 0" \
+        --width 96 \
+        "$(gum style --foreground 141 --bold 'This is a  F l o x  Apache Spark Environment')
+
+👉  Working with Spark:
+    $(gum style --foreground 212 'reconfigure')                            Interactive Spark (re)configuration wizard
+    $(gum style --foreground 212 'readme')                                 View the README.md
+    $(gum style --foreground 212 'info')                                   Show this message
+
+👉  Spark Commands:
+    $(gum style --foreground 212 'spark-shell')                            Interactive Scala shell for Spark
+    $(gum style --foreground 212 'pyspark')                                Interactive Python shell for Spark
+    $(gum style --foreground 212 'spark-submit')                           Submit a Spark application
+
+👉  Cluster Management:
+    $(gum style --foreground 212 'flox services start')                    Start all Spark services
+    $(gum style --foreground 212 'flox services stop')                     Stop all Spark services
+    $(gum style --foreground 212 'flox services status')                   Check Spark services status
+    
+👉  Environment Details:
+$(echo -e "$env_details")"
+
+    echo ""
+}
+
+# Check arguments to determine which function to run
+if [ "$1" = "info" ]; then
+    # Just run the info function
+    info
+elif [ "$1" = "configure" ]; then
+    # Run the configuration process only
+    run_configuration
+else
+    # Default behavior when no args are provided (for backward compatibility)
+    run_configuration
+    info
+fi
+RECONFIGURESCRIPT
+
+        chmod +x "$script_path"
+    fi
+}
+
+# checks does/does not readme exist, downloads if not exist
+download_readme() {
+  local readme_path="$FLOX_ENV_PROJECT/README.md"
+  
+  if [ ! -f "$readme_path" ] || [ ! -s "$readme_path" ]; then
+    curl -sL "https://raw.githubusercontent.com/barstoolbluz/floxenvs/main/spark/README.md" > "$readme_path" 2>/dev/null
+  fi
 }
 
 # sets up env vars from the config file
@@ -216,83 +309,35 @@ setup_spark_env() {
     fi
 }
 
-# shows help message
-show_spark_help() {
-    # gets current spark master and workers if available
-    local spark_master_status="Not running"
-    local spark_workers="None"
-    
-    if [ -f "$FLOX_ENV_CACHE/spark_config.sh" ]; then
-        # checks is master running?
-        if [ "$SPARK_MODE" = "master" ] && pgrep -f "org.apache.spark.deploy.master.Master" > /dev/null; then
-            spark_master_status="Running at $SPARK_MASTER_URL"
-        elif [ "$SPARK_MODE" = "worker" ]; then
-            spark_master_status="Configured to connect to $SPARK_MASTER_URL"
-        fi
-        
-        # if master, checks for connected workers
-        if [ "$SPARK_MODE" = "master" ] && command -v curl > /dev/null; then
-            local connected_workers=$(curl -s "http://$SPARK_ADVERTISE_IP:$SPARK_WEBUI_PORT/json/" 2>/dev/null | jq '.workers | length' 2>/dev/null)
-            if [ ! -z "$connected_workers" ] && [ "$connected_workers" != "null" ]; then
-                spark_workers="$connected_workers workers connected"
-            fi
-        fi
-    fi
-
-    # builds environment details section dynamically
-    local env_details="    Spark Mode:      $(gum style --foreground 212 "${SPARK_MODE:-Not configured}")\n    Spark Master:    $(gum style --foreground 212 "${spark_master_status}")"
-    
-    # if master, adds connected workers info
-    if [ "$SPARK_MODE" = "master" ]; then
-        env_details+="\n    Workers:         $(gum style --foreground 212 "${spark_workers}")"
-    fi
-    
-    env_details+="\n    Data Directory:  $(gum style --foreground 212 "$FLOX_ENV_CACHE/spark-data")\n    Network Bind:    $(gum style --foreground 212 "${SPARK_LOCAL_IP:-Not configured}")\n    Advertised As:   $(gum style --foreground 212 "${SPARK_ADVERTISE_IP:-Not configured}")"
-
-    gum style \
-        --border rounded \
-        --border-foreground 240 \
-        --padding "1 2" \
-        --margin "1 0" \
-        --width 96 \
-        "$(gum style --foreground 141 --bold 'This is a  F l o x  Apache Spark Environment')
-
-👉  Configure Spark:
-    $(gum style --foreground 212 'bootstrap')                              Interactive Spark configuration wizard
-    $(gum style --foreground 212 'flox services <start|stop|restart>')     Manage Spark services
-
-👉  Spark Commands:
-    $(gum style --foreground 212 'spark-shell')                            Interactive Scala shell for Spark
-    $(gum style --foreground 212 'pyspark')                                Interactive Python shell for Spark
-    $(gum style --foreground 212 'spark-submit')                           Submit a Spark application
-
-👉  Cluster Management:
-    $(gum style --foreground 212 'flox services start')                    Start all Spark services
-    $(gum style --foreground 212 'flox services stop')                     Stop all Spark services
-    $(gum style --foreground 212 'flox services status')                   Check Spark services status
-    
-👉  Environment Details:
-$(echo -e "$env_details")"
-
-    echo ""
-}
-
-# bootstrap function
+# bootstrap function - sources reconfigure.sh to run the configuration
 bootstrap() {
-    bootstrap_spark
+    create_reconfigure_script
+    # Run the configuration only, don't show info yet (will be shown after)
+    source "$FLOX_ENV_CACHE/shell-scripts/reconfigure.sh" configure
 }
 
 # checks if spark config exists; if not, prompts to run bootstrap
 if [ ! -f "$FLOX_ENV_CACHE/spark_config.sh" ]; then
     gum style --foreground 212 --bold "No Spark configuration detected. Let's set one up!"
-    bootstrap_spark
+    bootstrap
 else
     # sources spark config and sets up env vars
     setup_spark_env
 fi
 
-fetch_reconfigure_sh
-show_spark_help
+# runnit
+create_reconfigure_script
+download_readme
+
+# If spark config exists, setup env vars and show info
+if [ -f "$FLOX_ENV_CACHE/spark_config.sh" ]; then
+    setup_spark_env
+    # Call info function from reconfigure.sh
+    source "$FLOX_ENV_CACHE/shell-scripts/reconfigure.sh" info
+else
+    # First-time setup, run bootstrap
+    bootstrap
+fi
 '''
 
 [profile]
@@ -300,17 +345,50 @@ bash = '''
 reconfigure() {
   [ -f "${FLOX_ENV_CACHE}/shell-scripts/reconfigure.sh" ] && bash "${FLOX_ENV_CACHE}/shell-scripts/reconfigure.sh"
 }
+
+info() {
+  [ -f "${FLOX_ENV_CACHE}/shell-scripts/reconfigure.sh" ] && bash "${FLOX_ENV_CACHE}/shell-scripts/reconfigure.sh" info
+}
+
+readme() {
+  if [[ "$1" == "--refresh" ]] || [ ! -s "$FLOX_ENV_PROJECT/README.md" ]; then
+    curl -sL "https://raw.githubusercontent.com/barstoolbluz/floxenvs/main/spark/README.md" > "$FLOX_ENV_PROJECT/README.md" 2>/dev/null
+  fi
+  bat --language markdown "$FLOX_ENV_PROJECT/README.md" 2>/dev/null
+}
 '''
 
 zsh = '''
 reconfigure() {
   [ -f "${FLOX_ENV_CACHE}/shell-scripts/reconfigure.sh" ] && bash "${FLOX_ENV_CACHE}/shell-scripts/reconfigure.sh"
 }
+
+info() {
+  [ -f "${FLOX_ENV_CACHE}/shell-scripts/reconfigure.sh" ] && bash "${FLOX_ENV_CACHE}/shell-scripts/reconfigure.sh" info
+}
+
+readme() {
+  if [[ "$1" == "--refresh" ]] || [ ! -s "$FLOX_ENV_PROJECT/README.md" ]; then
+    curl -sL "https://raw.githubusercontent.com/barstoolbluz/floxenvs/main/spark/README.md" > "$FLOX_ENV_PROJECT/README.md" 2>/dev/null
+  fi
+  bat --language markdown "$FLOX_ENV_PROJECT/README.md" 2>/dev/null
+}
 '''
 
 fish = '''
 function reconfigure
   test -f "$FLOX_ENV_CACHE/shell-scripts/reconfigure.sh" && bash "$FLOX_ENV_CACHE/shell-scripts/reconfigure.sh"
+end
+
+function info
+  test -f "$FLOX_ENV_CACHE/shell-scripts/reconfigure.sh" && bash "$FLOX_ENV_CACHE/shell-scripts/reconfigure.sh" info
+end
+
+function readme
+  if test "$argv[1]" = "--refresh"; or test ! -s "$FLOX_ENV_PROJECT/README.md"
+    curl -sL "https://raw.githubusercontent.com/barstoolbluz/floxenvs/main/spark/README.md" > "$FLOX_ENV_PROJECT/README.md" 2>/dev/null
+  fi
+  bat --language markdown "$FLOX_ENV_PROJECT/README.md" 2>/dev/null
 end
 '''
 
