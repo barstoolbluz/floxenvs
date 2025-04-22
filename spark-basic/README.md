@@ -1,6 +1,8 @@
 # 🔥 Flox Environment for Apache Spark Cluster Computing
 
-This Flox environment provides a simple solution for deploying and managing Apache Spark clusters. It offers flexible configuration options, automatic environment variable handling, and automatically sets up comms between master and worker nodes.
+This `spark-basic` environment is designed for CI, headless setups, or scripted workflows—i.e., any non-interactive context.
+
+The [`spark`](https://github.com/barstoolbluz/floxenvs/tree/main/spark/) environment is better for local, interactive use—especially when users need help configuring things step by step.
 
 ## ✨ Features
 
