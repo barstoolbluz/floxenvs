@@ -1,0 +1,662 @@
+{
+  "lockfile-version": 1,
+  "manifest": {
+    "version": 1,
+    "install": {
+      "bat": {
+        "pkg-path": "bat"
+      },
+      "curl": {
+        "pkg-path": "curl"
+      },
+      "jdk": {
+        "pkg-path": "jdk"
+      },
+      "pip": {
+        "pkg-path": "python312Packages.pip"
+      },
+      "spark": {
+        "pkg-path": "spark"
+      }
+    },
+    "hook": {
+      "on-activate": "# creates $SPARK data and log  dirs\nmkdir -p \"$FLOX_ENV_CACHE/spark-data\"\nmkdir -p \"$FLOX_ENV_CACHE/spark-logs\"\n\n# Sets $SPARK_HOME if not set\nexport SPARK_HOME=\"${SPARK_HOME:-$(dirname $(which spark-submit))/..}\"\n\n# Sets data + log dirs if not already set\nif [ -z \"$SPARK_LOG_DIR\" ]; then\n    export SPARK_LOG_DIR=\"$FLOX_ENV_CACHE/spark-logs\"\nfi\n\nif [ -z \"$SPARK_WORKER_DIR\" ]; then\n    export SPARK_WORKER_DIR=\"$FLOX_ENV_CACHE/spark-data\"\nfi\n\n# checks + sets env vars if not already set\nif [ -z \"$SPARK_MODE\" ]; then\n    export SPARK_MODE=\"worker\"\nfi\n\nif [ -z \"$SPARK_HOST\" ]; then\n    export SPARK_HOST=\"localhost\"\nfi\n\nif [ -z \"$SPARK_PORT\" ]; then\n    export SPARK_PORT=\"7077\"\nfi\n\nif [ -z \"$SPARK_WEBUI_PORT\" ]; then\n    export SPARK_WEBUI_PORT=\"8080\"\nfi\n\nif [ -z \"$SPARK_WORKER_CORES\" ]; then\n    export SPARK_WORKER_CORES=\"2\"\nfi\n\nif [ -z \"$SPARK_WORKER_MEMORY\" ]; then\n    export SPARK_WORKER_MEMORY=\"2g\"\nfi\n\n# detects ip if $SPARK_LOCAL_IP isn't set\nif [ -z \"$SPARK_LOCAL_IP\" ]; then\n    # detects os to determine which ip detection method to use\n    OS_TYPE=$(uname -s)\n    \n    # special handling for darwin/macos\n    if [ \"$OS_TYPE\" = \"Darwin\" ]; then\n        # darwin/macos\n        DETECTED_IP=$(ifconfig | grep \"inet \" | grep -v 127.0.0.1 | head -n 1 | awk '{print $2}')\n    elif [ \"$OS_TYPE\" = \"Linux\" ]; then\n        # linux\n        DETECTED_IP=$(hostname -I 2>/dev/null | awk '{print $1}')\n        \n        # falls back to trying ifconfig or ip\n        if [ -z \"$DETECTED_IP\" ]; then\n            if command -v ifconfig >/dev/null 2>&1; then\n                DETECTED_IP=$(ifconfig | grep -Eo 'inet (addr:)?([0-9]*\\.){3}[0-9]*' | grep -Eo '([0-9]*\\.){3}[0-9]*' | grep -v '127.0.0.1' | head -n 1)\n            elif command -v ip >/dev/null 2>&1; then\n                DETECTED_IP=$(ip -4 addr show | grep -oP '(?<=inet\\s)\\d+(\\.\\d+){3}' | grep -v '127.0.0.1' | head -n 1)\n            fi\n        fi\n    else\n        # fallback for darwin/macos\n        DETECTED_IP=$(ifconfig 2>/dev/null | grep -Eo 'inet (addr:)?([0-9]*\\.){3}[0-9]*' | grep -Eo '([0-9]*\\.){3}[0-9]*' | grep -v '127.0.0.1' | head -n 1)\n    fi\n    \n    # falls back to localhost if everything else is kaput\n    if [ -z \"$DETECTED_IP\" ]; then\n        DETECTED_IP=\"127.0.0.1\"\n        echo \"Warning: Could not detect IP address, using 127.0.0.1 as fallback.\"\n    fi\n    \n    # sets local ip if not already set\n    export SPARK_LOCAL_IP=\"$DETECTED_IP\"\nfi\n\n# sets advertise ip if not already set\nif [ -z \"$SPARK_ADVERTISE_IP\" ]; then\n    export SPARK_ADVERTISE_IP=\"$SPARK_LOCAL_IP\"\nfi\n\n# sets $SPARK_MASTER_URL if $SPARK_MODE=master and  not already set\nif [ -z \"$SPARK_MASTER_URL\" ]; then\n    if [ \"$SPARK_MODE\" = \"master\" ]; then\n        export SPARK_MASTER_URL=\"spark://$SPARK_ADVERTISE_IP:$SPARK_PORT\"\n    else\n        # builds from host/port for $SPARK_MODE=worker\n        export SPARK_MASTER_URL=\"spark://$SPARK_HOST:$SPARK_PORT\"\n    fi\nfi\n\n# sets $SPARK_MASTER env vars\nif [ \"$SPARK_MODE\" = \"master\" ]; then\n    if [ -z \"$SPARK_MASTER_HOST\" ]; then\n        export SPARK_MASTER_HOST=\"$SPARK_ADVERTISE_IP\"\n    fi\n    \n    if [ -z \"$SPARK_MASTER_PORT\" ]; then\n        export SPARK_MASTER_PORT=\"$SPARK_PORT\"\n    fi\n    \n    if [ -z \"$SPARK_MASTER_WEBUI_PORT\" ]; then\n        export SPARK_MASTER_WEBUI_PORT=\"$SPARK_WEBUI_PORT\"\n    fi\nfi\n\n# tries to find JAVA_HOME if not already set; should be set b/c this is flox!\nif [ -z \"$JAVA_HOME\" ]; then\n    export JAVA_HOME=\"$(dirname $(dirname $(which java)))\"\nfi\n\n# displays current configuration\necho \"Spark Environment Configuration:\"\necho \"  Mode:          $SPARK_MODE\"\necho \"  Local IP:      $SPARK_LOCAL_IP\"\necho \"  Advertise IP:  $SPARK_ADVERTISE_IP\"\necho \"  Data Dir:      $SPARK_WORKER_DIR\"\necho \"  Log Dir:       $SPARK_LOG_DIR\"\nif [ \"$SPARK_MODE\" = \"master\" ]; then\n    echo \"  Master URL:    $SPARK_MASTER_URL (I am the master)\"\n    echo \"  Web UI:        http://$SPARK_ADVERTISE_IP:$SPARK_WEBUI_PORT\"\nelse\n    echo \"  Master URL:    $SPARK_MASTER_URL\"\n    echo \"  Worker Cores:  $SPARK_WORKER_CORES\"\n    echo \"  Worker Memory: $SPARK_WORKER_MEMORY\"\nfi\n\n# downloads README.md if not exists\nif [ ! -f \"$FLOX_ENV_PROJECT/README.md\" ] || [ ! -s \"$FLOX_ENV_PROJECT/README.md\" ]; then\n    curl -sL \"https://raw.githubusercontent.com/barstoolbluz/floxenvs/main/spark/README.md\" > \"$FLOX_ENV_PROJECT/README.md\" 2>/dev/null\nfi\n"
+    },
+    "profile": {
+      "bash": "info() {\n  echo \"Spark Environment Configuration:\"\n  echo \"  Mode:          $SPARK_MODE\"\n  echo \"  Local IP:      $SPARK_LOCAL_IP\"\n  echo \"  Advertise IP:  $SPARK_ADVERTISE_IP\"\n  echo \"  Data Dir:      $SPARK_WORKER_DIR\"\n  echo \"  Log Dir:       $SPARK_LOG_DIR\"\n  if [ \"$SPARK_MODE\" = \"master\" ]; then\n      echo \"  Master URL:    $SPARK_MASTER_URL (I am the master)\"\n      echo \"  Web UI:        http://$SPARK_ADVERTISE_IP:$SPARK_WEBUI_PORT\"\n  else\n      echo \"  Master URL:    $SPARK_MASTER_URL\"\n      echo \"  Worker Cores:  $SPARK_WORKER_CORES\"\n      echo \"  Worker Memory: $SPARK_WORKER_MEMORY\"\n  fi\n}\n\nreadme() {\n  if [[ \"$1\" == \"--refresh\" ]] || [ ! -s \"$FLOX_ENV_PROJECT/README.md\" ]; then\n    curl -sL \"https://raw.githubusercontent.com/barstoolbluz/floxenvs/main/spark-basic/README.md\" > \"$FLOX_ENV_PROJECT/README.md\" 2>/dev/null\n  fi\n  bat --language markdown \"$FLOX_ENV_PROJECT/README.md\" 2>/dev/null\n}\n",
+      "zsh": "info() {\n  echo \"Spark Environment Configuration:\"\n  echo \"  Mode:          $SPARK_MODE\"\n  echo \"  Local IP:      $SPARK_LOCAL_IP\"\n  echo \"  Advertise IP:  $SPARK_ADVERTISE_IP\"\n  echo \"  Data Dir:      $SPARK_WORKER_DIR\"\n  echo \"  Log Dir:       $SPARK_LOG_DIR\"\n  if [ \"$SPARK_MODE\" = \"master\" ]; then\n      echo \"  Master URL:    $SPARK_MASTER_URL (I am the master)\"\n      echo \"  Web UI:        http://$SPARK_ADVERTISE_IP:$SPARK_WEBUI_PORT\"\n  else\n      echo \"  Master URL:    $SPARK_MASTER_URL\"\n      echo \"  Worker Cores:  $SPARK_WORKER_CORES\"\n      echo \"  Worker Memory: $SPARK_WORKER_MEMORY\"\n  fi\n}\n\nreadme() {\n  if [[ \"$1\" == \"--refresh\" ]] || [ ! -s \"$FLOX_ENV_PROJECT/README.md\" ]; then\n    curl -sL \"https://raw.githubusercontent.com/barstoolbluz/floxenvs/main/spark-basic/README.md\" > \"$FLOX_ENV_PROJECT/README.md\" 2>/dev/null\n  fi\n  bat --language markdown \"$FLOX_ENV_PROJECT/README.md\" 2>/dev/null\n}\n",
+      "fish": "function info\n  echo \"Spark Environment Configuration:\"\n  echo \"  Mode:          $SPARK_MODE\"\n  echo \"  Local IP:      $SPARK_LOCAL_IP\"\n  echo \"  Advertise IP:  $SPARK_ADVERTISE_IP\"\n  echo \"  Data Dir:      $SPARK_WORKER_DIR\"\n  echo \"  Log Dir:       $SPARK_LOG_DIR\"\n  if [ \"$SPARK_MODE\" = \"master\" ]\n      echo \"  Master URL:    $SPARK_MASTER_URL (I am the master)\"\n      echo \"  Web UI:        http://$SPARK_ADVERTISE_IP:$SPARK_WEBUI_PORT\"\n  else\n      echo \"  Master URL:    $SPARK_MASTER_URL\"\n      echo \"  Worker Cores:  $SPARK_WORKER_CORES\"\n      echo \"  Worker Memory: $SPARK_WORKER_MEMORY\"\n  end\nend\n\nfunction readme\n  if test \"$argv[1]\" = \"--refresh\"; or test ! -s \"$FLOX_ENV_PROJECT/README.md\"\n    curl -sL \"https://raw.githubusercontent.com/barstoolbluz/floxenvs/main/spark-basic/README.md\" > \"$FLOX_ENV_PROJECT/README.md\" 2>/dev/null\n  end\n  bat --language markdown \"$FLOX_ENV_PROJECT/README.md\" 2>/dev/null\nend\n"
+    },
+    "options": {
+      "systems": [
+        "aarch64-darwin",
+        "aarch64-linux",
+        "x86_64-darwin",
+        "x86_64-linux"
+      ]
+    },
+    "services": {
+      "spark": {
+        "command": "mkdir -p \"$SPARK_LOG_DIR\"\nmkdir -p \"$SPARK_WORKER_DIR\"\n\nenv | grep SPARK > \"$SPARK_LOG_DIR/env-vars.log\"\n\nif [ \"$SPARK_MODE\" = \"master\" ]; then\n    if ping -c 1 -W 1 \"$SPARK_LOCAL_IP\" > /dev/null 2>&1; then\n        echo \"IP $SPARK_LOCAL_IP is reachable\" >> \"$SPARK_LOG_DIR/startup.log\"\n    else\n        echo \"Warning: IP $SPARK_LOCAL_IP might not be reachable\" >> \"$SPARK_LOG_DIR/startup.log\"\n        \n        if ip addr | grep -q \"$SPARK_LOCAL_IP\"; then\n            echo \"IP $SPARK_LOCAL_IP is configured locally\" >> \"$SPARK_LOG_DIR/startup.log\"\n        else\n            echo \"Warning: IP $SPARK_LOCAL_IP is not configured on any local interface\" >> \"$SPARK_LOG_DIR/startup.log\"\n            echo \"Falling back to 127.0.0.1 for binding\" >> \"$SPARK_LOG_DIR/startup.log\"\n            export SPARK_LOCAL_IP=\"127.0.0.1\"\n        fi\n    fi\n    \n    export SPARK_MASTER_HOST=\"$SPARK_ADVERTISE_IP\"\n    export SPARK_MASTER_PORT=\"$SPARK_PORT\"\n    export SPARK_MASTER_WEBUI_PORT=\"$SPARK_WEBUI_PORT\"\n    export SPARK_LOCAL_IP=\"$SPARK_LOCAL_IP\"\n    \n    unset SPARK_LOCAL_HOSTNAME\n    unset SPARK_PUBLIC_DNS\n    \n    echo \"Starting Spark master at $SPARK_MASTER_URL (binding to $SPARK_LOCAL_IP, advertising as $SPARK_ADVERTISE_IP)\" >> \"$SPARK_LOG_DIR/startup.log\"\n    cd \"$SPARK_HOME\" && \"./sbin/start-master.sh\"\nelif [ \"$SPARK_MODE\" = \"worker\" ] && [ ! -z \"$SPARK_MASTER_URL\" ]; then\n    if ping -c 1 -W 1 \"$SPARK_LOCAL_IP\" > /dev/null 2>&1; then\n        echo \"IP $SPARK_LOCAL_IP is reachable\" >> \"$SPARK_LOG_DIR/startup.log\"\n    else\n        echo \"Warning: IP $SPARK_LOCAL_IP might not be reachable\" >> \"$SPARK_LOG_DIR/startup.log\"\n        \n        if ip addr | grep -q \"$SPARK_LOCAL_IP\"; then\n            echo \"IP $SPARK_LOCAL_IP is configured locally\" >> \"$SPARK_LOG_DIR/startup.log\"\n        else\n            echo \"Warning: IP $SPARK_LOCAL_IP is not configured on any local interface\" >> \"$SPARK_LOG_DIR/startup.log\"\n            echo \"Falling back to 127.0.0.1 for binding\" >> \"$SPARK_LOG_DIR/startup.log\"\n            export SPARK_LOCAL_IP=\"127.0.0.1\"\n        fi\n    fi\n    \n    export SPARK_WORKER_CORES=\"$SPARK_WORKER_CORES\"\n    export SPARK_WORKER_MEMORY=\"$SPARK_WORKER_MEMORY\"\n    \n    unset SPARK_LOCAL_HOSTNAME\n    unset SPARK_PUBLIC_DNS\n    \n    echo \"Starting Spark worker at $SPARK_LOCAL_IP connecting to $SPARK_MASTER_URL\" >> \"$SPARK_LOG_DIR/startup.log\" \n    cd \"$SPARK_HOME\" && \"./sbin/start-worker.sh\" \"$SPARK_MASTER_URL\"\nelse\n    echo \"ERROR: Invalid configuration. SPARK_MODE=$SPARK_MODE, SPARK_MASTER_URL=$SPARK_MASTER_URL\" >> \"$SPARK_LOG_DIR/startup.log\"\n    exit 1\nfi\n\n# keeps the service running\ntail -f /dev/null\n"
+      }
+    }
+  },
+  "packages": [
+    {
+      "attr_path": "bat",
+      "broken": false,
+      "derivation": "/nix/store/zv04rfzmqbkibdxai2jzqykgc7l245df-bat-0.25.0.drv",
+      "description": "Cat(1) clone with syntax highlighting and Git integration",
+      "install_id": "bat",
+      "license": "[ Apache-2.0, MIT ]",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=b024ced1aac25639f8ca8fdfc2f8c4fbd66c48ef",
+      "name": "bat-0.25.0",
+      "pname": "bat",
+      "rev": "b024ced1aac25639f8ca8fdfc2f8c4fbd66c48ef",
+      "rev_count": 785698,
+      "rev_date": "2025-04-17T23:31:41Z",
+      "scrape_date": "2025-04-19T04:22:38.468065Z",
+      "stabilities": [
+        "unstable"
+      ],
+      "unfree": false,
+      "version": "0.25.0",
+      "outputs_to_install": [
+        "out"
+      ],
+      "outputs": {
+        "out": "/nix/store/29xjspshldxxsx7ff6fs6n8nz7rwwa0n-bat-0.25.0"
+      },
+      "system": "aarch64-darwin",
+      "group": "toplevel",
+      "priority": 5
+    },
+    {
+      "attr_path": "bat",
+      "broken": false,
+      "derivation": "/nix/store/x34py05hr9kbqq3v7yj1w5rbrd7lj2hc-bat-0.25.0.drv",
+      "description": "Cat(1) clone with syntax highlighting and Git integration",
+      "install_id": "bat",
+      "license": "[ Apache-2.0, MIT ]",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=b024ced1aac25639f8ca8fdfc2f8c4fbd66c48ef",
+      "name": "bat-0.25.0",
+      "pname": "bat",
+      "rev": "b024ced1aac25639f8ca8fdfc2f8c4fbd66c48ef",
+      "rev_count": 785698,
+      "rev_date": "2025-04-17T23:31:41Z",
+      "scrape_date": "2025-04-19T04:45:12.631558Z",
+      "stabilities": [
+        "unstable"
+      ],
+      "unfree": false,
+      "version": "0.25.0",
+      "outputs_to_install": [
+        "out"
+      ],
+      "outputs": {
+        "out": "/nix/store/aqpwblil73wrjvjckhagjdwbbj8y6qpm-bat-0.25.0"
+      },
+      "system": "aarch64-linux",
+      "group": "toplevel",
+      "priority": 5
+    },
+    {
+      "attr_path": "bat",
+      "broken": false,
+      "derivation": "/nix/store/h4jyxngwni1w7zzv586c4izw4j6cwiq4-bat-0.25.0.drv",
+      "description": "Cat(1) clone with syntax highlighting and Git integration",
+      "install_id": "bat",
+      "license": "[ Apache-2.0, MIT ]",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=b024ced1aac25639f8ca8fdfc2f8c4fbd66c48ef",
+      "name": "bat-0.25.0",
+      "pname": "bat",
+      "rev": "b024ced1aac25639f8ca8fdfc2f8c4fbd66c48ef",
+      "rev_count": 785698,
+      "rev_date": "2025-04-17T23:31:41Z",
+      "scrape_date": "2025-04-19T05:05:09.961521Z",
+      "stabilities": [
+        "unstable"
+      ],
+      "unfree": false,
+      "version": "0.25.0",
+      "outputs_to_install": [
+        "out"
+      ],
+      "outputs": {
+        "out": "/nix/store/zsjjqxpx1m3n1677jsk3viy84rxhh7s5-bat-0.25.0"
+      },
+      "system": "x86_64-darwin",
+      "group": "toplevel",
+      "priority": 5
+    },
+    {
+      "attr_path": "bat",
+      "broken": false,
+      "derivation": "/nix/store/y2b64irmqc3qmlzjqc3r8r6imclfbiii-bat-0.25.0.drv",
+      "description": "Cat(1) clone with syntax highlighting and Git integration",
+      "install_id": "bat",
+      "license": "[ Apache-2.0, MIT ]",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=b024ced1aac25639f8ca8fdfc2f8c4fbd66c48ef",
+      "name": "bat-0.25.0",
+      "pname": "bat",
+      "rev": "b024ced1aac25639f8ca8fdfc2f8c4fbd66c48ef",
+      "rev_count": 785698,
+      "rev_date": "2025-04-17T23:31:41Z",
+      "scrape_date": "2025-04-19T05:27:40.953427Z",
+      "stabilities": [
+        "unstable"
+      ],
+      "unfree": false,
+      "version": "0.25.0",
+      "outputs_to_install": [
+        "out"
+      ],
+      "outputs": {
+        "out": "/nix/store/znb9lva77lsydvmy3ra1h0ilzm4fgkgc-bat-0.25.0"
+      },
+      "system": "x86_64-linux",
+      "group": "toplevel",
+      "priority": 5
+    },
+    {
+      "attr_path": "curl",
+      "broken": false,
+      "derivation": "/nix/store/vdyh7cx27q7mga5i15cqlkj3rl4q1zm7-curl-8.12.1.drv",
+      "description": "Command line tool for transferring files with URL syntax",
+      "install_id": "curl",
+      "license": "curl",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=b024ced1aac25639f8ca8fdfc2f8c4fbd66c48ef",
+      "name": "curl-8.12.1",
+      "pname": "curl",
+      "rev": "b024ced1aac25639f8ca8fdfc2f8c4fbd66c48ef",
+      "rev_count": 785698,
+      "rev_date": "2025-04-17T23:31:41Z",
+      "scrape_date": "2025-04-19T04:22:38.764137Z",
+      "stabilities": [
+        "unstable"
+      ],
+      "unfree": false,
+      "version": "8.12.1",
+      "outputs_to_install": [
+        "bin",
+        "man"
+      ],
+      "outputs": {
+        "bin": "/nix/store/krgqarvv8y1xr2f7z5vxxva3nn7d1x8l-curl-8.12.1-bin",
+        "dev": "/nix/store/8rsm3wrn90wm3h9bcr44j2z5g3qlnq8w-curl-8.12.1-dev",
+        "devdoc": "/nix/store/mcxbd00pvp9z2p3baqjypiirrnxyqn1i-curl-8.12.1-devdoc",
+        "man": "/nix/store/nxxww0dn65fw7aky9zvghsykr0syb8lg-curl-8.12.1-man",
+        "out": "/nix/store/r011ii30b9gphcrwppszgv9bnd6d605r-curl-8.12.1"
+      },
+      "system": "aarch64-darwin",
+      "group": "toplevel",
+      "priority": 5
+    },
+    {
+      "attr_path": "curl",
+      "broken": false,
+      "derivation": "/nix/store/yq3cgczhqmmrwclib223sw30cv5bjnsp-curl-8.12.1.drv",
+      "description": "Command line tool for transferring files with URL syntax",
+      "install_id": "curl",
+      "license": "curl",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=b024ced1aac25639f8ca8fdfc2f8c4fbd66c48ef",
+      "name": "curl-8.12.1",
+      "pname": "curl",
+      "rev": "b024ced1aac25639f8ca8fdfc2f8c4fbd66c48ef",
+      "rev_count": 785698,
+      "rev_date": "2025-04-17T23:31:41Z",
+      "scrape_date": "2025-04-19T04:45:13.054949Z",
+      "stabilities": [
+        "unstable"
+      ],
+      "unfree": false,
+      "version": "8.12.1",
+      "outputs_to_install": [
+        "bin",
+        "man"
+      ],
+      "outputs": {
+        "bin": "/nix/store/hvlljyxp5xzrv719f5j7m7gnyb87mx41-curl-8.12.1-bin",
+        "debug": "/nix/store/z8lpvdvih1mspz5j1lsbgagsjpl2wizw-curl-8.12.1-debug",
+        "dev": "/nix/store/npbpw2121z4akxngf176q1mdlxfkwv0j-curl-8.12.1-dev",
+        "devdoc": "/nix/store/r6kp2rzlm8vfflnzrhsf21b20ixgmpfp-curl-8.12.1-devdoc",
+        "man": "/nix/store/cb83qlmflk1w18ndysbbm9hvg053w3f6-curl-8.12.1-man",
+        "out": "/nix/store/gy6v84p7iy8p2wy7w0qh56vbqwz446kk-curl-8.12.1"
+      },
+      "system": "aarch64-linux",
+      "group": "toplevel",
+      "priority": 5
+    },
+    {
+      "attr_path": "curl",
+      "broken": false,
+      "derivation": "/nix/store/fq1birpdcm24zlsq0hnhq7sbaalyjzj1-curl-8.12.1.drv",
+      "description": "Command line tool for transferring files with URL syntax",
+      "install_id": "curl",
+      "license": "curl",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=b024ced1aac25639f8ca8fdfc2f8c4fbd66c48ef",
+      "name": "curl-8.12.1",
+      "pname": "curl",
+      "rev": "b024ced1aac25639f8ca8fdfc2f8c4fbd66c48ef",
+      "rev_count": 785698,
+      "rev_date": "2025-04-17T23:31:41Z",
+      "scrape_date": "2025-04-19T05:05:10.246632Z",
+      "stabilities": [
+        "unstable"
+      ],
+      "unfree": false,
+      "version": "8.12.1",
+      "outputs_to_install": [
+        "bin",
+        "man"
+      ],
+      "outputs": {
+        "bin": "/nix/store/3nm8cgv7xg1qadvgcshmvspmsr7frvp2-curl-8.12.1-bin",
+        "dev": "/nix/store/vij71byxpyrpxsyvb6z4vh75hj51la5f-curl-8.12.1-dev",
+        "devdoc": "/nix/store/6zf74b4kalqx1653vwsv7vpng113igi7-curl-8.12.1-devdoc",
+        "man": "/nix/store/4aphz90jsdfzx5cfzl5nfnml7czswg09-curl-8.12.1-man",
+        "out": "/nix/store/fswhs12ddagbw24a1gr0rv7sm7aqj7c1-curl-8.12.1"
+      },
+      "system": "x86_64-darwin",
+      "group": "toplevel",
+      "priority": 5
+    },
+    {
+      "attr_path": "curl",
+      "broken": false,
+      "derivation": "/nix/store/c7phcbkl7nzja980jnyy0g1dni8qb782-curl-8.12.1.drv",
+      "description": "Command line tool for transferring files with URL syntax",
+      "install_id": "curl",
+      "license": "curl",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=b024ced1aac25639f8ca8fdfc2f8c4fbd66c48ef",
+      "name": "curl-8.12.1",
+      "pname": "curl",
+      "rev": "b024ced1aac25639f8ca8fdfc2f8c4fbd66c48ef",
+      "rev_count": 785698,
+      "rev_date": "2025-04-17T23:31:41Z",
+      "scrape_date": "2025-04-19T05:27:41.421539Z",
+      "stabilities": [
+        "unstable"
+      ],
+      "unfree": false,
+      "version": "8.12.1",
+      "outputs_to_install": [
+        "bin",
+        "man"
+      ],
+      "outputs": {
+        "bin": "/nix/store/16g6gyg131k8vgna13ilb4v9msh5fmi9-curl-8.12.1-bin",
+        "debug": "/nix/store/v7kw0dv1r94d7xjknibh53wl8yqwinh8-curl-8.12.1-debug",
+        "dev": "/nix/store/0rnns5hhxpvx08p0k3j6bhivj70y6wli-curl-8.12.1-dev",
+        "devdoc": "/nix/store/mxjg45wa0ibsyzlilbiiy3hqbpn5zfxw-curl-8.12.1-devdoc",
+        "man": "/nix/store/y8h3k07g8hpbs8ifx6vxlbh2kfpl4m65-curl-8.12.1-man",
+        "out": "/nix/store/kmq714baxkd5yzpnbp09b7dhnks6m74q-curl-8.12.1"
+      },
+      "system": "x86_64-linux",
+      "group": "toplevel",
+      "priority": 5
+    },
+    {
+      "attr_path": "jdk",
+      "broken": false,
+      "derivation": "/nix/store/zrjvkhk1hx7mqi5hxi9j6651jqafxwxv-zulu-ca-jdk-21.0.4.drv",
+      "description": "Certified builds of OpenJDK",
+      "install_id": "jdk",
+      "license": "GPL-2.0-only",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=b024ced1aac25639f8ca8fdfc2f8c4fbd66c48ef",
+      "name": "zulu-ca-jdk-21.0.4",
+      "pname": "jdk",
+      "rev": "b024ced1aac25639f8ca8fdfc2f8c4fbd66c48ef",
+      "rev_count": 785698,
+      "rev_date": "2025-04-17T23:31:41Z",
+      "scrape_date": "2025-04-19T04:22:39.694077Z",
+      "stabilities": [
+        "unstable"
+      ],
+      "unfree": false,
+      "version": "21.0.4",
+      "outputs_to_install": [
+        "out"
+      ],
+      "outputs": {
+        "out": "/nix/store/36yvq3c4i9qcqhm4n37v5qnk5sqjy5iq-zulu-ca-jdk-21.0.4"
+      },
+      "system": "aarch64-darwin",
+      "group": "toplevel",
+      "priority": 5
+    },
+    {
+      "attr_path": "jdk",
+      "broken": false,
+      "derivation": "/nix/store/2xk8jh3qa3d8v8hs7xy8mpwddkmiq3dh-openjdk-21.0.5+11.drv",
+      "description": "Open-source Java Development Kit",
+      "install_id": "jdk",
+      "license": "GPL-2.0-only",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=b024ced1aac25639f8ca8fdfc2f8c4fbd66c48ef",
+      "name": "openjdk-21.0.5+11",
+      "pname": "jdk",
+      "rev": "b024ced1aac25639f8ca8fdfc2f8c4fbd66c48ef",
+      "rev_count": 785698,
+      "rev_date": "2025-04-17T23:31:41Z",
+      "scrape_date": "2025-04-19T04:45:15.406011Z",
+      "stabilities": [
+        "unstable"
+      ],
+      "unfree": false,
+      "version": "21.0.5+11",
+      "outputs_to_install": [
+        "out"
+      ],
+      "outputs": {
+        "debug": "/nix/store/di3vg628rw8vy5sgfighv4bhag7vcmaw-openjdk-21.0.5+11-debug",
+        "out": "/nix/store/1vdnkw9l0iv9jyaqp44p7afb11x94ykx-openjdk-21.0.5+11"
+      },
+      "system": "aarch64-linux",
+      "group": "toplevel",
+      "priority": 5
+    },
+    {
+      "attr_path": "jdk",
+      "broken": false,
+      "derivation": "/nix/store/7b5rgvacfjzx8jd24jlmplyz48y9jxx3-zulu-ca-jdk-21.0.4.drv",
+      "description": "Certified builds of OpenJDK",
+      "install_id": "jdk",
+      "license": "GPL-2.0-only",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=b024ced1aac25639f8ca8fdfc2f8c4fbd66c48ef",
+      "name": "zulu-ca-jdk-21.0.4",
+      "pname": "jdk",
+      "rev": "b024ced1aac25639f8ca8fdfc2f8c4fbd66c48ef",
+      "rev_count": 785698,
+      "rev_date": "2025-04-17T23:31:41Z",
+      "scrape_date": "2025-04-19T05:05:11.191146Z",
+      "stabilities": [
+        "unstable"
+      ],
+      "unfree": false,
+      "version": "21.0.4",
+      "outputs_to_install": [
+        "out"
+      ],
+      "outputs": {
+        "out": "/nix/store/dlf455vq9gh7mhdg5h2mvkf87any49g4-zulu-ca-jdk-21.0.4"
+      },
+      "system": "x86_64-darwin",
+      "group": "toplevel",
+      "priority": 5
+    },
+    {
+      "attr_path": "jdk",
+      "broken": false,
+      "derivation": "/nix/store/cqzq3qqjgp9rj492m2cj82x8vc3c1py2-openjdk-21.0.5+11.drv",
+      "description": "Open-source Java Development Kit",
+      "install_id": "jdk",
+      "license": "GPL-2.0-only",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=b024ced1aac25639f8ca8fdfc2f8c4fbd66c48ef",
+      "name": "openjdk-21.0.5+11",
+      "pname": "jdk",
+      "rev": "b024ced1aac25639f8ca8fdfc2f8c4fbd66c48ef",
+      "rev_count": 785698,
+      "rev_date": "2025-04-17T23:31:41Z",
+      "scrape_date": "2025-04-19T05:27:43.961309Z",
+      "stabilities": [
+        "unstable"
+      ],
+      "unfree": false,
+      "version": "21.0.5+11",
+      "outputs_to_install": [
+        "out"
+      ],
+      "outputs": {
+        "debug": "/nix/store/8745ilvhps8wz7b109304xbra9nczpnd-openjdk-21.0.5+11-debug",
+        "out": "/nix/store/k7sl9awa4r5i8z3fj8wz90cac1v7s5n7-openjdk-21.0.5+11"
+      },
+      "system": "x86_64-linux",
+      "group": "toplevel",
+      "priority": 5
+    },
+    {
+      "attr_path": "python312Packages.pip",
+      "broken": false,
+      "derivation": "/nix/store/1cc3x3dnjnxcn7c74h1q7yy3lzss9cdc-python3.12-pip-25.0.1.drv",
+      "description": "PyPA recommended tool for installing Python packages",
+      "install_id": "pip",
+      "license": "[ MIT ]",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=b024ced1aac25639f8ca8fdfc2f8c4fbd66c48ef",
+      "name": "python3.12-pip-25.0.1",
+      "pname": "pip",
+      "rev": "b024ced1aac25639f8ca8fdfc2f8c4fbd66c48ef",
+      "rev_count": 785698,
+      "rev_date": "2025-04-17T23:31:41Z",
+      "scrape_date": "2025-04-19T04:22:52.085556Z",
+      "stabilities": [
+        "unstable"
+      ],
+      "unfree": false,
+      "version": "25.0.1",
+      "outputs_to_install": [
+        "man",
+        "out"
+      ],
+      "outputs": {
+        "dist": "/nix/store/cyijbrnfsr34gld57nfsarvgs1frqh97-python3.12-pip-25.0.1-dist",
+        "man": "/nix/store/bbnkgv1vkdpqq091h7aaphkiscmc8f33-python3.12-pip-25.0.1-man",
+        "out": "/nix/store/k0l86f13z6m341p64c149yj4qgzr6cj7-python3.12-pip-25.0.1"
+      },
+      "system": "aarch64-darwin",
+      "group": "toplevel",
+      "priority": 5
+    },
+    {
+      "attr_path": "python312Packages.pip",
+      "broken": false,
+      "derivation": "/nix/store/13k49hp3fimlvhgz0p92wp09knh1j340-python3.12-pip-25.0.1.drv",
+      "description": "PyPA recommended tool for installing Python packages",
+      "install_id": "pip",
+      "license": "[ MIT ]",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=b024ced1aac25639f8ca8fdfc2f8c4fbd66c48ef",
+      "name": "python3.12-pip-25.0.1",
+      "pname": "pip",
+      "rev": "b024ced1aac25639f8ca8fdfc2f8c4fbd66c48ef",
+      "rev_count": 785698,
+      "rev_date": "2025-04-17T23:31:41Z",
+      "scrape_date": "2025-04-19T04:45:40.881123Z",
+      "stabilities": [
+        "unstable"
+      ],
+      "unfree": false,
+      "version": "25.0.1",
+      "outputs_to_install": [
+        "man",
+        "out"
+      ],
+      "outputs": {
+        "dist": "/nix/store/14qrwmlc68qxyymprgdmj9i8li5b6rly-python3.12-pip-25.0.1-dist",
+        "man": "/nix/store/zixfi67jjcy9n36965bfv0vcbxkh8ah4-python3.12-pip-25.0.1-man",
+        "out": "/nix/store/rkmkggjj9hgrzdb9b0zl7ml23xlk4pi8-python3.12-pip-25.0.1"
+      },
+      "system": "aarch64-linux",
+      "group": "toplevel",
+      "priority": 5
+    },
+    {
+      "attr_path": "python312Packages.pip",
+      "broken": false,
+      "derivation": "/nix/store/f3srjdx7rs2yjgi52wbkikl1pk09n0wh-python3.12-pip-25.0.1.drv",
+      "description": "PyPA recommended tool for installing Python packages",
+      "install_id": "pip",
+      "license": "[ MIT ]",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=b024ced1aac25639f8ca8fdfc2f8c4fbd66c48ef",
+      "name": "python3.12-pip-25.0.1",
+      "pname": "pip",
+      "rev": "b024ced1aac25639f8ca8fdfc2f8c4fbd66c48ef",
+      "rev_count": 785698,
+      "rev_date": "2025-04-17T23:31:41Z",
+      "scrape_date": "2025-04-19T05:05:23.548003Z",
+      "stabilities": [
+        "unstable"
+      ],
+      "unfree": false,
+      "version": "25.0.1",
+      "outputs_to_install": [
+        "man",
+        "out"
+      ],
+      "outputs": {
+        "dist": "/nix/store/3d840an66k8dggs8iidhh0f1jraiaja8-python3.12-pip-25.0.1-dist",
+        "man": "/nix/store/ifl9j11phmlh5ng7cliz44r9ix2h15q7-python3.12-pip-25.0.1-man",
+        "out": "/nix/store/y8clrkwa07fq1fcfc9kf24vfxxg7d1i6-python3.12-pip-25.0.1"
+      },
+      "system": "x86_64-darwin",
+      "group": "toplevel",
+      "priority": 5
+    },
+    {
+      "attr_path": "python312Packages.pip",
+      "broken": false,
+      "derivation": "/nix/store/r2msrix3c6xc97bd8fbvya1s3p2x83n1-python3.12-pip-25.0.1.drv",
+      "description": "PyPA recommended tool for installing Python packages",
+      "install_id": "pip",
+      "license": "[ MIT ]",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=b024ced1aac25639f8ca8fdfc2f8c4fbd66c48ef",
+      "name": "python3.12-pip-25.0.1",
+      "pname": "pip",
+      "rev": "b024ced1aac25639f8ca8fdfc2f8c4fbd66c48ef",
+      "rev_count": 785698,
+      "rev_date": "2025-04-17T23:31:41Z",
+      "scrape_date": "2025-04-19T05:28:12.437928Z",
+      "stabilities": [
+        "unstable"
+      ],
+      "unfree": false,
+      "version": "25.0.1",
+      "outputs_to_install": [
+        "man",
+        "out"
+      ],
+      "outputs": {
+        "dist": "/nix/store/nfr74dkakk2k8dpjcjb6k1f181lgdq18-python3.12-pip-25.0.1-dist",
+        "man": "/nix/store/i6nr7qg4ybhy9mdc2kg7jwr64195cyqp-python3.12-pip-25.0.1-man",
+        "out": "/nix/store/yf8z2d4cnfcdq9fc0fhngr90090lpak6-python3.12-pip-25.0.1"
+      },
+      "system": "x86_64-linux",
+      "group": "toplevel",
+      "priority": 5
+    },
+    {
+      "attr_path": "spark",
+      "broken": false,
+      "derivation": "/nix/store/7x7a2kpby4l3awl6rxq9w3am3cbirx03-spark-3.5.4.drv",
+      "description": "Apache Spark is a fast and general engine for large-scale data processing",
+      "install_id": "spark",
+      "license": "Apache-2.0",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=b024ced1aac25639f8ca8fdfc2f8c4fbd66c48ef",
+      "name": "spark-3.5.4",
+      "pname": "spark",
+      "rev": "b024ced1aac25639f8ca8fdfc2f8c4fbd66c48ef",
+      "rev_count": 785698,
+      "rev_date": "2025-04-17T23:31:41Z",
+      "scrape_date": "2025-04-19T04:23:19.362121Z",
+      "stabilities": [
+        "unstable"
+      ],
+      "unfree": false,
+      "version": "3.5.4",
+      "outputs_to_install": [
+        "out"
+      ],
+      "outputs": {
+        "out": "/nix/store/l8qy48klmr7jqir09xbdv98qarnvv7cx-spark-3.5.4"
+      },
+      "system": "aarch64-darwin",
+      "group": "toplevel",
+      "priority": 5
+    },
+    {
+      "attr_path": "spark",
+      "broken": false,
+      "derivation": "/nix/store/m4f7qp1bdmmc5jadb8pwg84fjh8pcx50-spark-3.5.4.drv",
+      "description": "Apache Spark is a fast and general engine for large-scale data processing",
+      "install_id": "spark",
+      "license": "Apache-2.0",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=b024ced1aac25639f8ca8fdfc2f8c4fbd66c48ef",
+      "name": "spark-3.5.4",
+      "pname": "spark",
+      "rev": "b024ced1aac25639f8ca8fdfc2f8c4fbd66c48ef",
+      "rev_count": 785698,
+      "rev_date": "2025-04-17T23:31:41Z",
+      "scrape_date": "2025-04-19T04:46:18.575795Z",
+      "stabilities": [
+        "unstable"
+      ],
+      "unfree": false,
+      "version": "3.5.4",
+      "outputs_to_install": [
+        "out"
+      ],
+      "outputs": {
+        "out": "/nix/store/76fiqf8mi0x1i274gz6d1k2dc45mdkvk-spark-3.5.4"
+      },
+      "system": "aarch64-linux",
+      "group": "toplevel",
+      "priority": 5
+    },
+    {
+      "attr_path": "spark",
+      "broken": false,
+      "derivation": "/nix/store/ix6h8pm7pz3qkkvwlf43x57gbzky9xkb-spark-3.5.4.drv",
+      "description": "Apache Spark is a fast and general engine for large-scale data processing",
+      "install_id": "spark",
+      "license": "Apache-2.0",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=b024ced1aac25639f8ca8fdfc2f8c4fbd66c48ef",
+      "name": "spark-3.5.4",
+      "pname": "spark",
+      "rev": "b024ced1aac25639f8ca8fdfc2f8c4fbd66c48ef",
+      "rev_count": 785698,
+      "rev_date": "2025-04-17T23:31:41Z",
+      "scrape_date": "2025-04-19T05:05:50.369328Z",
+      "stabilities": [
+        "unstable"
+      ],
+      "unfree": false,
+      "version": "3.5.4",
+      "outputs_to_install": [
+        "out"
+      ],
+      "outputs": {
+        "out": "/nix/store/x531fbwy0q0mr7l29jg4zmczhgqszskc-spark-3.5.4"
+      },
+      "system": "x86_64-darwin",
+      "group": "toplevel",
+      "priority": 5
+    },
+    {
+      "attr_path": "spark",
+      "broken": false,
+      "derivation": "/nix/store/pywsp1874j11mchj2mqccl92j4ky2xgg-spark-3.5.4.drv",
+      "description": "Apache Spark is a fast and general engine for large-scale data processing",
+      "install_id": "spark",
+      "license": "Apache-2.0",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=b024ced1aac25639f8ca8fdfc2f8c4fbd66c48ef",
+      "name": "spark-3.5.4",
+      "pname": "spark",
+      "rev": "b024ced1aac25639f8ca8fdfc2f8c4fbd66c48ef",
+      "rev_count": 785698,
+      "rev_date": "2025-04-17T23:31:41Z",
+      "scrape_date": "2025-04-19T05:28:52.702784Z",
+      "stabilities": [
+        "unstable"
+      ],
+      "unfree": false,
+      "version": "3.5.4",
+      "outputs_to_install": [
+        "out"
+      ],
+      "outputs": {
+        "out": "/nix/store/58x86s89ix8yz6i368p3bdkicwzmyvfm-spark-3.5.4"
+      },
+      "system": "x86_64-linux",
+      "group": "toplevel",
+      "priority": 5
+    }
+  ]
+}

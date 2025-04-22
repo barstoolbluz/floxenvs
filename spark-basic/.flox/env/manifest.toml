@@ -1,0 +1,301 @@
+# Flox manifest version managed by Flox CLI
+version = 1
+
+[install]
+curl.pkg-path = "curl"
+bat.pkg-path = "bat"
+spark.pkg-path = "spark"
+pip.pkg-path = "python312Packages.pip"
+jdk.pkg-path = "jdk"
+
+[vars]
+
+[hook]
+on-activate = '''
+# creates $SPARK data and log  dirs
+mkdir -p "$FLOX_ENV_CACHE/spark-data"
+mkdir -p "$FLOX_ENV_CACHE/spark-logs"
+
+# Sets $SPARK_HOME if not set
+export SPARK_HOME="${SPARK_HOME:-$(dirname $(which spark-submit))/..}"
+
+# Sets data + log dirs if not already set
+if [ -z "$SPARK_LOG_DIR" ]; then
+    export SPARK_LOG_DIR="$FLOX_ENV_CACHE/spark-logs"
+fi
+
+if [ -z "$SPARK_WORKER_DIR" ]; then
+    export SPARK_WORKER_DIR="$FLOX_ENV_CACHE/spark-data"
+fi
+
+# checks + sets env vars if not already set
+if [ -z "$SPARK_MODE" ]; then
+    export SPARK_MODE="worker"
+fi
+
+if [ -z "$SPARK_HOST" ]; then
+    export SPARK_HOST="localhost"
+fi
+
+if [ -z "$SPARK_PORT" ]; then
+    export SPARK_PORT="7077"
+fi
+
+if [ -z "$SPARK_WEBUI_PORT" ]; then
+    export SPARK_WEBUI_PORT="8080"
+fi
+
+if [ -z "$SPARK_WORKER_CORES" ]; then
+    export SPARK_WORKER_CORES="2"
+fi
+
+if [ -z "$SPARK_WORKER_MEMORY" ]; then
+    export SPARK_WORKER_MEMORY="2g"
+fi
+
+# detects ip if $SPARK_LOCAL_IP isn't set
+if [ -z "$SPARK_LOCAL_IP" ]; then
+    # detects os to determine which ip detection method to use
+    OS_TYPE=$(uname -s)
+    
+    # special handling for darwin/macos
+    if [ "$OS_TYPE" = "Darwin" ]; then
+        # darwin/macos
+        DETECTED_IP=$(ifconfig | grep "inet " | grep -v 127.0.0.1 | head -n 1 | awk '{print $2}')
+    elif [ "$OS_TYPE" = "Linux" ]; then
+        # linux
+        DETECTED_IP=$(hostname -I 2>/dev/null | awk '{print $1}')
+        
+        # falls back to trying ifconfig or ip
+        if [ -z "$DETECTED_IP" ]; then
+            if command -v ifconfig >/dev/null 2>&1; then
+                DETECTED_IP=$(ifconfig | grep -Eo 'inet (addr:)?([0-9]*\.){3}[0-9]*' | grep -Eo '([0-9]*\.){3}[0-9]*' | grep -v '127.0.0.1' | head -n 1)
+            elif command -v ip >/dev/null 2>&1; then
+                DETECTED_IP=$(ip -4 addr show | grep -oP '(?<=inet\s)\d+(\.\d+){3}' | grep -v '127.0.0.1' | head -n 1)
+            fi
+        fi
+    else
+        # fallback for darwin/macos
+        DETECTED_IP=$(ifconfig 2>/dev/null | grep -Eo 'inet (addr:)?([0-9]*\.){3}[0-9]*' | grep -Eo '([0-9]*\.){3}[0-9]*' | grep -v '127.0.0.1' | head -n 1)
+    fi
+    
+    # falls back to localhost if everything else is kaput
+    if [ -z "$DETECTED_IP" ]; then
+        DETECTED_IP="127.0.0.1"
+        echo "Warning: Could not detect IP address, using 127.0.0.1 as fallback."
+    fi
+    
+    # sets local ip if not already set
+    export SPARK_LOCAL_IP="$DETECTED_IP"
+fi
+
+# sets advertise ip if not already set
+if [ -z "$SPARK_ADVERTISE_IP" ]; then
+    export SPARK_ADVERTISE_IP="$SPARK_LOCAL_IP"
+fi
+
+# sets $SPARK_MASTER_URL if $SPARK_MODE=master and  not already set
+if [ -z "$SPARK_MASTER_URL" ]; then
+    if [ "$SPARK_MODE" = "master" ]; then
+        export SPARK_MASTER_URL="spark://$SPARK_ADVERTISE_IP:$SPARK_PORT"
+    else
+        # builds from host/port for $SPARK_MODE=worker
+        export SPARK_MASTER_URL="spark://$SPARK_HOST:$SPARK_PORT"
+    fi
+fi
+
+# sets $SPARK_MASTER env vars
+if [ "$SPARK_MODE" = "master" ]; then
+    if [ -z "$SPARK_MASTER_HOST" ]; then
+        export SPARK_MASTER_HOST="$SPARK_ADVERTISE_IP"
+    fi
+    
+    if [ -z "$SPARK_MASTER_PORT" ]; then
+        export SPARK_MASTER_PORT="$SPARK_PORT"
+    fi
+    
+    if [ -z "$SPARK_MASTER_WEBUI_PORT" ]; then
+        export SPARK_MASTER_WEBUI_PORT="$SPARK_WEBUI_PORT"
+    fi
+fi
+
+# tries to find JAVA_HOME if not already set; should be set b/c this is flox!
+if [ -z "$JAVA_HOME" ]; then
+    export JAVA_HOME="$(dirname $(dirname $(which java)))"
+fi
+
+# displays current configuration
+echo "Spark Environment Configuration:"
+echo "  Mode:          $SPARK_MODE"
+echo "  Local IP:      $SPARK_LOCAL_IP"
+echo "  Advertise IP:  $SPARK_ADVERTISE_IP"
+echo "  Data Dir:      $SPARK_WORKER_DIR"
+echo "  Log Dir:       $SPARK_LOG_DIR"
+if [ "$SPARK_MODE" = "master" ]; then
+    echo "  Master URL:    $SPARK_MASTER_URL (I am the master)"
+    echo "  Web UI:        http://$SPARK_ADVERTISE_IP:$SPARK_WEBUI_PORT"
+else
+    echo "  Master URL:    $SPARK_MASTER_URL"
+    echo "  Worker Cores:  $SPARK_WORKER_CORES"
+    echo "  Worker Memory: $SPARK_WORKER_MEMORY"
+fi
+
+# downloads README.md if not exists
+if [ ! -f "$FLOX_ENV_PROJECT/README.md" ] || [ ! -s "$FLOX_ENV_PROJECT/README.md" ]; then
+    curl -sL "https://raw.githubusercontent.com/barstoolbluz/floxenvs/main/spark/README.md" > "$FLOX_ENV_PROJECT/README.md" 2>/dev/null
+fi
+'''
+
+[profile]
+bash = '''
+info() {
+  echo "Spark Environment Configuration:"
+  echo "  Mode:          $SPARK_MODE"
+  echo "  Local IP:      $SPARK_LOCAL_IP"
+  echo "  Advertise IP:  $SPARK_ADVERTISE_IP"
+  echo "  Data Dir:      $SPARK_WORKER_DIR"
+  echo "  Log Dir:       $SPARK_LOG_DIR"
+  if [ "$SPARK_MODE" = "master" ]; then
+      echo "  Master URL:    $SPARK_MASTER_URL (I am the master)"
+      echo "  Web UI:        http://$SPARK_ADVERTISE_IP:$SPARK_WEBUI_PORT"
+  else
+      echo "  Master URL:    $SPARK_MASTER_URL"
+      echo "  Worker Cores:  $SPARK_WORKER_CORES"
+      echo "  Worker Memory: $SPARK_WORKER_MEMORY"
+  fi
+}
+
+readme() {
+  if [[ "$1" == "--refresh" ]] || [ ! -s "$FLOX_ENV_PROJECT/README.md" ]; then
+    curl -sL "https://raw.githubusercontent.com/barstoolbluz/floxenvs/main/spark-basic/README.md" > "$FLOX_ENV_PROJECT/README.md" 2>/dev/null
+  fi
+  bat --language markdown "$FLOX_ENV_PROJECT/README.md" 2>/dev/null
+}
+'''
+
+zsh = '''
+info() {
+  echo "Spark Environment Configuration:"
+  echo "  Mode:          $SPARK_MODE"
+  echo "  Local IP:      $SPARK_LOCAL_IP"
+  echo "  Advertise IP:  $SPARK_ADVERTISE_IP"
+  echo "  Data Dir:      $SPARK_WORKER_DIR"
+  echo "  Log Dir:       $SPARK_LOG_DIR"
+  if [ "$SPARK_MODE" = "master" ]; then
+      echo "  Master URL:    $SPARK_MASTER_URL (I am the master)"
+      echo "  Web UI:        http://$SPARK_ADVERTISE_IP:$SPARK_WEBUI_PORT"
+  else
+      echo "  Master URL:    $SPARK_MASTER_URL"
+      echo "  Worker Cores:  $SPARK_WORKER_CORES"
+      echo "  Worker Memory: $SPARK_WORKER_MEMORY"
+  fi
+}
+
+readme() {
+  if [[ "$1" == "--refresh" ]] || [ ! -s "$FLOX_ENV_PROJECT/README.md" ]; then
+    curl -sL "https://raw.githubusercontent.com/barstoolbluz/floxenvs/main/spark-basic/README.md" > "$FLOX_ENV_PROJECT/README.md" 2>/dev/null
+  fi
+  bat --language markdown "$FLOX_ENV_PROJECT/README.md" 2>/dev/null
+}
+'''
+
+fish = '''
+function info
+  echo "Spark Environment Configuration:"
+  echo "  Mode:          $SPARK_MODE"
+  echo "  Local IP:      $SPARK_LOCAL_IP"
+  echo "  Advertise IP:  $SPARK_ADVERTISE_IP"
+  echo "  Data Dir:      $SPARK_WORKER_DIR"
+  echo "  Log Dir:       $SPARK_LOG_DIR"
+  if [ "$SPARK_MODE" = "master" ]
+      echo "  Master URL:    $SPARK_MASTER_URL (I am the master)"
+      echo "  Web UI:        http://$SPARK_ADVERTISE_IP:$SPARK_WEBUI_PORT"
+  else
+      echo "  Master URL:    $SPARK_MASTER_URL"
+      echo "  Worker Cores:  $SPARK_WORKER_CORES"
+      echo "  Worker Memory: $SPARK_WORKER_MEMORY"
+  end
+end
+
+function readme
+  if test "$argv[1]" = "--refresh"; or test ! -s "$FLOX_ENV_PROJECT/README.md"
+    curl -sL "https://raw.githubusercontent.com/barstoolbluz/floxenvs/main/spark-basic/README.md" > "$FLOX_ENV_PROJECT/README.md" 2>/dev/null
+  end
+  bat --language markdown "$FLOX_ENV_PROJECT/README.md" 2>/dev/null
+end
+'''
+
+[services]
+# service definition for flox spark service
+spark.command = '''
+mkdir -p "$SPARK_LOG_DIR"
+mkdir -p "$SPARK_WORKER_DIR"
+
+env | grep SPARK > "$SPARK_LOG_DIR/env-vars.log"
+
+if [ "$SPARK_MODE" = "master" ]; then
+    if ping -c 1 -W 1 "$SPARK_LOCAL_IP" > /dev/null 2>&1; then
+        echo "IP $SPARK_LOCAL_IP is reachable" >> "$SPARK_LOG_DIR/startup.log"
+    else
+        echo "Warning: IP $SPARK_LOCAL_IP might not be reachable" >> "$SPARK_LOG_DIR/startup.log"
+        
+        if ip addr | grep -q "$SPARK_LOCAL_IP"; then
+            echo "IP $SPARK_LOCAL_IP is configured locally" >> "$SPARK_LOG_DIR/startup.log"
+        else
+            echo "Warning: IP $SPARK_LOCAL_IP is not configured on any local interface" >> "$SPARK_LOG_DIR/startup.log"
+            echo "Falling back to 127.0.0.1 for binding" >> "$SPARK_LOG_DIR/startup.log"
+            export SPARK_LOCAL_IP="127.0.0.1"
+        fi
+    fi
+    
+    export SPARK_MASTER_HOST="$SPARK_ADVERTISE_IP"
+    export SPARK_MASTER_PORT="$SPARK_PORT"
+    export SPARK_MASTER_WEBUI_PORT="$SPARK_WEBUI_PORT"
+    export SPARK_LOCAL_IP="$SPARK_LOCAL_IP"
+    
+    unset SPARK_LOCAL_HOSTNAME
+    unset SPARK_PUBLIC_DNS
+    
+    echo "Starting Spark master at $SPARK_MASTER_URL (binding to $SPARK_LOCAL_IP, advertising as $SPARK_ADVERTISE_IP)" >> "$SPARK_LOG_DIR/startup.log"
+    cd "$SPARK_HOME" && "./sbin/start-master.sh"
+elif [ "$SPARK_MODE" = "worker" ] && [ ! -z "$SPARK_MASTER_URL" ]; then
+    if ping -c 1 -W 1 "$SPARK_LOCAL_IP" > /dev/null 2>&1; then
+        echo "IP $SPARK_LOCAL_IP is reachable" >> "$SPARK_LOG_DIR/startup.log"
+    else
+        echo "Warning: IP $SPARK_LOCAL_IP might not be reachable" >> "$SPARK_LOG_DIR/startup.log"
+        
+        if ip addr | grep -q "$SPARK_LOCAL_IP"; then
+            echo "IP $SPARK_LOCAL_IP is configured locally" >> "$SPARK_LOG_DIR/startup.log"
+        else
+            echo "Warning: IP $SPARK_LOCAL_IP is not configured on any local interface" >> "$SPARK_LOG_DIR/startup.log"
+            echo "Falling back to 127.0.0.1 for binding" >> "$SPARK_LOG_DIR/startup.log"
+            export SPARK_LOCAL_IP="127.0.0.1"
+        fi
+    fi
+    
+    export SPARK_WORKER_CORES="$SPARK_WORKER_CORES"
+    export SPARK_WORKER_MEMORY="$SPARK_WORKER_MEMORY"
+    
+    unset SPARK_LOCAL_HOSTNAME
+    unset SPARK_PUBLIC_DNS
+    
+    echo "Starting Spark worker at $SPARK_LOCAL_IP connecting to $SPARK_MASTER_URL" >> "$SPARK_LOG_DIR/startup.log" 
+    cd "$SPARK_HOME" && "./sbin/start-worker.sh" "$SPARK_MASTER_URL"
+else
+    echo "ERROR: Invalid configuration. SPARK_MODE=$SPARK_MODE, SPARK_MASTER_URL=$SPARK_MASTER_URL" >> "$SPARK_LOG_DIR/startup.log"
+    exit 1
+fi
+
+# keeps the service running
+tail -f /dev/null
+'''
+
+[options]
+systems = [
+  "aarch64-darwin",
+  "aarch64-linux",
+  "x86_64-darwin",
+  "x86_64-linux",
+]
+# Uncomment to disable CUDA detection.
+# cuda-detection = false
