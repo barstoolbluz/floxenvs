@@ -204,7 +204,7 @@ This works on:
 [Flox](https://flox.dev/docs) builds on [Nix](https://github.com/NixOS/nix) to provide:
 
 - **Declarative environments** - Software, variables, services defined in TOML
-- **Content-addressed storage** - Multiple package versions coexist without conflicts
+- **Path- and input-addressed storage** - Multiple package versions coexist without conflicts
 - **Reproducibility** - Same environment across dev, CI, and production
 - **Deterministic builds** - Same inputs always produce identical outputs
 - **Huge package collection** - Access to 150,000+ packages from Nixpkgs
