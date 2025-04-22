@@ -32,8 +32,8 @@ The environment includes these essential tools:
 
 ### 📋 Prerequisites
 
-- Network with at least two machines (or single machine for testing)
 - [Flox](https://flox.dev/get) installed on your system
+- That's it.
 
 ### 💻 Installation & Activation
 
@@ -44,7 +44,7 @@ Get started with:
 git clone https://github.com/barstoolbluz/floxenvs && cd floxenvs/spark-basic
 
 # Activate the environment
-flox activate -s # uses hard-coded defaults; see below for injecting env vars and actiating
+flox activate -s # uses hard-coded defaults; see below for injecting env vars and activating
 ```
 
 ## 📝 Usage Scenarios
