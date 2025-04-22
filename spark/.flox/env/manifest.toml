@@ -8,6 +8,10 @@ gum.pkg-path = "gum"
 spark.pkg-path = "spark"
 pip.pkg-path = "python312Packages.pip"
 jdk.pkg-path = "jdk"
+gawk.pkg-path = "gawk"
+gnugrep.pkg-path = "gnugrep"
+gnused.pkg-path = "gnused"
+coreutils.pkg-path = "coreutils"
 
 [vars]
 
