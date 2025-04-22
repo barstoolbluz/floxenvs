@@ -26,6 +26,7 @@ The environment includes these essential tools:
 - `gnused` - GNU implementation of the `sed` editor # included for macOS compatibility
 - `gawk` - GNU implementation of `awk` # idem
 - `coreutils` - GNU `coreutils` # idem
+- `gnugrep` GNU implementation of `grep` # idem
 
 ## 🏁 Getting Started
 
