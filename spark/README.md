@@ -51,7 +51,7 @@ git clone https://github.com/yourusername/spark && cd spark
 2. Run:
 
 ```sh
-flox activate
+flox activate -s
 ```
 
 This command:
