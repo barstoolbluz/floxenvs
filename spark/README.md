@@ -27,9 +27,9 @@ The environment packs these essential tools:
 - `curl` - HTTP client used for monitoring and diagnostics
 - `pip` - Python package manager for extending Spark capabilities
 - `gnused` - GNU implementation of the `sed` utility # provided for macOS compatibility
-- `gawk` - GNU implementation of `awk` # provided for macOS compatibility
-- `coreutils` - GNU core utilities # provided for macOS compatibility
-- `gnugrep` GNU implementation of `grep` # provided for macOS compatibility
+- `gawk` - GNU implementation of `awk` # idem
+- `coreutils` - GNU core utilities # idem
+- `gnugrep` GNU implementation of `grep` # idem
 
 ## 🏁 Getting Started
 
