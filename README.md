@@ -24,12 +24,12 @@ This repo contains pre-configured [Flox](https://flox.dev/docs) environments for
 
 - [**postgresql**](./postgres) - PostgreSQL with PostGIS
 - [**neo4j**](./neo4j) - Neo4j graph database
-- [**harlequin**](./harlequin-postgres) - PostgreSQL + Harlequin terminal SQL IDE
 
 ### Data Analysis & Visualization
 
 - [**postgres-metabase**](./postgres-metabase) - PostgreSQL + Metabase BI platform
 - [**superset**](./superset) - Apache Superset + PostgreSQL for BI / Analytics
+- [**harlequin**](./harlequin-postgres) - PostgreSQL + Harlequin terminal SQL IDE
 
 ### Data Integration + Data Engineering + General Distributed Compute
 
