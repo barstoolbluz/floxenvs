@@ -11,32 +11,31 @@ version = 1
 
 ## Install Packages --------------------------------------------------
 [install]
-curl.pkg-path = "curl"
+curl.pkg-path = "curl"			# for sourcing README.md and helper script
 curl.pkg-group = "helper-tools"
-bat.pkg-path = "bat"
+bat.pkg-path = "bat"			# for readme function + displaying README.md
 bat.pkg-group = "helper-tools"
-jq.pkg-path = "jq"
+jq.pkg-path = "jq"			# for formatting json with helper script commands
 jq.pkg-group = "helper-tools"
-gum.pkg-path = "gum"
+gum.pkg-path = "gum"			# for pretty + elegant + stylish wizard-driven TUI magic
 kafka.pkg-path = "apacheKafka"
 jdk.pkg-path = "jdk"
 netcat.pkg-path = "netcat"
 netcat.pkg-group = "env-tools"
-netstat.pkg-path = "unixtools.netstat"
-netstat.pkg-group = "env-tools"
-gnused.pkg-path = "gnused"
-gnused.pkg-group = "darwin-tools"
-coreutils.pkg-path = "coreutils"
-coreutils.pkg-group = "darwin-tools"
-gawk.pkg-path = "gawk"
-gawk.pkg-group = "darwin-tools"
-gnugrep.pkg-path = "gnugrep"
-gnugrep.pkg-group = "gnugrep"
-bash.pkg-path = "bash"
+gnused.pkg-path = "gnused"		# for macOS/darwin compatibility
+gnused.pkg-group = "darwin-tools"	# package group defined just for macOS/darwin
+coreutils.pkg-path = "coreutils"	# for macOS/darwin compatibility
+coreutils.pkg-group = "darwin-tools"	# package group defined just for macOS/darwin
+gawk.pkg-path = "gawk"			# for macOS/darwin compatibility
+gawk.pkg-group = "darwin-tools"		# package group defined just for macOS/darwin
+gnugrep.pkg-path = "gnugrep"		# for macOS/darwin compatibility
+gnugrep.pkg-group = "darwin-tools"	# package group defined just for macOS/darwin
+bash.pkg-path = "bash"			# for macOS/darwin compatibility
+bash.pkg-group = "darwin-tools"		# package group defined just for macOS/darwin
 
 ## Environment Variables ---------------------------------------------
 [vars]
-# Define base variables that are always available
+# defines base variables available at runtime
 KAFKA_CONFIG_DIR = "$FLOX_ENV_CACHE/kafka-config"
 KAFKA_LOG_DIR = "$FLOX_ENV_CACHE/kafka-logs"
 KAFKA_DATA_DIR = "$FLOX_ENV_CACHE/data/kafka"
@@ -56,30 +55,30 @@ bootstrap_kafka() {
         
 $(gum style --foreground 240 'First-time setup for your Apache Kafka KRaft environment')"
     
-    # detects non-loopback ip address
+    # detects non-loopback ip address ...
     detect_ip() {
         local ip=""
-        # for macos/darwin
+        # ... for macos/darwin
         if [[ "$(uname)" == "Darwin" ]]; then
             ip=$(ifconfig | grep "inet " | grep -v 127.0.0.1 | awk '{print $2}' | head -n 1)
-        # for linux and wsl
+        # ... for linux and wsl
         else
-            # try eth0 first (common in wsl2 and linux)
+            # tries eth0 first (common in wsl2 and linux)
             ip=$(ip -4 addr show eth0 2>/dev/null | grep inet | awk '{print $2}' | cut -d/ -f1 | head -n 1)
             
-            # if eth0 didn't work, try other interfaces
+            # if eth0 doesn't work, tries other interfaces
             if [[ -z "$ip" ]]; then
-                # try global scope addresses
+                # tries global scope addresses
                 ip=$(ip -4 addr show scope global 2>/dev/null | grep inet | awk '{print $2}' | cut -d/ -f1 | head -n 1)
                 
-                # try any non-loopback as last resort
+                # tries any non-loopback as failsafe / last resort
                 if [[ -z "$ip" ]]; then
                     ip=$(ip -4 addr | grep -v "127.0.0.1" | grep -v "10.255.255" | grep inet | awk '{print $2}' | cut -d/ -f1 | head -n 1)
                 fi
             fi
         fi
         
-        # default to localhost if no external ip found
+        # defaults to localhost if external ip not found
         if [[ -z "$ip" ]]; then
             ip="localhost"
         fi
@@ -87,7 +86,7 @@ $(gum style --foreground 240 'First-time setup for your Apache Kafka KRaft envir
         echo "$ip"
     }
     
-    # set defaults
+    # sets defaults
     DEFAULT_KAFKA_MODE="kraft-combined"
     DEFAULT_KAFKA_NODE_ID="1"
     DEFAULT_KAFKA_PORT="9092"
@@ -98,7 +97,7 @@ $(gum style --foreground 240 'First-time setup for your Apache Kafka KRaft envir
     DEFAULT_KAFKA_NUM_PARTITIONS="1"
     DEFAULT_KRAFT_CONTROLLER_PORT="9093"
     
-    # create directories
+    # creates directories
     mkdir -p "$KAFKA_CONFIG_DIR" "$KAFKA_LOG_DIR"
     
     echo ""
@@ -109,22 +108,22 @@ $(gum style --foreground 240 'First-time setup for your Apache Kafka KRaft envir
         echo "$(gum style --foreground 240 'Press Enter to accept the default values shown in [brackets]')"
         echo ""
         
-        # Set JOINING_EXISTING_CLUSTER flag
+        # sets JOINING_EXISTING_CLUSTER flag (for controller mode)
         JOINING_EXISTING_CLUSTER=false
         
-        # set node id based on mode
+        # sets node id based on mode
         if [ "$KAFKA_MODE" = "kraft-controller" ]; then
-            # Ask if joining existing cluster or creating new one
+            # asks 'are you joining an existing kluster / creating new kluster?'
             CLUSTER_ACTION=$(gum choose --header "Are you:" "Creating a new Kafka cluster" "Adding a controller to an existing cluster")
             
-            # Set flag for joining existing cluster
+            # sets flag for joining existing kluster
             if [ "$CLUSTER_ACTION" = "Adding a controller to an existing cluster" ]; then
                 JOINING_EXISTING_CLUSTER=true
             fi
             
             if [ "$JOINING_EXISTING_CLUSTER" = "true" ]; then
                 echo "$(gum style --foreground 240 'Enter a unique node ID for this controller (must be different from existing controllers)')"
-                DEFAULT_KAFKA_NODE_ID=""  # No default - user must choose
+                DEFAULT_KAFKA_NODE_ID=""  # if no default user must choose
             else
                 DEFAULT_KAFKA_NODE_ID="1"
             fi
@@ -132,36 +131,36 @@ $(gum style --foreground 240 'First-time setup for your Apache Kafka KRaft envir
             DEFAULT_KAFKA_NODE_ID="2"
         fi
         
-        # When joining existing cluster, prompt for cluster ID first
+        # prompts for kluster id when joining existing kafka kluster, 
         if [ "$JOINING_EXISTING_CLUSTER" = "true" ]; then
             echo "$(gum style --foreground 240 'When joining an existing cluster, you need the exact cluster ID from another controller')"
             echo "$(gum style --foreground 240 'You can find it in $KAFKA_CONFIG_DIR/cluster_id on an existing controller node')"
             
             KAFKA_CLUSTER_ID=$(gum input --prompt "Enter existing cluster ID: ")
             
-            # Validate cluster ID is provided
+            # validates kluster id is provided
             if [ -z "$KAFKA_CLUSTER_ID" ]; then
                 echo "❌ No cluster ID provided. This will cause connectivity issues."
                 echo "   Cannot continue without a valid cluster ID for joining an existing cluster."
                 return 1
             fi
             
-            # Save cluster ID immediately
+            # saves kluster id
             echo "$KAFKA_CLUSTER_ID" > "$KAFKA_CONFIG_DIR/cluster_id"
             echo "✅ Existing cluster ID saved successfully"
             
-            # Prompt for at least one existing controller
+            # prompts for existing kraft kontroller
             echo "$(gum style --foreground 240 'Now enter details for at least one existing controller in the cluster')"
             
             EXISTING_CONTROLLER_ID=$(gum input --prompt "Existing Controller Node ID: " --placeholder "1")
             EXISTING_CONTROLLER_HOST=$(gum input --prompt "Existing Controller Host: " --placeholder "192.168.0.88")
             EXISTING_CONTROLLER_PORT=$(gum input --prompt "Existing Controller Port: " --placeholder "9093")
             
-            # Initialize controller quorum with existing controller
+            # inits kontroller quorum with existing kontroller
             CONTROLLER_QUORUM="${EXISTING_CONTROLLER_ID}@${EXISTING_CONTROLLER_HOST}:${EXISTING_CONTROLLER_PORT}"
         fi
 
-        # Only show the controller node message when in controller mode and joining an existing cluster
+        # only shows the kontroller node message when (a) in kontroller mode AND (b) joining an existing kafka kluster
         if [ "$KAFKA_MODE" = "kraft-controller" ] && [ "$JOINING_EXISTING_CLUSTER" = "true" ]; then
             echo ""
             echo "$(gum style --foreground 27 --bold '🔄 Now configuring your new controller node')"
@@ -169,10 +168,9 @@ $(gum style --foreground 240 'First-time setup for your Apache Kafka KRaft envir
             echo ""
         fi
 	
-        # Handle empty DEFAULT_KAFKA_NODE_ID (for joining existing cluster)
+        # handles empty DEFAULT_KAFKA_NODE_ID (if joining existing kafka kluster)
         if [ -z "$DEFAULT_KAFKA_NODE_ID" ]; then
             KAFKA_NODE_ID=$(gum input --prompt "New Controller's Node ID: ")
-            # Ensure a value is provided
             if [ -z "$KAFKA_NODE_ID" ]; then
                 echo "❌ A unique node ID is required. Cannot continue."
                 return 1
@@ -181,17 +179,16 @@ $(gum style --foreground 240 'First-time setup for your Apache Kafka KRaft envir
             KAFKA_NODE_ID=$(gum input --placeholder "[${DEFAULT_KAFKA_NODE_ID}]" --value "$DEFAULT_KAFKA_NODE_ID" --prompt "Node ID: ")
         fi
         
-        # Use appropriate prompt based on mode for hostname/IP
         if [ "$KAFKA_MODE" = "kraft-controller" ]; then
             HOST_PROMPT="Controller's Hostname/IP: "
         elif [ "$KAFKA_MODE" = "kraft-broker" ]; then
             HOST_PROMPT="Broker's Hostname/IP: "
-        else # kraft-combined
+        else # conditional logic for kraft-combined mode
             HOST_PROMPT="Node's Hostname/IP: "
         fi
         KAFKA_HOST=$(gum input --placeholder "[${DEFAULT_KAFKA_HOST}]" --value "$DEFAULT_KAFKA_HOST" --prompt "$HOST_PROMPT")
         
-        # configure ports based on mode
+        # konfigures ports based on mode
         if [ "$KAFKA_MODE" = "kraft-controller" ]; then
             KRAFT_CONTROLLER_PORT=$(gum input --placeholder "[${DEFAULT_KRAFT_CONTROLLER_PORT}]" --value "$DEFAULT_KRAFT_CONTROLLER_PORT" --prompt "Controller Port: ")
             KAFKA_PORT=""
@@ -203,18 +200,18 @@ $(gum style --foreground 240 'First-time setup for your Apache Kafka KRaft envir
             KRAFT_CONTROLLER_PORT="$DEFAULT_KRAFT_CONTROLLER_PORT"
         fi
         
-        # Set data directory with appropriate prompt
+        # prompts to set data directory
         if [ "$KAFKA_MODE" = "kraft-controller" ]; then
             DIR_PROMPT="Controller's Data Directory: "
         elif [ "$KAFKA_MODE" = "kraft-broker" ]; then
             DIR_PROMPT="Broker's Data Directory: "
-        else # kraft-combined
+        else # conditional logic for kraft-combined mode
             DIR_PROMPT="Data Directory: "
         fi
         KAFKA_DATA_DIR="${FLOX_ENV_CACHE}/data/kafka/${KAFKA_MODE}-${KAFKA_NODE_ID}"
         KAFKA_DATA_DIR=$(gum input --placeholder "[${KAFKA_DATA_DIR}]" --value "$KAFKA_DATA_DIR" --prompt "$DIR_PROMPT")
         
-        # check for existing data
+        # checks 'shit is there existing data?'
         if [ -d "$KAFKA_DATA_DIR" ] && [ "$(ls -A "$KAFKA_DATA_DIR" 2>/dev/null)" ]; then
             echo "Found existing Kafka data in $KAFKA_DATA_DIR"
             if gum confirm "Clean existing data directory? (Recommended if changing configs)" --default=true; then
@@ -225,37 +222,35 @@ $(gum style --foreground 240 'First-time setup for your Apache Kafka KRaft envir
             fi
         fi
         
-        # ensure data directory exists
+        # checks: does / does not data directory exist?
         mkdir -p "$KAFKA_DATA_DIR"
         
-        # configure replication for controller mode
+        # konfigures replication for kraft kontroller mode
         if [ "$KAFKA_MODE" = "kraft-controller" ]; then
             KAFKA_REPLICATION_FACTOR=$(gum input --placeholder "[${DEFAULT_KAFKA_REPLICATION_FACTOR}]" --value "$DEFAULT_KAFKA_REPLICATION_FACTOR" --prompt "Default Replication Factor: ")
             KAFKA_NUM_PARTITIONS=$(gum input --placeholder "[${DEFAULT_KAFKA_NUM_PARTITIONS}]" --value "$DEFAULT_KAFKA_NUM_PARTITIONS" --prompt "Default Number of Partitions: ")
             
-            # set up controller quorum
+            # sets up kontroller quorum
             if [ "$JOINING_EXISTING_CLUSTER" != "true" ]; then
                 CONTROLLER_QUORUM="${KAFKA_NODE_ID}@${KAFKA_HOST}:${KRAFT_CONTROLLER_PORT}"
                 if gum confirm "Do you want to define additional controllers?" --default=false; then
                     echo "$(gum style --foreground 240 'Configure additional controllers for high availability')"
                     
-                    # track used ports to check for conflicts
+                    # tracks used ports for to forestall konflikts
                     declare -A used_ports
                     used_ports["$KRAFT_CONTROLLER_PORT"]=1
                     
-                    # track highest node id
+                    # tracks highest node id
                     HIGHEST_NODE_ID=$KAFKA_NODE_ID
                     
                     while true; do
-                        # suggest next node id
                         SUGGESTED_NODE_ID=$((HIGHEST_NODE_ID + 1))
                         
                         ADDITIONAL_CONTROLLER_ID=$(gum input --prompt "Additional Controller Node ID: " --value "$SUGGESTED_NODE_ID")
                         ADDITIONAL_CONTROLLER_HOST=$(gum input --prompt "Additional Controller Host: " --value "$KAFKA_HOST" --placeholder "192.168.0.89")
                         
-                        # handle port suggestion
                         if [ "$ADDITIONAL_CONTROLLER_HOST" = "$KAFKA_HOST" ]; then
-                            # find next available port
+                            # finds next available port
                             SUGGESTED_PORT=$((KRAFT_CONTROLLER_PORT))
                             while [ -n "${used_ports[$SUGGESTED_PORT]}" ]; do
                                 SUGGESTED_PORT=$((SUGGESTED_PORT + 1))
@@ -266,7 +261,7 @@ $(gum style --foreground 240 'First-time setup for your Apache Kafka KRaft envir
                         
                         ADDITIONAL_CONTROLLER_PORT=$(gum input --prompt "Additional Controller Port: " --value "$SUGGESTED_PORT")
                         
-                        # handle empty values
+                        # handles empty values
                         if [ -z "$ADDITIONAL_CONTROLLER_ID" ]; then
                             ADDITIONAL_CONTROLLER_ID="$SUGGESTED_NODE_ID"
                         fi
@@ -274,21 +269,21 @@ $(gum style --foreground 240 'First-time setup for your Apache Kafka KRaft envir
                             ADDITIONAL_CONTROLLER_PORT="$SUGGESTED_PORT"
                         fi
                         
-                        # update highest node id
+                        # updates highest node id
                         if [ "$ADDITIONAL_CONTROLLER_ID" -gt "$HIGHEST_NODE_ID" ]; then
                             HIGHEST_NODE_ID="$ADDITIONAL_CONTROLLER_ID"
                         fi
                         
-                        # check for port conflicts
+                        # checks for port conflicts
                         if [ "$ADDITIONAL_CONTROLLER_HOST" = "$KAFKA_HOST" ] && [ -n "${used_ports[$ADDITIONAL_CONTROLLER_PORT]}" ]; then
                             echo "❌ Port conflict: $ADDITIONAL_CONTROLLER_PORT is already in use on this host"
                             continue
                         fi
                         
-                        # add to quorum
+                        # adds to quorum
                         CONTROLLER_QUORUM="${CONTROLLER_QUORUM},${ADDITIONAL_CONTROLLER_ID}@${ADDITIONAL_CONTROLLER_HOST}:${ADDITIONAL_CONTROLLER_PORT}"
                         
-                        # track used port
+                        # tracks used port(s)
                         if [ "$ADDITIONAL_CONTROLLER_HOST" = "$KAFKA_HOST" ]; then
                             used_ports["$ADDITIONAL_CONTROLLER_PORT"]=1
                         fi
@@ -301,12 +296,12 @@ $(gum style --foreground 240 'First-time setup for your Apache Kafka KRaft envir
                     echo "Controller quorum configured: $CONTROLLER_QUORUM"
                 fi
             else
-                # For joining existing cluster, add this controller to the quorum
+                # if joining existing kluster, adds kontroller to quorum
                 CONTROLLER_QUORUM="${CONTROLLER_QUORUM},${KAFKA_NODE_ID}@${KAFKA_HOST}:${KRAFT_CONTROLLER_PORT}"
                 echo "Adding this controller to quorum: $CONTROLLER_QUORUM"
             fi
         else
-            # handle settings for combined and broker modes
+            # handles settings for combined + broker modes
             if [ "$KAFKA_MODE" = "kraft-combined" ]; then
                 if gum confirm "Configure advanced KRaft settings?" --default=false; then
                     KRAFT_CONTROLLER_PORT=$(gum input --placeholder "[${DEFAULT_KRAFT_CONTROLLER_PORT}]" --value "$DEFAULT_KRAFT_CONTROLLER_PORT" --prompt "Controller Port: ")
@@ -317,13 +312,13 @@ $(gum style --foreground 240 'First-time setup for your Apache Kafka KRaft envir
                     KAFKA_NUM_PARTITIONS="$DEFAULT_KAFKA_NUM_PARTITIONS"
                 fi
             else
-                # broker mode defaults
+                # sets broker mode defaults
                 KAFKA_REPLICATION_FACTOR="$DEFAULT_KAFKA_REPLICATION_FACTOR"
                 KAFKA_NUM_PARTITIONS="$DEFAULT_KAFKA_NUM_PARTITIONS"
             fi
         fi
         
-        # determine process roles
+        # determines process roles
         if [ "$KAFKA_MODE" = "kraft-combined" ]; then
             PROCESS_ROLES="broker,controller"
         elif [ "$KAFKA_MODE" = "kraft-controller" ]; then
@@ -331,18 +326,18 @@ $(gum style --foreground 240 'First-time setup for your Apache Kafka KRaft envir
         elif [ "$KAFKA_MODE" = "kraft-broker" ]; then
             PROCESS_ROLES="broker"
             
-            # for broker mode, get controller info
+            # if in broker mode, gets kontroller info
             echo "$(gum style --foreground 240 'For broker mode, we need the controller information')"
             
             CONTROLLER_HOST=$(gum input --placeholder "192.168.0.88" --prompt "Controller Host IP/Hostname: ")
             CONTROLLER_PORT=$(gum input --placeholder "9093" --prompt "Controller Port: ")
             CONTROLLER_NODE_ID=$(gum input --placeholder "1" --prompt "Controller Node ID: ")
             
-            # create controller quorum
+            # creates kontroller quorum
             CONTROLLER_QUORUM="${CONTROLLER_NODE_ID}@${CONTROLLER_HOST}:${CONTROLLER_PORT}"
             echo "Using controller quorum: $CONTROLLER_QUORUM"
             
-            # get cluster id from controller
+            # gets kafka kluster id from kontroller
             echo "$(gum style --foreground 240 'We need the cluster ID from the controller node')"
             echo "$(gum style --foreground 240 'You can find it in $KAFKA_CONFIG_DIR/cluster_id on the controller')"
             
@@ -355,7 +350,7 @@ $(gum style --foreground 240 'First-time setup for your Apache Kafka KRaft envir
                 echo "✅ Cluster ID saved successfully"
             fi
             
-            # check controller connectivity
+            # checks kontroller konnectivity
             echo "Checking if controller is reachable..."
             if nc -z -w 5 "$CONTROLLER_HOST" "$CONTROLLER_PORT" 2>/dev/null; then
                 echo "✅ Controller node is reachable at ${CONTROLLER_HOST}:${CONTROLLER_PORT}"
@@ -365,14 +360,14 @@ $(gum style --foreground 240 'First-time setup for your Apache Kafka KRaft envir
             fi
         fi
         
-        # generate base kraft properties
+        # generates base kraft properties
         cat > "$KAFKA_CONFIG_DIR/kraft.properties.base" << EOF
-# KRaft config generated by Flox
+# kraft config generated by f l o x
 node.id=$KAFKA_NODE_ID
 process.roles=$PROCESS_ROLES
 EOF
 
-        # add listeners based on role
+        # adds listeners based on role
         if [ "$PROCESS_ROLES" = "broker,controller" ]; then
             cat >> "$KAFKA_CONFIG_DIR/kraft.properties.base" << EOF
 listeners=PLAINTEXT://$KAFKA_HOST:$KAFKA_PORT,CONTROLLER://$KAFKA_HOST:$KRAFT_CONTROLLER_PORT
@@ -384,19 +379,19 @@ listeners=PLAINTEXT://$KAFKA_HOST:$KAFKA_PORT
 advertised.listeners=PLAINTEXT://$KAFKA_HOST:$KAFKA_PORT
 EOF
         else
-            # controller-only
+            # controller-only heredoc
             cat >> "$KAFKA_CONFIG_DIR/kraft.properties.base" << EOF
 listeners=CONTROLLER://$KAFKA_HOST:$KRAFT_CONTROLLER_PORT
 EOF
         fi
         
-        # add security protocols
+        # adds security protocols (plan to expand to support ssl)
         cat >> "$KAFKA_CONFIG_DIR/kraft.properties.base" << EOF
 listener.security.protocol.map=CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT
 controller.listener.names=CONTROLLER
 EOF
         
-        # set controller quorum voters
+        # sets kontroller quorum voters
         if [ "$KAFKA_MODE" = "kraft-broker" ]; then
             cat >> "$KAFKA_CONFIG_DIR/kraft.properties.base" << EOF
 controller.quorum.voters=$CONTROLLER_QUORUM
@@ -411,7 +406,7 @@ controller.quorum.voters=${KAFKA_NODE_ID}@$KAFKA_HOST:$KRAFT_CONTROLLER_PORT
 EOF
         fi
         
-        # add common config
+        # adds common konfig
         cat >> "$KAFKA_CONFIG_DIR/kraft.properties.base" << EOF
 log.dirs=$KAFKA_DATA_DIR
 default.replication.factor=$KAFKA_REPLICATION_FACTOR
@@ -424,7 +419,7 @@ transaction.state.log.replication.factor=1
 transaction.state.log.min.isr=1
 EOF
 
-        # generate cluster id for controller node
+        # generates kluster id for kontroller node
         if [ "$KAFKA_MODE" = "kraft-controller" ] || [ "$KAFKA_MODE" = "kraft-combined" ]; then
             if [ "$JOINING_EXISTING_CLUSTER" != "true" ] && [ ! -f "$KAFKA_CONFIG_DIR/cluster_id" ]; then
                 # Only generate new ID for new clusters
@@ -438,9 +433,9 @@ EOF
             fi
         fi
         
-        # save config
+        # saves config
         cat > "$FLOX_ENV_CACHE/kafka_config.sh" << EOF
-# Kafka config generated by Flox environment
+# kafka config generated by f l o x
 KAFKA_MODE="$KAFKA_MODE"
 KAFKA_CONFIG_DIR="$KAFKA_CONFIG_DIR"
 KAFKA_LOG_DIR="$KAFKA_LOG_DIR"
@@ -452,14 +447,14 @@ KRAFT_CONTROLLER_PORT="$KRAFT_CONTROLLER_PORT"
 PROCESS_ROLES="$PROCESS_ROLES"
 EOF
 
-        # add mode-specific config
+        # adds mode-specific konfig
         if [ "$KAFKA_MODE" = "kraft-controller" ] && [ -n "$CONTROLLER_QUORUM" ]; then
             cat >> "$FLOX_ENV_CACHE/kafka_config.sh" << EOF
 CONTROLLER_QUORUM="$CONTROLLER_QUORUM"
 EOF
         fi
 
-        # add broker-specific config
+        # adds broker-specific konfig
         if [ "$KAFKA_MODE" = "kraft-broker" ]; then
             cat >> "$FLOX_ENV_CACHE/kafka_config.sh" << EOF
 CONTROLLER_QUORUM="$CONTROLLER_QUORUM"
@@ -469,7 +464,7 @@ CONTROLLER_NODE_ID="$CONTROLLER_NODE_ID"
 EOF
         fi
         
-        # add cluster id if available
+        # adds kluster id if available
         if [ -f "$KAFKA_CONFIG_DIR/cluster_id" ]; then
             cat >> "$FLOX_ENV_CACHE/kafka_config.sh" << EOF
 KAFKA_CLUSTER_ID="$(cat "$KAFKA_CONFIG_DIR/cluster_id")"
@@ -481,15 +476,15 @@ EOF
         echo "$(gum style --foreground 240 'Press Enter to accept the default values shown in [brackets]')"
         echo ""
 
-        # set initial bootstrap server
+        # sets initial bootstrap server
         BOOTSTRAP_SERVERS="${DEFAULT_KAFKA_HOST}:${DEFAULT_KAFKA_PORT}"
         BOOTSTRAP_SERVERS=$(gum input --placeholder "[${BOOTSTRAP_SERVERS}]" --value "${BOOTSTRAP_SERVERS}" --prompt "Initial Bootstrap Server: ")
 
-        # add additional servers
+        # adds additional bootstrap servers
         while gum confirm "Add additional bootstrap server?" --default=false; do
             ADDITIONAL_SERVER=$(gum input --placeholder "hostname:port" --prompt "Additional Bootstrap Server: ")
 
-            # validate format
+            # validates formatting if adding bootstrap servers
             if [[ "$ADDITIONAL_SERVER" =~ ^[^:]+:[0-9]+$ ]]; then
                 BOOTSTRAP_SERVERS="${BOOTSTRAP_SERVERS},${ADDITIONAL_SERVER}"
                 echo "Added: $ADDITIONAL_SERVER"
@@ -498,20 +493,20 @@ EOF
             fi
         done
 
-        # display final config
+        # displays final konfig
         echo "Final bootstrap servers: $BOOTSTRAP_SERVERS"
 
-        # select client type
+        # selects klient type
         CLIENT_TYPE=$(gum choose --header "Select client type:" "producer" "consumer" "both")
 
-        # configure topics
+        # konfigures topics
         DEFAULT_TOPIC="flox-is-great"
         KAFKA_TOPICS=$(gum input --placeholder "[${DEFAULT_TOPIC}]" --value "${DEFAULT_TOPIC}" --prompt "Topic(s) to produce to/consume from: ")
 
-        # select processing mode
+        # selects processing mode
         KAFKA_MESSAGE_PROCESSING_MODE=$(gum choose --header "Select message processing mode:" "echo" "file" "script")
 
-        # configure scripts if needed
+        # konfigures scripts if needed
         if [ "$KAFKA_MESSAGE_PROCESSING_MODE" = "script" ]; then
             mkdir -p "$FLOX_ENV_CACHE/kafka-scripts"
             
@@ -549,7 +544,7 @@ EOF
             fi
         fi
 
-        # configure advanced settings
+        # configures advanced settings
         if gum confirm "Configure advanced client settings?" --default=false; then
             KAFKA_CLIENT_COUNT=$(gum input --placeholder "[1]" --value "1" --prompt "Number of client instances: ")
             KAFKA_CLIENT_PARALLEL_CHOICE=$(gum choose --header "Run clients in parallel?" "true" "false")
@@ -560,14 +555,14 @@ EOF
                 KAFKA_FILE_APPEND_CHOICE="true"
             fi
             
-            # set directories
+            # sets directories
             DEFAULT_OUTPUT_DIR="$FLOX_ENV_CACHE/kafka-message-output"
             KAFKA_MESSAGE_OUTPUT_DIR=$(gum input --placeholder "[${DEFAULT_OUTPUT_DIR}]" --value "${DEFAULT_OUTPUT_DIR}" --prompt "Message output directory: ")
             
             DEFAULT_SCRIPTS_DIR="$FLOX_ENV_CACHE/kafka-scripts"
             KAFKA_SCRIPTS_DIR=$(gum input --placeholder "[${DEFAULT_SCRIPTS_DIR}]" --value "${DEFAULT_SCRIPTS_DIR}" --prompt "Scripts directory: ")
         else
-            # set defaults
+            # sets defaults
             KAFKA_CLIENT_COUNT="1"
             KAFKA_CLIENT_PARALLEL_CHOICE="false"
             KAFKA_FILE_APPEND_CHOICE="true"
@@ -575,12 +570,12 @@ EOF
             KAFKA_SCRIPTS_DIR="$FLOX_ENV_CACHE/kafka-scripts"
         fi
 
-        # create directories
+        # creates directories
         mkdir -p "$KAFKA_MESSAGE_OUTPUT_DIR" "$KAFKA_SCRIPTS_DIR"
         
-        # save client config
+        # saves client konfig
         cat > "$FLOX_ENV_CACHE/kafka_config.sh" << EOF
-# Kafka config generated by Flox environment
+# kafka konfig generated by f l o x
 KAFKA_MODE="$KAFKA_MODE"
 KAFKA_CONFIG_DIR="$KAFKA_CONFIG_DIR"
 KAFKA_LOG_DIR="$KAFKA_LOG_DIR"
@@ -597,10 +592,10 @@ KAFKA_FILE_APPEND="$KAFKA_FILE_APPEND_CHOICE"
 EOF
     fi
 
-    # apply config and export variables
+    # applies konfig + exports vars
     source "$FLOX_ENV_CACHE/kafka_config.sh"
     
-    # export critical variables
+    # exports more vars
     export KAFKA_MODE
     export KAFKA_CONFIG_DIR
     export KAFKA_LOG_DIR
@@ -627,7 +622,7 @@ EOF
     
     export KAFKA_HOME="$(dirname $(which kafka-server-start.sh))/.."
     
-    # display exported variables
+    # displays exported vars
     echo ""
     echo "$(gum style --foreground 240 'Exported env vars:')"
     echo "  KAFKA_MODE=$KAFKA_MODE"
@@ -660,13 +655,13 @@ EOF
     echo "$(gum style --foreground 34 --bold "✓ Kafka config saved!")"
 }
 
-# Setup environment variables from config file
+# sets up env vars from kafka_config.sh
 setup_kafka_env() {
     if [ -f "$FLOX_ENV_CACHE/kafka_config.sh" ]; then
-        # Source the config file
+        # sources kafka_config.sh
         source "$FLOX_ENV_CACHE/kafka_config.sh"
         
-        # Explicitly export all variables
+        # exports all vars so they're available to the shell
         export KAFKA_MODE
         export KAFKA_CONFIG_DIR
         export KAFKA_LOG_DIR
@@ -679,12 +674,12 @@ setup_kafka_env() {
         [ -n "$KAFKA_CLUSTER_ID" ] && export KAFKA_CLUSTER_ID
         export KAFKA_HOME="$(dirname $(which kafka-server-start.sh))/.."
         
-        # Try to find JAVA_HOME if not already set
+        # tries to  find JAVA_HOME if not already set
         if [ -z "$JAVA_HOME" ]; then
             export JAVA_HOME="$(dirname $(dirname $(which java)))"
         fi
         
-        # Debug: Show loaded variables
+        # debug logic: shows loaded variables
 #        echo "Loaded Kafka environment variables:" >&2
 #        echo "  KAFKA_MODE=$KAFKA_MODE" >&2
 #        echo "  KAFKA_CONFIG_DIR=$KAFKA_CONFIG_DIR" >&2
@@ -702,9 +697,8 @@ setup_kafka_env() {
     fi
 }
 
-# Modified show_kafka_help function with fixed formatting
+# help / inofrmational message
 info() {
-    # Build the header content with consistent spacing
     local header_content=$(cat << EOF
 $(gum style --foreground 141 --bold 'This is a  F l o x  Apache Kafka Environment (KRaft Mode)')
 
@@ -720,7 +714,7 @@ $(gum style --foreground 141 --bold 'This is a  F l o x  Apache Kafka Environmen
 EOF
 )
 
-    # Add service start command based on mode
+    # adds flox service start command based on mode
     if [ "$KAFKA_MODE" = "client" ]; then
         header_content+=$(cat << EOF
 
@@ -748,7 +742,7 @@ EOF
 EOF
 )
 
-    # Add node-specific information based on the mode
+    # adds node-specific detail based on mode
     if [ "$KAFKA_MODE" = "kraft-controller" ]; then
         header_content+=$(cat << EOF
 
@@ -801,7 +795,6 @@ EOF
       Processing Mode:    $(gum style --foreground 212 "${KAFKA_MESSAGE_PROCESSING_MODE}")
 EOF
 )
-        # Add mode-specific information
         if [ "$KAFKA_MESSAGE_PROCESSING_MODE" = "script" ]; then
             header_content+=$(cat << EOF
 
@@ -817,7 +810,7 @@ EOF
 )
         fi
         
-        # Add advanced settings info if configured
+        # adds advanced settings info if configured during bootstrap_kafka
         if [ "$KAFKA_CLIENT_COUNT" != "1" ] || [ "$KAFKA_CLIENT_PARALLEL" = "true" ]; then
             header_content+=$(cat << EOF
 
@@ -828,7 +821,7 @@ EOF
         fi
     fi
     
-    # Create the help message with Gum styling
+    # styles the help / informational message with the great, powerful, fabulous gum
     gum style \
         --border rounded \
         --border-foreground 240 \
@@ -838,17 +831,17 @@ EOF
         "$header_content"
 }
 
-# Make bootstrap function available
+# makes bootstrap function available as bootstrap because why not
 bootstrap() {
     bootstrap_kafka
 }
 
-# Check if Kafka config exists, if not, prompt to run bootstrap
+# checks if kafka konfig exists; if not exists, prompts to run bootstrap
 if [ ! -f "$FLOX_ENV_CACHE/kafka_config.sh" ]; then
     gum style --foreground 212 --bold "No Kafka configuration detected. Let's set one up!"
     bootstrap_kafka
 else
-    # Source the config and set up environment
+    # sources kafka_config.sh and sets up environment
     setup_kafka_env
 fi
 
@@ -861,7 +854,7 @@ download_readme() {
   fi
 }
 
-# Show help message after configuration
+# shosw help message + downloads readme when all is said and done
 info
 download_readme
 '''
