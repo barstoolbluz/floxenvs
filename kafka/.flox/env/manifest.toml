@@ -1,0 +1,1407 @@
+## Flox Environment Manifest -----------------------------------------
+##
+##   _Everything_ you need to know about the _manifest_ is here:
+##
+##               https://flox.dev/docs/concepts/manifest
+##
+## -------------------------------------------------------------------
+# Flox manifest version managed by Flox CLI
+version = 1
+
+
+## Install Packages --------------------------------------------------
+[install]
+curl.pkg-path = "curl"
+curl.pkg-group = "helper-tools"
+bat.pkg-path = "bat"
+bat.pkg-group = "helper-tools"
+jq.pkg-path = "jq"
+jq.pkg-group = "helper-tools"
+gum.pkg-path = "gum"
+kafka.pkg-path = "apacheKafka"
+jdk.pkg-path = "jdk"
+netcat.pkg-path = "netcat"
+netcat.pkg-group = "env-tools"
+netstat.pkg-path = "unixtools.netstat"
+netstat.pkg-group = "env-tools"
+gnused.pkg-path = "gnused"
+gnused.pkg-group = "darwin-tools"
+coreutils.pkg-path = "coreutils"
+coreutils.pkg-group = "darwin-tools"
+gawk.pkg-path = "gawk"
+gawk.pkg-group = "darwin-tools"
+gnugrep.pkg-path = "gnugrep"
+gnugrep.pkg-group = "gnugrep"
+bash.pkg-path = "bash"
+
+## Environment Variables ---------------------------------------------
+[vars]
+# Define base variables that are always available
+KAFKA_CONFIG_DIR = "$FLOX_ENV_CACHE/kafka-config"
+KAFKA_LOG_DIR = "$FLOX_ENV_CACHE/kafka-logs"
+KAFKA_DATA_DIR = "$FLOX_ENV_CACHE/data/kafka"
+
+[hook]
+on-activate = '''
+bootstrap_kafka() {
+    clear
+    
+    gum style \
+        --border rounded \
+        --border-foreground 240 \
+        --padding "1 2" \
+        --margin "1 0" \
+        --width 70 \
+        "$(gum style --foreground 27 --bold 'Apache Kafka config')
+        
+$(gum style --foreground 240 'First-time setup for your Apache Kafka KRaft environment')"
+    
+    # detects non-loopback ip address
+    detect_ip() {
+        local ip=""
+        # for macos/darwin
+        if [[ "$(uname)" == "Darwin" ]]; then
+            ip=$(ifconfig | grep "inet " | grep -v 127.0.0.1 | awk '{print $2}' | head -n 1)
+        # for linux and wsl
+        else
+            # try eth0 first (common in wsl2 and linux)
+            ip=$(ip -4 addr show eth0 2>/dev/null | grep inet | awk '{print $2}' | cut -d/ -f1 | head -n 1)
+            
+            # if eth0 didn't work, try other interfaces
+            if [[ -z "$ip" ]]; then
+                # try global scope addresses
+                ip=$(ip -4 addr show scope global 2>/dev/null | grep inet | awk '{print $2}' | cut -d/ -f1 | head -n 1)
+                
+                # try any non-loopback as last resort
+                if [[ -z "$ip" ]]; then
+                    ip=$(ip -4 addr | grep -v "127.0.0.1" | grep -v "10.255.255" | grep inet | awk '{print $2}' | cut -d/ -f1 | head -n 1)
+                fi
+            fi
+        fi
+        
+        # default to localhost if no external ip found
+        if [[ -z "$ip" ]]; then
+            ip="localhost"
+        fi
+        
+        echo "$ip"
+    }
+    
+    # set defaults
+    DEFAULT_KAFKA_MODE="kraft-combined"
+    DEFAULT_KAFKA_NODE_ID="1"
+    DEFAULT_KAFKA_PORT="9092"
+    DEFAULT_KAFKA_HOST=$(detect_ip)
+    DEFAULT_KAFKA_DATA_DIR="${FLOX_ENV_CACHE}/data/kafka"
+    DEFAULT_KAFKA_LOG_DIR="${FLOX_ENV_CACHE}/kafka-logs"
+    DEFAULT_KAFKA_REPLICATION_FACTOR="1"
+    DEFAULT_KAFKA_NUM_PARTITIONS="1"
+    DEFAULT_KRAFT_CONTROLLER_PORT="9093"
+    
+    # create directories
+    mkdir -p "$KAFKA_CONFIG_DIR" "$KAFKA_LOG_DIR"
+    
+    echo ""
+    KAFKA_MODE=$(gum choose --header "Select Kafka node type:" "kraft-combined" "kraft-controller" "kraft-broker" "client")
+    
+    if [[ "$KAFKA_MODE" == "kraft-"* ]]; then
+        echo "$(gum style --foreground 240 'Configure Kafka KRaft Mode')"
+        echo "$(gum style --foreground 240 'Press Enter to accept the default values shown in [brackets]')"
+        echo ""
+        
+        # Set JOINING_EXISTING_CLUSTER flag
+        JOINING_EXISTING_CLUSTER=false
+        
+        # set node id based on mode
+        if [ "$KAFKA_MODE" = "kraft-controller" ]; then
+            # Ask if joining existing cluster or creating new one
+            CLUSTER_ACTION=$(gum choose --header "Are you:" "Creating a new Kafka cluster" "Adding a controller to an existing cluster")
+            
+            # Set flag for joining existing cluster
+            if [ "$CLUSTER_ACTION" = "Adding a controller to an existing cluster" ]; then
+                JOINING_EXISTING_CLUSTER=true
+            fi
+            
+            if [ "$JOINING_EXISTING_CLUSTER" = "true" ]; then
+                echo "$(gum style --foreground 240 'Enter a unique node ID for this controller (must be different from existing controllers)')"
+                DEFAULT_KAFKA_NODE_ID=""  # No default - user must choose
+            else
+                DEFAULT_KAFKA_NODE_ID="1"
+            fi
+        elif [ "$KAFKA_MODE" = "kraft-broker" ]; then
+            DEFAULT_KAFKA_NODE_ID="2"
+        fi
+        
+        # When joining existing cluster, prompt for cluster ID first
+        if [ "$JOINING_EXISTING_CLUSTER" = "true" ]; then
+            echo "$(gum style --foreground 240 'When joining an existing cluster, you need the exact cluster ID from another controller')"
+            echo "$(gum style --foreground 240 'You can find it in $KAFKA_CONFIG_DIR/cluster_id on an existing controller node')"
+            
+            KAFKA_CLUSTER_ID=$(gum input --prompt "Enter existing cluster ID: ")
+            
+            # Validate cluster ID is provided
+            if [ -z "$KAFKA_CLUSTER_ID" ]; then
+                echo "❌ No cluster ID provided. This will cause connectivity issues."
+                echo "   Cannot continue without a valid cluster ID for joining an existing cluster."
+                return 1
+            fi
+            
+            # Save cluster ID immediately
+            echo "$KAFKA_CLUSTER_ID" > "$KAFKA_CONFIG_DIR/cluster_id"
+            echo "✅ Existing cluster ID saved successfully"
+            
+            # Prompt for at least one existing controller
+            echo "$(gum style --foreground 240 'Now enter details for at least one existing controller in the cluster')"
+            
+            EXISTING_CONTROLLER_ID=$(gum input --prompt "Existing Controller Node ID: " --placeholder "1")
+            EXISTING_CONTROLLER_HOST=$(gum input --prompt "Existing Controller Host: " --placeholder "192.168.0.88")
+            EXISTING_CONTROLLER_PORT=$(gum input --prompt "Existing Controller Port: " --placeholder "9093")
+            
+            # Initialize controller quorum with existing controller
+            CONTROLLER_QUORUM="${EXISTING_CONTROLLER_ID}@${EXISTING_CONTROLLER_HOST}:${EXISTING_CONTROLLER_PORT}"
+        fi
+
+        # Only show the controller node message when in controller mode and joining an existing cluster
+        if [ "$KAFKA_MODE" = "kraft-controller" ] && [ "$JOINING_EXISTING_CLUSTER" = "true" ]; then
+            echo ""
+            echo "$(gum style --foreground 27 --bold '🔄 Now configuring your new controller node')"
+            echo "$(gum style --foreground 240 'Please provide details for the controller you are adding to the cluster')"
+            echo ""
+        fi
+	
+        # Handle empty DEFAULT_KAFKA_NODE_ID (for joining existing cluster)
+        if [ -z "$DEFAULT_KAFKA_NODE_ID" ]; then
+            KAFKA_NODE_ID=$(gum input --prompt "New Controller's Node ID: ")
+            # Ensure a value is provided
+            if [ -z "$KAFKA_NODE_ID" ]; then
+                echo "❌ A unique node ID is required. Cannot continue."
+                return 1
+            fi
+        else
+            KAFKA_NODE_ID=$(gum input --placeholder "[${DEFAULT_KAFKA_NODE_ID}]" --value "$DEFAULT_KAFKA_NODE_ID" --prompt "Node ID: ")
+        fi
+        
+        # Use appropriate prompt based on mode for hostname/IP
+        if [ "$KAFKA_MODE" = "kraft-controller" ]; then
+            HOST_PROMPT="Controller's Hostname/IP: "
+        elif [ "$KAFKA_MODE" = "kraft-broker" ]; then
+            HOST_PROMPT="Broker's Hostname/IP: "
+        else # kraft-combined
+            HOST_PROMPT="Node's Hostname/IP: "
+        fi
+        KAFKA_HOST=$(gum input --placeholder "[${DEFAULT_KAFKA_HOST}]" --value "$DEFAULT_KAFKA_HOST" --prompt "$HOST_PROMPT")
+        
+        # configure ports based on mode
+        if [ "$KAFKA_MODE" = "kraft-controller" ]; then
+            KRAFT_CONTROLLER_PORT=$(gum input --placeholder "[${DEFAULT_KRAFT_CONTROLLER_PORT}]" --value "$DEFAULT_KRAFT_CONTROLLER_PORT" --prompt "Controller Port: ")
+            KAFKA_PORT=""
+        else
+            if [ "$KAFKA_MODE" = "kraft-broker" ]; then
+                DEFAULT_KAFKA_PORT="9092"
+            fi
+            KAFKA_PORT=$(gum input --placeholder "[${DEFAULT_KAFKA_PORT}]" --value "$DEFAULT_KAFKA_PORT" --prompt "Port: ")
+            KRAFT_CONTROLLER_PORT="$DEFAULT_KRAFT_CONTROLLER_PORT"
+        fi
+        
+        # Set data directory with appropriate prompt
+        if [ "$KAFKA_MODE" = "kraft-controller" ]; then
+            DIR_PROMPT="Controller's Data Directory: "
+        elif [ "$KAFKA_MODE" = "kraft-broker" ]; then
+            DIR_PROMPT="Broker's Data Directory: "
+        else # kraft-combined
+            DIR_PROMPT="Data Directory: "
+        fi
+        KAFKA_DATA_DIR="${FLOX_ENV_CACHE}/data/kafka/${KAFKA_MODE}-${KAFKA_NODE_ID}"
+        KAFKA_DATA_DIR=$(gum input --placeholder "[${KAFKA_DATA_DIR}]" --value "$KAFKA_DATA_DIR" --prompt "$DIR_PROMPT")
+        
+        # check for existing data
+        if [ -d "$KAFKA_DATA_DIR" ] && [ "$(ls -A "$KAFKA_DATA_DIR" 2>/dev/null)" ]; then
+            echo "Found existing Kafka data in $KAFKA_DATA_DIR"
+            if gum confirm "Clean existing data directory? (Recommended if changing configs)" --default=true; then
+                rm -rf "$KAFKA_DATA_DIR"/*
+                echo "Data directory cleaned."
+            else
+                echo "Using existing data directory. Format may fail if cluster IDs don't match."
+            fi
+        fi
+        
+        # ensure data directory exists
+        mkdir -p "$KAFKA_DATA_DIR"
+        
+        # configure replication for controller mode
+        if [ "$KAFKA_MODE" = "kraft-controller" ]; then
+            KAFKA_REPLICATION_FACTOR=$(gum input --placeholder "[${DEFAULT_KAFKA_REPLICATION_FACTOR}]" --value "$DEFAULT_KAFKA_REPLICATION_FACTOR" --prompt "Default Replication Factor: ")
+            KAFKA_NUM_PARTITIONS=$(gum input --placeholder "[${DEFAULT_KAFKA_NUM_PARTITIONS}]" --value "$DEFAULT_KAFKA_NUM_PARTITIONS" --prompt "Default Number of Partitions: ")
+            
+            # set up controller quorum
+            if [ "$JOINING_EXISTING_CLUSTER" != "true" ]; then
+                CONTROLLER_QUORUM="${KAFKA_NODE_ID}@${KAFKA_HOST}:${KRAFT_CONTROLLER_PORT}"
+                if gum confirm "Do you want to define additional controllers?" --default=false; then
+                    echo "$(gum style --foreground 240 'Configure additional controllers for high availability')"
+                    
+                    # track used ports to check for conflicts
+                    declare -A used_ports
+                    used_ports["$KRAFT_CONTROLLER_PORT"]=1
+                    
+                    # track highest node id
+                    HIGHEST_NODE_ID=$KAFKA_NODE_ID
+                    
+                    while true; do
+                        # suggest next node id
+                        SUGGESTED_NODE_ID=$((HIGHEST_NODE_ID + 1))
+                        
+                        ADDITIONAL_CONTROLLER_ID=$(gum input --prompt "Additional Controller Node ID: " --value "$SUGGESTED_NODE_ID")
+                        ADDITIONAL_CONTROLLER_HOST=$(gum input --prompt "Additional Controller Host: " --value "$KAFKA_HOST" --placeholder "192.168.0.89")
+                        
+                        # handle port suggestion
+                        if [ "$ADDITIONAL_CONTROLLER_HOST" = "$KAFKA_HOST" ]; then
+                            # find next available port
+                            SUGGESTED_PORT=$((KRAFT_CONTROLLER_PORT))
+                            while [ -n "${used_ports[$SUGGESTED_PORT]}" ]; do
+                                SUGGESTED_PORT=$((SUGGESTED_PORT + 1))
+                            done
+                        else
+                            SUGGESTED_PORT="9093"
+                        fi
+                        
+                        ADDITIONAL_CONTROLLER_PORT=$(gum input --prompt "Additional Controller Port: " --value "$SUGGESTED_PORT")
+                        
+                        # handle empty values
+                        if [ -z "$ADDITIONAL_CONTROLLER_ID" ]; then
+                            ADDITIONAL_CONTROLLER_ID="$SUGGESTED_NODE_ID"
+                        fi
+                        if [ -z "$ADDITIONAL_CONTROLLER_PORT" ]; then
+                            ADDITIONAL_CONTROLLER_PORT="$SUGGESTED_PORT"
+                        fi
+                        
+                        # update highest node id
+                        if [ "$ADDITIONAL_CONTROLLER_ID" -gt "$HIGHEST_NODE_ID" ]; then
+                            HIGHEST_NODE_ID="$ADDITIONAL_CONTROLLER_ID"
+                        fi
+                        
+                        # check for port conflicts
+                        if [ "$ADDITIONAL_CONTROLLER_HOST" = "$KAFKA_HOST" ] && [ -n "${used_ports[$ADDITIONAL_CONTROLLER_PORT]}" ]; then
+                            echo "❌ Port conflict: $ADDITIONAL_CONTROLLER_PORT is already in use on this host"
+                            continue
+                        fi
+                        
+                        # add to quorum
+                        CONTROLLER_QUORUM="${CONTROLLER_QUORUM},${ADDITIONAL_CONTROLLER_ID}@${ADDITIONAL_CONTROLLER_HOST}:${ADDITIONAL_CONTROLLER_PORT}"
+                        
+                        # track used port
+                        if [ "$ADDITIONAL_CONTROLLER_HOST" = "$KAFKA_HOST" ]; then
+                            used_ports["$ADDITIONAL_CONTROLLER_PORT"]=1
+                        fi
+                        
+                        if ! gum confirm "Add another controller?" --default=false; then
+                            break
+                        fi
+                    done
+                    
+                    echo "Controller quorum configured: $CONTROLLER_QUORUM"
+                fi
+            else
+                # For joining existing cluster, add this controller to the quorum
+                CONTROLLER_QUORUM="${CONTROLLER_QUORUM},${KAFKA_NODE_ID}@${KAFKA_HOST}:${KRAFT_CONTROLLER_PORT}"
+                echo "Adding this controller to quorum: $CONTROLLER_QUORUM"
+            fi
+        else
+            # handle settings for combined and broker modes
+            if [ "$KAFKA_MODE" = "kraft-combined" ]; then
+                if gum confirm "Configure advanced KRaft settings?" --default=false; then
+                    KRAFT_CONTROLLER_PORT=$(gum input --placeholder "[${DEFAULT_KRAFT_CONTROLLER_PORT}]" --value "$DEFAULT_KRAFT_CONTROLLER_PORT" --prompt "Controller Port: ")
+                    KAFKA_REPLICATION_FACTOR=$(gum input --placeholder "[${DEFAULT_KAFKA_REPLICATION_FACTOR}]" --value "$DEFAULT_KAFKA_REPLICATION_FACTOR" --prompt "Default Replication Factor: ")
+                    KAFKA_NUM_PARTITIONS=$(gum input --placeholder "[${DEFAULT_KAFKA_NUM_PARTITIONS}]" --value "$DEFAULT_KAFKA_NUM_PARTITIONS" --prompt "Default Number of Partitions: ")
+                else
+                    KAFKA_REPLICATION_FACTOR="$DEFAULT_KAFKA_REPLICATION_FACTOR"
+                    KAFKA_NUM_PARTITIONS="$DEFAULT_KAFKA_NUM_PARTITIONS"
+                fi
+            else
+                # broker mode defaults
+                KAFKA_REPLICATION_FACTOR="$DEFAULT_KAFKA_REPLICATION_FACTOR"
+                KAFKA_NUM_PARTITIONS="$DEFAULT_KAFKA_NUM_PARTITIONS"
+            fi
+        fi
+        
+        # determine process roles
+        if [ "$KAFKA_MODE" = "kraft-combined" ]; then
+            PROCESS_ROLES="broker,controller"
+        elif [ "$KAFKA_MODE" = "kraft-controller" ]; then
+            PROCESS_ROLES="controller"
+        elif [ "$KAFKA_MODE" = "kraft-broker" ]; then
+            PROCESS_ROLES="broker"
+            
+            # for broker mode, get controller info
+            echo "$(gum style --foreground 240 'For broker mode, we need the controller information')"
+            
+            CONTROLLER_HOST=$(gum input --placeholder "192.168.0.88" --prompt "Controller Host IP/Hostname: ")
+            CONTROLLER_PORT=$(gum input --placeholder "9093" --prompt "Controller Port: ")
+            CONTROLLER_NODE_ID=$(gum input --placeholder "1" --prompt "Controller Node ID: ")
+            
+            # create controller quorum
+            CONTROLLER_QUORUM="${CONTROLLER_NODE_ID}@${CONTROLLER_HOST}:${CONTROLLER_PORT}"
+            echo "Using controller quorum: $CONTROLLER_QUORUM"
+            
+            # get cluster id from controller
+            echo "$(gum style --foreground 240 'We need the cluster ID from the controller node')"
+            echo "$(gum style --foreground 240 'You can find it in $KAFKA_CONFIG_DIR/cluster_id on the controller')"
+            
+            KAFKA_CLUSTER_ID=$(gum input --prompt "Enter cluster ID from controller: ")
+            if [ -z "$KAFKA_CLUSTER_ID" ]; then
+                echo "❌ No cluster ID provided. This will cause connectivity issues."
+                echo "   You can edit $KAFKA_CONFIG_DIR/cluster_id later and run 'flox services restart'"
+            else
+                echo "$KAFKA_CLUSTER_ID" > "$KAFKA_CONFIG_DIR/cluster_id"
+                echo "✅ Cluster ID saved successfully"
+            fi
+            
+            # check controller connectivity
+            echo "Checking if controller is reachable..."
+            if nc -z -w 5 "$CONTROLLER_HOST" "$CONTROLLER_PORT" 2>/dev/null; then
+                echo "✅ Controller node is reachable at ${CONTROLLER_HOST}:${CONTROLLER_PORT}"
+            else
+                echo "❌ Warning: Cannot reach controller at ${CONTROLLER_HOST}:${CONTROLLER_PORT}"
+                echo "   Make sure the controller is running before starting the broker."
+            fi
+        fi
+        
+        # generate base kraft properties
+        cat > "$KAFKA_CONFIG_DIR/kraft.properties.base" << EOF
+# KRaft config generated by Flox
+node.id=$KAFKA_NODE_ID
+process.roles=$PROCESS_ROLES
+EOF
+
+        # add listeners based on role
+        if [ "$PROCESS_ROLES" = "broker,controller" ]; then
+            cat >> "$KAFKA_CONFIG_DIR/kraft.properties.base" << EOF
+listeners=PLAINTEXT://$KAFKA_HOST:$KAFKA_PORT,CONTROLLER://$KAFKA_HOST:$KRAFT_CONTROLLER_PORT
+advertised.listeners=PLAINTEXT://$KAFKA_HOST:$KAFKA_PORT
+EOF
+        elif [ "$PROCESS_ROLES" = "broker" ]; then
+            cat >> "$KAFKA_CONFIG_DIR/kraft.properties.base" << EOF
+listeners=PLAINTEXT://$KAFKA_HOST:$KAFKA_PORT
+advertised.listeners=PLAINTEXT://$KAFKA_HOST:$KAFKA_PORT
+EOF
+        else
+            # controller-only
+            cat >> "$KAFKA_CONFIG_DIR/kraft.properties.base" << EOF
+listeners=CONTROLLER://$KAFKA_HOST:$KRAFT_CONTROLLER_PORT
+EOF
+        fi
+        
+        # add security protocols
+        cat >> "$KAFKA_CONFIG_DIR/kraft.properties.base" << EOF
+listener.security.protocol.map=CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT
+controller.listener.names=CONTROLLER
+EOF
+        
+        # set controller quorum voters
+        if [ "$KAFKA_MODE" = "kraft-broker" ]; then
+            cat >> "$KAFKA_CONFIG_DIR/kraft.properties.base" << EOF
+controller.quorum.voters=$CONTROLLER_QUORUM
+EOF
+        elif [ "$KAFKA_MODE" = "kraft-controller" ] && [ -n "$CONTROLLER_QUORUM" ]; then
+            cat >> "$KAFKA_CONFIG_DIR/kraft.properties.base" << EOF
+controller.quorum.voters=$CONTROLLER_QUORUM
+EOF
+        else
+            cat >> "$KAFKA_CONFIG_DIR/kraft.properties.base" << EOF
+controller.quorum.voters=${KAFKA_NODE_ID}@$KAFKA_HOST:$KRAFT_CONTROLLER_PORT
+EOF
+        fi
+        
+        # add common config
+        cat >> "$KAFKA_CONFIG_DIR/kraft.properties.base" << EOF
+log.dirs=$KAFKA_DATA_DIR
+default.replication.factor=$KAFKA_REPLICATION_FACTOR
+num.partitions=$KAFKA_NUM_PARTITIONS
+log.retention.hours=168
+log.segment.bytes=1073741824
+log.retention.check.interval.ms=300000
+offsets.topic.replication.factor=1
+transaction.state.log.replication.factor=1
+transaction.state.log.min.isr=1
+EOF
+
+        # generate cluster id for controller node
+        if [ "$KAFKA_MODE" = "kraft-controller" ] || [ "$KAFKA_MODE" = "kraft-combined" ]; then
+            if [ "$JOINING_EXISTING_CLUSTER" != "true" ] && [ ! -f "$KAFKA_CONFIG_DIR/cluster_id" ]; then
+                # Only generate new ID for new clusters
+                KAFKA_CLUSTER_ID=$(kafka-storage.sh random-uuid)
+                echo "Generated new cluster ID: $KAFKA_CLUSTER_ID"
+                echo "IMPORTANT: Save this cluster ID for use on the broker node!"
+                echo "$KAFKA_CLUSTER_ID" > "$KAFKA_CONFIG_DIR/cluster_id"
+            elif [ -f "$KAFKA_CONFIG_DIR/cluster_id" ]; then
+                KAFKA_CLUSTER_ID=$(cat "$KAFKA_CONFIG_DIR/cluster_id")
+                echo "Using existing cluster ID: $KAFKA_CLUSTER_ID"
+            fi
+        fi
+        
+        # save config
+        cat > "$FLOX_ENV_CACHE/kafka_config.sh" << EOF
+# Kafka config generated by Flox environment
+KAFKA_MODE="$KAFKA_MODE"
+KAFKA_CONFIG_DIR="$KAFKA_CONFIG_DIR"
+KAFKA_LOG_DIR="$KAFKA_LOG_DIR"
+KAFKA_DATA_DIR="$KAFKA_DATA_DIR"
+KAFKA_NODE_ID="$KAFKA_NODE_ID"
+KAFKA_HOST="$KAFKA_HOST"
+KAFKA_PORT="$KAFKA_PORT"
+KRAFT_CONTROLLER_PORT="$KRAFT_CONTROLLER_PORT"
+PROCESS_ROLES="$PROCESS_ROLES"
+EOF
+
+        # add mode-specific config
+        if [ "$KAFKA_MODE" = "kraft-controller" ] && [ -n "$CONTROLLER_QUORUM" ]; then
+            cat >> "$FLOX_ENV_CACHE/kafka_config.sh" << EOF
+CONTROLLER_QUORUM="$CONTROLLER_QUORUM"
+EOF
+        fi
+
+        # add broker-specific config
+        if [ "$KAFKA_MODE" = "kraft-broker" ]; then
+            cat >> "$FLOX_ENV_CACHE/kafka_config.sh" << EOF
+CONTROLLER_QUORUM="$CONTROLLER_QUORUM"
+CONTROLLER_HOST="$CONTROLLER_HOST"
+CONTROLLER_PORT="$CONTROLLER_PORT"
+CONTROLLER_NODE_ID="$CONTROLLER_NODE_ID"
+EOF
+        fi
+        
+        # add cluster id if available
+        if [ -f "$KAFKA_CONFIG_DIR/cluster_id" ]; then
+            cat >> "$FLOX_ENV_CACHE/kafka_config.sh" << EOF
+KAFKA_CLUSTER_ID="$(cat "$KAFKA_CONFIG_DIR/cluster_id")"
+EOF
+        fi
+    
+    elif [ "$KAFKA_MODE" = "client" ]; then
+        echo "$(gum style --foreground 240 'Configure Kafka Client')"
+        echo "$(gum style --foreground 240 'Press Enter to accept the default values shown in [brackets]')"
+        echo ""
+
+        # set initial bootstrap server
+        BOOTSTRAP_SERVERS="${DEFAULT_KAFKA_HOST}:${DEFAULT_KAFKA_PORT}"
+        BOOTSTRAP_SERVERS=$(gum input --placeholder "[${BOOTSTRAP_SERVERS}]" --value "${BOOTSTRAP_SERVERS}" --prompt "Initial Bootstrap Server: ")
+
+        # add additional servers
+        while gum confirm "Add additional bootstrap server?" --default=false; do
+            ADDITIONAL_SERVER=$(gum input --placeholder "hostname:port" --prompt "Additional Bootstrap Server: ")
+
+            # validate format
+            if [[ "$ADDITIONAL_SERVER" =~ ^[^:]+:[0-9]+$ ]]; then
+                BOOTSTRAP_SERVERS="${BOOTSTRAP_SERVERS},${ADDITIONAL_SERVER}"
+                echo "Added: $ADDITIONAL_SERVER"
+            else
+                echo "❌ Invalid format. Please use hostname:port"
+            fi
+        done
+
+        # display final config
+        echo "Final bootstrap servers: $BOOTSTRAP_SERVERS"
+
+        # select client type
+        CLIENT_TYPE=$(gum choose --header "Select client type:" "producer" "consumer" "both")
+
+        # configure topics
+        DEFAULT_TOPIC="flox-is-great"
+        KAFKA_TOPICS=$(gum input --placeholder "[${DEFAULT_TOPIC}]" --value "${DEFAULT_TOPIC}" --prompt "Topic(s) to produce to/consume from: ")
+
+        # select processing mode
+        KAFKA_MESSAGE_PROCESSING_MODE=$(gum choose --header "Select message processing mode:" "echo" "file" "script")
+
+        # configure scripts if needed
+        if [ "$KAFKA_MESSAGE_PROCESSING_MODE" = "script" ]; then
+            mkdir -p "$FLOX_ENV_CACHE/kafka-scripts"
+            
+            if [ "$CLIENT_TYPE" = "producer" ] || [ "$CLIENT_TYPE" = "both" ]; then
+                SCRIPT_NAME=$(gum input --placeholder "generate_messages.sh" --value "generate_messages.sh" --prompt "Producer script name: ")
+                
+                if [ ! -f "$FLOX_ENV_CACHE/kafka-scripts/$SCRIPT_NAME" ]; then
+                    cat > "$FLOX_ENV_CACHE/kafka-scripts/$SCRIPT_NAME" << 'EOF'
+#!/bin/bash
+# Example message generation script
+while true; do
+    echo "Message at $(date)"
+    sleep 1
+done
+EOF
+                    chmod +x "$FLOX_ENV_CACHE/kafka-scripts/$SCRIPT_NAME"
+                    echo "Created example script: $FLOX_ENV_CACHE/kafka-scripts/$SCRIPT_NAME"
+                fi
+            fi
+            
+            if [ "$CLIENT_TYPE" = "consumer" ] || [ "$CLIENT_TYPE" = "both" ]; then
+                SCRIPT_NAME=$(gum input --placeholder "process_messages.sh" --value "process_messages.sh" --prompt "Consumer script name: ")
+                
+                if [ ! -f "$FLOX_ENV_CACHE/kafka-scripts/$SCRIPT_NAME" ]; then
+                    cat > "$FLOX_ENV_CACHE/kafka-scripts/$SCRIPT_NAME" << 'EOF'
+#!/bin/bash
+# Example message processing script
+while read -r message; do
+    echo "Processed: $message"
+done
+EOF
+                    chmod +x "$FLOX_ENV_CACHE/kafka-scripts/$SCRIPT_NAME"
+                    echo "Created example script: $FLOX_ENV_CACHE/kafka-scripts/$SCRIPT_NAME"
+                fi
+            fi
+        fi
+
+        # configure advanced settings
+        if gum confirm "Configure advanced client settings?" --default=false; then
+            KAFKA_CLIENT_COUNT=$(gum input --placeholder "[1]" --value "1" --prompt "Number of client instances: ")
+            KAFKA_CLIENT_PARALLEL_CHOICE=$(gum choose --header "Run clients in parallel?" "true" "false")
+            
+            if [ "$KAFKA_MESSAGE_PROCESSING_MODE" = "file" ]; then
+                KAFKA_FILE_APPEND_CHOICE=$(gum choose --header "Append to output file?" "true" "false")
+            else
+                KAFKA_FILE_APPEND_CHOICE="true"
+            fi
+            
+            # set directories
+            DEFAULT_OUTPUT_DIR="$FLOX_ENV_CACHE/kafka-message-output"
+            KAFKA_MESSAGE_OUTPUT_DIR=$(gum input --placeholder "[${DEFAULT_OUTPUT_DIR}]" --value "${DEFAULT_OUTPUT_DIR}" --prompt "Message output directory: ")
+            
+            DEFAULT_SCRIPTS_DIR="$FLOX_ENV_CACHE/kafka-scripts"
+            KAFKA_SCRIPTS_DIR=$(gum input --placeholder "[${DEFAULT_SCRIPTS_DIR}]" --value "${DEFAULT_SCRIPTS_DIR}" --prompt "Scripts directory: ")
+        else
+            # set defaults
+            KAFKA_CLIENT_COUNT="1"
+            KAFKA_CLIENT_PARALLEL_CHOICE="false"
+            KAFKA_FILE_APPEND_CHOICE="true"
+            KAFKA_MESSAGE_OUTPUT_DIR="$FLOX_ENV_CACHE/kafka-message-output"
+            KAFKA_SCRIPTS_DIR="$FLOX_ENV_CACHE/kafka-scripts"
+        fi
+
+        # create directories
+        mkdir -p "$KAFKA_MESSAGE_OUTPUT_DIR" "$KAFKA_SCRIPTS_DIR"
+        
+        # save client config
+        cat > "$FLOX_ENV_CACHE/kafka_config.sh" << EOF
+# Kafka config generated by Flox environment
+KAFKA_MODE="$KAFKA_MODE"
+KAFKA_CONFIG_DIR="$KAFKA_CONFIG_DIR"
+KAFKA_LOG_DIR="$KAFKA_LOG_DIR"
+KAFKA_DATA_DIR="$KAFKA_DATA_DIR"
+BOOTSTRAP_SERVERS="$BOOTSTRAP_SERVERS"
+CLIENT_TYPE="$CLIENT_TYPE"
+KAFKA_TOPICS="$KAFKA_TOPICS"
+KAFKA_CLIENT_COUNT="$KAFKA_CLIENT_COUNT"
+KAFKA_CLIENT_PARALLEL="$KAFKA_CLIENT_PARALLEL_CHOICE"
+KAFKA_MESSAGE_PROCESSING_MODE="$KAFKA_MESSAGE_PROCESSING_MODE"
+KAFKA_MESSAGE_OUTPUT_DIR="$KAFKA_MESSAGE_OUTPUT_DIR"
+KAFKA_SCRIPTS_DIR="$KAFKA_SCRIPTS_DIR"
+KAFKA_FILE_APPEND="$KAFKA_FILE_APPEND_CHOICE"
+EOF
+    fi
+
+    # apply config and export variables
+    source "$FLOX_ENV_CACHE/kafka_config.sh"
+    
+    # export critical variables
+    export KAFKA_MODE
+    export KAFKA_CONFIG_DIR
+    export KAFKA_LOG_DIR
+    export KAFKA_DATA_DIR
+    
+    if [ "$KAFKA_MODE" = "client" ]; then
+        export BOOTSTRAP_SERVERS
+        export CLIENT_TYPE
+        export KAFKA_TOPICS
+        export KAFKA_CLIENT_COUNT
+        export KAFKA_CLIENT_PARALLEL
+        export KAFKA_MESSAGE_PROCESSING_MODE
+        export KAFKA_MESSAGE_OUTPUT_DIR
+        export KAFKA_SCRIPTS_DIR
+        export KAFKA_FILE_APPEND
+    else
+        export KAFKA_NODE_ID
+        export KAFKA_HOST
+        export KAFKA_PORT
+        export KRAFT_CONTROLLER_PORT
+        export PROCESS_ROLES
+        [ -n "$KAFKA_CLUSTER_ID" ] && export KAFKA_CLUSTER_ID
+    fi
+    
+    export KAFKA_HOME="$(dirname $(which kafka-server-start.sh))/.."
+    
+    # display exported variables
+    echo ""
+    echo "$(gum style --foreground 240 'Exported env vars:')"
+    echo "  KAFKA_MODE=$KAFKA_MODE"
+    echo "  KAFKA_CONFIG_DIR=$KAFKA_CONFIG_DIR"
+    echo "  KAFKA_LOG_DIR=$KAFKA_LOG_DIR"
+    echo "  KAFKA_DATA_DIR=$KAFKA_DATA_DIR"
+    
+    if [ "$KAFKA_MODE" = "client" ]; then
+        echo "  BOOTSTRAP_SERVERS=$BOOTSTRAP_SERVERS"
+        echo "  CLIENT_TYPE=$CLIENT_TYPE"
+        echo "  KAFKA_TOPICS=$KAFKA_TOPICS"
+        echo "  KAFKA_CLIENT_COUNT=$KAFKA_CLIENT_COUNT"
+        echo "  KAFKA_CLIENT_PARALLEL=$KAFKA_CLIENT_PARALLEL"
+        echo "  KAFKA_MESSAGE_PROCESSING_MODE=$KAFKA_MESSAGE_PROCESSING_MODE"
+        echo "  KAFKA_MESSAGE_OUTPUT_DIR=$KAFKA_MESSAGE_OUTPUT_DIR"
+        echo "  KAFKA_SCRIPTS_DIR=$KAFKA_SCRIPTS_DIR"
+        echo "  KAFKA_FILE_APPEND=$KAFKA_FILE_APPEND"
+    else
+        echo "  KAFKA_NODE_ID=$KAFKA_NODE_ID"
+        echo "  KAFKA_HOST=$KAFKA_HOST"
+        echo "  KAFKA_PORT=$KAFKA_PORT"
+        echo "  KRAFT_CONTROLLER_PORT=$KRAFT_CONTROLLER_PORT"
+        echo "  PROCESS_ROLES=$PROCESS_ROLES"
+        [ -n "$KAFKA_CLUSTER_ID" ] && echo "  KAFKA_CLUSTER_ID=$KAFKA_CLUSTER_ID"
+    fi
+    
+    echo "  KAFKA_HOME=$KAFKA_HOME"
+    
+    echo ""
+    echo "$(gum style --foreground 34 --bold "✓ Kafka config saved!")"
+}
+
+# Setup environment variables from config file
+setup_kafka_env() {
+    if [ -f "$FLOX_ENV_CACHE/kafka_config.sh" ]; then
+        # Source the config file
+        source "$FLOX_ENV_CACHE/kafka_config.sh"
+        
+        # Explicitly export all variables
+        export KAFKA_MODE
+        export KAFKA_CONFIG_DIR
+        export KAFKA_LOG_DIR
+        export KAFKA_DATA_DIR
+        export KAFKA_NODE_ID
+        export KAFKA_HOST
+        export KAFKA_PORT
+        export KRAFT_CONTROLLER_PORT
+        export PROCESS_ROLES
+        [ -n "$KAFKA_CLUSTER_ID" ] && export KAFKA_CLUSTER_ID
+        export KAFKA_HOME="$(dirname $(which kafka-server-start.sh))/.."
+        
+        # Try to find JAVA_HOME if not already set
+        if [ -z "$JAVA_HOME" ]; then
+            export JAVA_HOME="$(dirname $(dirname $(which java)))"
+        fi
+        
+        # Debug: Show loaded variables
+#        echo "Loaded Kafka environment variables:" >&2
+#        echo "  KAFKA_MODE=$KAFKA_MODE" >&2
+#        echo "  KAFKA_CONFIG_DIR=$KAFKA_CONFIG_DIR" >&2
+#        echo "  KAFKA_LOG_DIR=$KAFKA_LOG_DIR" >&2
+#        echo "  KAFKA_DATA_DIR=$KAFKA_DATA_DIR" >&2
+#        echo "  KAFKA_NODE_ID=$KAFKA_NODE_ID" >&2
+#        echo "  KAFKA_HOST=$KAFKA_HOST" >&2
+#        echo "  KAFKA_PORT=$KAFKA_PORT" >&2
+#        echo "  KRAFT_CONTROLLER_PORT=$KRAFT_CONTROLLER_PORT" >&2
+#        echo "  PROCESS_ROLES=$PROCESS_ROLES" >&2
+#        [ -n "$KAFKA_CLUSTER_ID" ] && echo "  KAFKA_CLUSTER_ID=$KAFKA_CLUSTER_ID" >&2
+#        echo "  KAFKA_HOME=$KAFKA_HOME" >&2
+#    else
+#        echo "WARNING: kafka_config.sh not found at $FLOX_ENV_CACHE/kafka_config.sh" >&2
+    fi
+}
+
+# Modified show_kafka_help function with fixed formatting
+info() {
+    # Build the header content with consistent spacing
+    local header_content=$(cat << EOF
+$(gum style --foreground 141 --bold 'This is a  F l o x  Apache Kafka Environment (KRaft Mode)')
+
+👉  Manage Kafka Cluster(s):
+    $(gum style --foreground 212 'bootstrap')                              Runs interactive Kafka bootstrapping wizard
+    $(gum style --foreground 212 'topos')                                  Shows information about Kafka cluster topology
+
+👉  Use Kafka:
+    $(gum style --foreground 212 'kreate <topic> [partitions] [rf]')       Creates a new Kafka topic
+    $(gum style --foreground 212 'list')                                   Lists all available Kafka topics
+    $(gum style --foreground 212 'describe <topic>')                       Shows details for a specific topic
+    $(gum style --foreground 212 'status')                                 Checks Kafka broker status
+EOF
+)
+
+    # Add service start command based on mode
+    if [ "$KAFKA_MODE" = "client" ]; then
+        header_content+=$(cat << EOF
+
+    $(gum style --foreground 212 'flox services start')                    Start ${CLIENT_TYPE} client(s)
+EOF
+)
+    fi
+
+    header_content+=$(cat << EOF
+
+
+👉  Start / Stop / Monitor Kafka Service(s):
+    $(gum style --foreground 212 'flox services <start|stop|restart>')     Starts/stops/restarts Kafka services
+    $(gum style --foreground 212 'flox services status')                   Shows Kafka services status
+    $(gum style --foreground 212 'flox services logs kafka')               Shows Kafka logs
+                                           (\`--follow\` updates log events in console)
+
+👉  Get Help:
+    $(gum style --foreground 212 'readme')                                 View README.md using \`bat\`
+    $(gum style --foreground 212 'info')                                   Shows this help message
+
+
+👉  F l o x  Kafka Environment Details:
+      Kafka Mode:         $(gum style --foreground 212 "${KAFKA_MODE:-Not configured}")
+EOF
+)
+
+    # Add node-specific information based on the mode
+    if [ "$KAFKA_MODE" = "kraft-controller" ]; then
+        header_content+=$(cat << EOF
+
+      Controller Port:    $(gum style --foreground 212 "${KRAFT_CONTROLLER_PORT}")
+      Quorum Voters:      $(gum style --foreground 212 "${CONTROLLER_QUORUM}")
+EOF
+)
+        if [ -f "$KAFKA_CONFIG_DIR/cluster_id" ]; then
+            header_content+=$(cat << EOF
+
+      Cluster ID:         $(gum style --foreground 212 "$(cat "$KAFKA_CONFIG_DIR/cluster_id")")
+      ⚠️  IMPORTANT: Use this cluster ID when setting up broker nodes
+EOF
+)
+        fi
+    elif [ "$KAFKA_MODE" = "kraft-broker" ]; then
+        header_content+=$(cat << EOF
+
+      Controller Quorum:  $(gum style --foreground 212 "${CONTROLLER_QUORUM}")
+      Listening on:       $(gum style --foreground 212 "${KAFKA_HOST}:${KAFKA_PORT}")
+EOF
+)
+    elif [ "$KAFKA_MODE" = "kraft-combined" ]; then
+        header_content+=$(cat << EOF
+
+      Broker Port:        $(gum style --foreground 212 "${KAFKA_PORT}")
+      Controller Port:    $(gum style --foreground 212 "${KRAFT_CONTROLLER_PORT}")
+EOF
+)
+        if [ "$ADVANCED_MODE" = "true" ] && [ -n "$CONTROLLER_QUORUM" ]; then
+            header_content+=$(cat << EOF
+
+      Quorum Voters:      $(gum style --foreground 212 "${CONTROLLER_QUORUM}")
+EOF
+)
+        fi
+        if [ -f "$KAFKA_CONFIG_DIR/cluster_id" ]; then
+            header_content+=$(cat << EOF
+
+      Cluster ID:         $(gum style --foreground 212 "$(cat "$KAFKA_CONFIG_DIR/cluster_id")")
+EOF
+)
+        fi
+    elif [ "$KAFKA_MODE" = "client" ]; then
+        header_content+=$(cat << EOF
+
+      Connected to:       $(gum style --foreground 212 "${BOOTSTRAP_SERVERS}")
+      Client Type:        $(gum style --foreground 212 "${CLIENT_TYPE}")
+      Topics:             $(gum style --foreground 212 "${KAFKA_TOPICS}")
+      Processing Mode:    $(gum style --foreground 212 "${KAFKA_MESSAGE_PROCESSING_MODE}")
+EOF
+)
+        # Add mode-specific information
+        if [ "$KAFKA_MESSAGE_PROCESSING_MODE" = "script" ]; then
+            header_content+=$(cat << EOF
+
+      Scripts Dir:        $(gum style --foreground 212 "${KAFKA_SCRIPTS_DIR}")
+EOF
+)
+        elif [ "$KAFKA_MESSAGE_PROCESSING_MODE" = "file" ]; then
+            header_content+=$(cat << EOF
+
+      Output Dir:         $(gum style --foreground 212 "${KAFKA_MESSAGE_OUTPUT_DIR}")
+      Append Mode:        $(gum style --foreground 212 "${KAFKA_FILE_APPEND}")
+EOF
+)
+        fi
+        
+        # Add advanced settings info if configured
+        if [ "$KAFKA_CLIENT_COUNT" != "1" ] || [ "$KAFKA_CLIENT_PARALLEL" = "true" ]; then
+            header_content+=$(cat << EOF
+
+      Client Instances:   $(gum style --foreground 212 "${KAFKA_CLIENT_COUNT}")
+      Parallel Execution: $(gum style --foreground 212 "${KAFKA_CLIENT_PARALLEL}")
+EOF
+)
+        fi
+    fi
+    
+    # Create the help message with Gum styling
+    gum style \
+        --border rounded \
+        --border-foreground 240 \
+        --padding "1 2" \
+        --margin "1 0" \
+        --width 96 \
+        "$header_content"
+}
+
+# Make bootstrap function available
+bootstrap() {
+    bootstrap_kafka
+}
+
+# Check if Kafka config exists, if not, prompt to run bootstrap
+if [ ! -f "$FLOX_ENV_CACHE/kafka_config.sh" ]; then
+    gum style --foreground 212 --bold "No Kafka configuration detected. Let's set one up!"
+    bootstrap_kafka
+else
+    # Source the config and set up environment
+    setup_kafka_env
+fi
+
+# checks does/does not readme exist, downloads if not exist
+download_readme() {
+  local readme_path="$FLOX_ENV_PROJECT/README.md"
+  
+  if [ ! -f "$readme_path" ] || [ ! -s "$readme_path" ]; then
+    curl -sL "https://raw.githubusercontent.com/barstoolbluz/floxenvs/main/kafka/README.md" > "$readme_path" 2>/dev/null
+  fi
+}
+
+# Show help message after configuration
+info
+download_readme
+'''
+
+## Profile script ----------------------------------------------------
+[profile]
+bash = '''
+# sources helper functions
+source "$FLOX_ENV_CACHE/helper-functions/helper-functions.sh"
+
+readme() {
+  if [[ "$1" == "--refresh" ]] || [ ! -s "$FLOX_ENV_PROJECT/README.md" ]; then
+    curl -sL "https://raw.githubusercontent.com/barstoolbluz/floxenvs/main/kafka/README.md" > "$FLOX_ENV_PROJECT/README.md" 2>/dev/null
+  fi
+  bat --language markdown "$FLOX_ENV_PROJECT/README.md" 2>/dev/null
+}
+'''
+
+zsh = '''
+# wraps helper-functions.sh to run using bash -c
+_kh() { bash -c "source \"$FLOX_ENV_CACHE/helper-functions/helper-functions.sh\" && main $1 ${@:2}"; }
+
+kreate() { _kh kreate "$@"; }
+list() { _kh list "$@"; }
+describe() { _kh describe "$@"; }
+produce() { _kh produce "$@"; }
+konsume() { _kh konsume "$@"; }
+status() { _kh status "$@"; }
+topos() { _kh topos "$@"; }
+info() { _kh info "$@"; }
+topos() { _kh topology "$@"; }
+
+readme() {
+  if [[ "$1" == "--refresh" ]] || [ ! -s "$FLOX_ENV_PROJECT/README.md" ]; then
+    curl -sL "https://raw.githubusercontent.com/barstoolbluz/floxenvs/main/kafka/README.md" > "$FLOX_ENV_PROJECT/README.md" 2>/dev/null
+  fi
+  bat --language markdown "$FLOX_ENV_PROJECT/README.md" 2>/dev/null
+}
+'''
+
+fish = '''
+# wraps helper-function.sh to run using bash -c
+function _kh
+  set cmd $argv[1]
+  set -e argv[1]
+  bash -c "source \"$FLOX_ENV_CACHE/helper-functions.sh\" && main $cmd $argv"
+end
+
+function kreate; _kh kreate $argv; end
+function list; _kh list $argv; end
+function describe; _kh describe $argv; end
+function produce; _kh produce $argv; end
+function konsume; _kh konsume $argv; end
+function status; _kh status $argv; end
+function topos; _kh topos $argv; end
+function info; _kh info $argv; end
+function topos; _kh topology $argv; end
+
+function readme
+  if test "$argv[1]" = "--refresh"; or test ! -s "$FLOX_ENV_PROJECT/README.md"
+    curl -sL "https://raw.githubusercontent.com/barstoolbluz/floxenvs/main/kafka/README.md" > "$FLOX_ENV_PROJECT/README.md" 2>/dev/null
+  fi
+  bat --language markdown "$FLOX_ENV_PROJECT/README.md" 2>/dev/null
+end
+'''
+
+## Services ----------------------------------------------------------
+[services]
+kafka.command = '''
+# creates required directories
+mkdir -p "$FLOX_ENV_CACHE/kafka-logs"
+mkdir -p "$FLOX_ENV_CACHE/kafka-config"
+mkdir -p "$FLOX_ENV_CACHE/data/kafka"
+mkdir -p "$FLOX_ENV_CACHE/kafka-message-output"
+mkdir -p "$FLOX_ENV_CACHE/kafka-scripts"
+
+# verifies config file exists
+if [ ! -f "$FLOX_ENV_CACHE/kafka_config.sh" ]; then
+    echo "ERROR: kafka_config.sh not found. Please run 'bootstrap' first." | tee -a "$FLOX_ENV_CACHE/kafka-logs/startup.log"
+    exit 1
+fi
+
+# loads config - uses set -a to auto-export all variables
+echo "Loading config from: $FLOX_ENV_CACHE/kafka_config.sh" | tee -a "$FLOX_ENV_CACHE/kafka-logs/startup.log"
+if [ -f "$FLOX_ENV_CACHE/kafka_config.sh" ]; then
+    set -a
+    . "$FLOX_ENV_CACHE/kafka_config.sh"
+    set +a
+    echo "config loaded successfully" | tee -a "$FLOX_ENV_CACHE/kafka-logs/startup.log"
+else
+    echo "ERROR: config file not found" | tee -a "$FLOX_ENV_CACHE/kafka-logs/startup.log"
+    exit 1
+fi
+
+# logs debug info to verify variables
+echo "DEBUG: After sourcing kafka_config.sh" | tee -a "$FLOX_ENV_CACHE/kafka-logs/startup.log"
+echo "KAFKA_MODE=${KAFKA_MODE}" | tee -a "$FLOX_ENV_CACHE/kafka-logs/startup.log"
+echo "BOOTSTRAP_SERVERS=${BOOTSTRAP_SERVERS}" | tee -a "$FLOX_ENV_CACHE/kafka-logs/startup.log"
+echo "CLIENT_TYPE=${CLIENT_TYPE}" | tee -a "$FLOX_ENV_CACHE/kafka-logs/startup.log"
+echo "KAFKA_CONFIG_DIR=${KAFKA_CONFIG_DIR}" | tee -a "$FLOX_ENV_CACHE/kafka-logs/startup.log"
+echo "KAFKA_TOPICS=${KAFKA_TOPICS}" | tee -a "$FLOX_ENV_CACHE/kafka-logs/startup.log"
+
+# performs mode-specific validation
+if [ "$KAFKA_MODE" = "client" ]; then
+    # validates client mode variables
+    if [ -z "$KAFKA_MODE" ] || [ -z "$BOOTSTRAP_SERVERS" ]; then
+        echo "ERROR: Critical variables not set for client mode. Please run 'bootstrap' first." | tee -a "$FLOX_ENV_CACHE/kafka-logs/startup.log"
+        echo "KAFKA_MODE='$KAFKA_MODE', BOOTSTRAP_SERVERS='$BOOTSTRAP_SERVERS'" | tee -a "$FLOX_ENV_CACHE/kafka-logs/startup.log"
+        exit 1
+    fi
+else
+    # validates broker/controller mode variables
+    if [ -z "$KAFKA_MODE" ] || [ -z "$KAFKA_NODE_ID" ] || [ -z "$KAFKA_HOST" ]; then
+        echo "ERROR: Critical variables not set. Please run 'bootstrap' first." | tee -a "$FLOX_ENV_CACHE/kafka-logs/startup.log"
+        echo "KAFKA_MODE='$KAFKA_MODE', KAFKA_NODE_ID='$KAFKA_NODE_ID', KAFKA_HOST='$KAFKA_HOST'" | tee -a "$FLOX_ENV_CACHE/kafka-logs/startup.log"
+        exit 1
+    fi
+fi
+
+# sets default for JMX cleanup
+export KAFKA_CLEANUP_JMX="${KAFKA_CLEANUP_JMX:-true}"
+
+# logs config
+echo "=== Kafka Service Startup ===" > "$FLOX_ENV_CACHE/kafka-logs/service.log"
+echo "Starting at $(date)" >> "$FLOX_ENV_CACHE/kafka-logs/service.log"
+echo "KAFKA_MODE = $KAFKA_MODE" >> "$FLOX_ENV_CACHE/kafka-logs/service.log"
+
+# handles client mode operation
+if [ "$KAFKA_MODE" = "client" ]; then
+    echo "Starting in client mode with $CLIENT_TYPE" >> "$FLOX_ENV_CACHE/kafka-logs/service.log"
+    echo "Bootstrap servers: $BOOTSTRAP_SERVERS" >> "$FLOX_ENV_CACHE/kafka-logs/service.log"
+    echo "Client count: ${KAFKA_CLIENT_COUNT:-1}" >> "$FLOX_ENV_CACHE/kafka-logs/service.log"
+    echo "Running in parallel: ${KAFKA_CLIENT_PARALLEL:-true}" >> "$FLOX_ENV_CACHE/kafka-logs/service.log"
+    
+    # sets defaults for client mode
+    KAFKA_CLIENT_COUNT=${KAFKA_CLIENT_COUNT:-1}
+    KAFKA_CLIENT_PARALLEL=${KAFKA_CLIENT_PARALLEL:-true}
+    KAFKA_FILE_APPEND=${KAFKA_FILE_APPEND:-true}
+    KAFKA_MESSAGE_PROCESSING_MODE=${KAFKA_MESSAGE_PROCESSING_MODE:-echo}
+    KAFKA_MESSAGE_OUTPUT_DIR=${KAFKA_MESSAGE_OUTPUT_DIR:-$FLOX_ENV_CACHE/kafka-message-output}
+    KAFKA_SCRIPTS_DIR=${KAFKA_SCRIPTS_DIR:-$FLOX_ENV_CACHE/kafka-scripts}
+    
+    # stores background process IDs
+    declare -a client_pids
+    
+    # runs a client instance
+    run_client_instance() {
+        local client_id=$1
+        local log_file="$FLOX_ENV_CACHE/kafka-logs/client_${client_id}.log"
+        
+        echo "Starting client instance $client_id (type: $CLIENT_TYPE, mode: $KAFKA_MESSAGE_PROCESSING_MODE)" | tee -a "$log_file"
+        
+        # creates temporary properties file
+        local client_props_file="$FLOX_ENV_CACHE/kafka-config/client_${client_id}.properties"
+        
+        # exports env vars and runs client
+        case "$CLIENT_TYPE" in
+            "consumer")
+                # generates consumer client.properties
+                cat > "$client_props_file" <<-ENDOFCONSUMER
+bootstrap.servers=$BOOTSTRAP_SERVERS
+group.id=flox-consumer-group-$client_id
+auto.offset.reset=earliest
+enable.auto.commit=true
+auto.commit.interval.ms=1000
+key.deserializer=org.apache.kafka.common.serialization.StringDeserializer
+value.deserializer=org.apache.kafka.common.serialization.StringDeserializer
+ENDOFCONSUMER
+
+                # exports env vars
+                export BOOTSTRAP_SERVERS
+                export KAFKA_TOPICS
+
+                case "$KAFKA_MESSAGE_PROCESSING_MODE" in
+                    "echo")
+                        env BOOTSTRAP_SERVERS="$BOOTSTRAP_SERVERS" KAFKA_TOPICS="$KAFKA_TOPICS" \
+                            kafka-console-consumer.sh --bootstrap-server "$BOOTSTRAP_SERVERS" \
+                            --topic "$KAFKA_TOPICS" \
+                            --consumer.config "$client_props_file" \
+                            2>&1 | tee -a "$log_file"
+                        ;;
+                    "file")
+                        output_file="$KAFKA_MESSAGE_OUTPUT_DIR/client_${client_id}_messages.txt"
+                        if [ "$KAFKA_FILE_APPEND" = "true" ]; then
+                            env BOOTSTRAP_SERVERS="$BOOTSTRAP_SERVERS" KAFKA_TOPICS="$KAFKA_TOPICS" \
+                                kafka-console-consumer.sh --bootstrap-server "$BOOTSTRAP_SERVERS" \
+                                --topic "$KAFKA_TOPICS" \
+                                --consumer.config "$client_props_file" \
+                                2>> "$log_file" >> "$output_file"
+                        else
+                            env BOOTSTRAP_SERVERS="$BOOTSTRAP_SERVERS" KAFKA_TOPICS="$KAFKA_TOPICS" \
+                                kafka-console-consumer.sh --bootstrap-server "$BOOTSTRAP_SERVERS" \
+                                --topic "$KAFKA_TOPICS" \
+                                --consumer.config "$client_props_file" \
+                                2>> "$log_file" > "$output_file"
+                        fi
+                        ;;
+                    "script")
+                        script_file="$KAFKA_SCRIPTS_DIR/process_messages.sh"
+                        if [ -x "$script_file" ]; then
+                            env BOOTSTRAP_SERVERS="$BOOTSTRAP_SERVERS" KAFKA_TOPICS="$KAFKA_TOPICS" \
+                                kafka-console-consumer.sh --bootstrap-server "$BOOTSTRAP_SERVERS" \
+                                --topic "$KAFKA_TOPICS" \
+                                --consumer.config "$client_props_file" \
+                                2>> "$log_file" | "$script_file" 2>&1 | tee -a "$log_file"
+                        else
+                            echo "ERROR: Processing script not found or not executable: $script_file" | tee -a "$log_file"
+                            exit 1
+                        fi
+                        ;;
+                esac
+                ;;
+            "producer")
+                # generates producer client.properties
+                cat > "$client_props_file" <<-ENDOFPRODUCER
+bootstrap.servers=$BOOTSTRAP_SERVERS
+acks=all
+retries=0
+batch.size=16384
+linger.ms=1
+buffer.memory=33554432
+key.serializer=org.apache.kafka.common.serialization.StringSerializer
+value.serializer=org.apache.kafka.common.serialization.StringSerializer
+ENDOFPRODUCER
+                
+                # exports critical env vars
+                export BOOTSTRAP_SERVERS
+                export KAFKA_TOPICS
+                
+                case "$KAFKA_MESSAGE_PROCESSING_MODE" in
+                    "echo")
+                        echo "Producer in echo mode - waiting for stdin input..." | tee -a "$log_file"
+                        env BOOTSTRAP_SERVERS="$BOOTSTRAP_SERVERS" KAFKA_TOPICS="$KAFKA_TOPICS" \
+                            kafka-console-producer.sh --bootstrap-server "$BOOTSTRAP_SERVERS" \
+                            --topic "$KAFKA_TOPICS" \
+                            --producer.config "$client_props_file" \
+                            2>&1 | tee -a "$log_file"
+                        ;;
+                    "file")
+                        input_file="$KAFKA_MESSAGE_OUTPUT_DIR/producer_input_${client_id}.txt"
+                        if [ -f "$input_file" ]; then
+                            env BOOTSTRAP_SERVERS="$BOOTSTRAP_SERVERS" KAFKA_TOPICS="$KAFKA_TOPICS" \
+                                kafka-console-producer.sh --bootstrap-server "$BOOTSTRAP_SERVERS" \
+                                --topic "$KAFKA_TOPICS" \
+                                --producer.config "$client_props_file" \
+                                < "$input_file" \
+                                2>&1 | tee -a "$log_file"
+                        else
+                            echo "ERROR: Producer input file not found: $input_file" | tee -a "$log_file"
+                            echo "Please create the file with messages to send: $input_file" | tee -a "$log_file"
+                            exit 1
+                        fi
+                        ;;
+                    "script")
+                        script_file="$KAFKA_SCRIPTS_DIR/generate_messages.sh"
+                        if [ -x "$script_file" ]; then
+                            "$script_file" 2>> "$log_file" | env BOOTSTRAP_SERVERS="$BOOTSTRAP_SERVERS" KAFKA_TOPICS="$KAFKA_TOPICS" \
+                                kafka-console-producer.sh --bootstrap-server "$BOOTSTRAP_SERVERS" \
+                                --topic "$KAFKA_TOPICS" \
+                                --producer.config "$client_props_file" \
+                                2>&1 | tee -a "$log_file"
+                        else
+                            echo "ERROR: Message generation script not found or not executable: $script_file" | tee -a "$log_file"
+                            exit 1
+                        fi
+                        ;;
+                esac
+                ;;
+            "both")
+                # runs producer and consumer in separate processes / starts consumer in background
+                (
+                    cat > "${client_props_file}_consumer" <<-ENDOFBOTHCONSUMER
+bootstrap.servers=$BOOTSTRAP_SERVERS
+group.id=flox-consumer-group-$client_id
+auto.offset.reset=earliest
+enable.auto.commit=true
+auto.commit.interval.ms=1000
+key.deserializer=org.apache.kafka.common.serialization.StringDeserializer
+value.deserializer=org.apache.kafka.common.serialization.StringDeserializer
+ENDOFBOTHCONSUMER
+
+                    case "$KAFKA_MESSAGE_PROCESSING_MODE" in
+                        "echo")
+                            env BOOTSTRAP_SERVERS="$BOOTSTRAP_SERVERS" KAFKA_TOPICS="$KAFKA_TOPICS" \
+                                kafka-console-consumer.sh --bootstrap-server "$BOOTSTRAP_SERVERS" \
+                                --topic "$KAFKA_TOPICS" \
+                                --consumer.config "${client_props_file}_consumer" \
+                                2>&1 | tee -a "${log_file}_consumer" &
+                            ;;
+                        "file")
+                            output_file="$KAFKA_MESSAGE_OUTPUT_DIR/client_${client_id}_consumer_messages.txt"
+                            if [ "$KAFKA_FILE_APPEND" = "true" ]; then
+                                env BOOTSTRAP_SERVERS="$BOOTSTRAP_SERVERS" KAFKA_TOPICS="$KAFKA_TOPICS" \
+                                    kafka-console-consumer.sh --bootstrap-server "$BOOTSTRAP_SERVERS" \
+                                    --topic "$KAFKA_TOPICS" \
+                                    --consumer.config "${client_props_file}_consumer" \
+                                    2>> "${log_file}_consumer" >> "$output_file" &
+                            else
+                                env BOOTSTRAP_SERVERS="$BOOTSTRAP_SERVERS" KAFKA_TOPICS="$KAFKA_TOPICS" \
+                                    kafka-console-consumer.sh --bootstrap-server "$BOOTSTRAP_SERVERS" \
+                                    --topic "$KAFKA_TOPICS" \
+                                    --consumer.config "${client_props_file}_consumer" \
+                                    2>> "${log_file}_consumer" > "$output_file" &
+                            fi
+                            ;;
+                        "script")
+                            script_file="$KAFKA_SCRIPTS_DIR/process_messages.sh"
+                            if [ -x "$script_file" ]; then
+                                env BOOTSTRAP_SERVERS="$BOOTSTRAP_SERVERS" KAFKA_TOPICS="$KAFKA_TOPICS" \
+                                    kafka-console-consumer.sh --bootstrap-server "$BOOTSTRAP_SERVERS" \
+                                    --topic "$KAFKA_TOPICS" \
+                                    --consumer.config "${client_props_file}_consumer" \
+                                    2>> "${log_file}_consumer" | "$script_file" 2>&1 | tee -a "${log_file}_consumer" &
+                            else
+                                echo "ERROR: Processing script not found or not executable: $script_file" | tee -a "${log_file}_consumer"
+                                exit 1
+                            fi
+                            ;;
+                    esac
+                ) &
+                CONSUMER_PID=$!
+                
+                # starts the producer
+                (
+                    # generates producer properties
+                    cat > "${client_props_file}_producer" <<-ENDOFBOTHPRODUCER
+bootstrap.servers=$BOOTSTRAP_SERVERS
+acks=all
+retries=0
+batch.size=16384
+linger.ms=1
+buffer.memory=33554432
+key.serializer=org.apache.kafka.common.serialization.StringSerializer
+value.serializer=org.apache.kafka.common.serialization.StringSerializer
+ENDOFBOTHPRODUCER
+                    
+                    case "$KAFKA_MESSAGE_PROCESSING_MODE" in
+                        "echo")
+                            echo "Producer in echo mode - waiting for stdin input..." | tee -a "${log_file}_producer"
+                            env BOOTSTRAP_SERVERS="$BOOTSTRAP_SERVERS" KAFKA_TOPICS="$KAFKA_TOPICS" \
+                                kafka-console-producer.sh --bootstrap-server "$BOOTSTRAP_SERVERS" \
+                                --topic "$KAFKA_TOPICS" \
+                                --producer.config "${client_props_file}_producer" \
+                                2>&1 | tee -a "${log_file}_producer"
+                            ;;
+                        "file")
+                            input_file="$KAFKA_MESSAGE_OUTPUT_DIR/producer_input_${client_id}.txt"
+                            if [ -f "$input_file" ]; then
+                                env BOOTSTRAP_SERVERS="$BOOTSTRAP_SERVERS" KAFKA_TOPICS="$KAFKA_TOPICS" \
+                                    kafka-console-producer.sh --bootstrap-server "$BOOTSTRAP_SERVERS" \
+                                    --topic "$KAFKA_TOPICS" \
+                                    --producer.config "${client_props_file}_producer" \
+                                    < "$input_file" \
+                                    2>&1 | tee -a "${log_file}_producer"
+                            else
+                                echo "ERROR: Producer input file not found: $input_file" | tee -a "${log_file}_producer"
+                                echo "Please create the file with messages to send: $input_file" | tee -a "${log_file}_producer"
+                                exit 1
+                            fi
+                            ;;
+                        "script")
+                            script_file="$KAFKA_SCRIPTS_DIR/generate_messages.sh"
+                            if [ -x "$script_file" ]; then
+                                "$script_file" 2>> "${log_file}_producer" | env BOOTSTRAP_SERVERS="$BOOTSTRAP_SERVERS" KAFKA_TOPICS="$KAFKA_TOPICS" \
+                                    kafka-console-producer.sh --bootstrap-server "$BOOTSTRAP_SERVERS" \
+                                    --topic "$KAFKA_TOPICS" \
+                                    --producer.config "${client_props_file}_producer" \
+                                    2>&1 | tee -a "${log_file}_producer"
+                            else
+                                echo "ERROR: Message generation script not found or not executable: $script_file" | tee -a "${log_file}_producer"
+                                exit 1
+                            fi
+                            ;;
+                    esac
+                ) &
+                PRODUCER_PID=$!
+                
+                # waits for both processes
+                wait $CONSUMER_PID $PRODUCER_PID
+                ;;
+        esac
+    }
+    
+    # starts client instances
+    for ((i=1; i<=KAFKA_CLIENT_COUNT; i++)); do
+        if [ "$KAFKA_CLIENT_PARALLEL" = "true" ]; then
+            run_client_instance $i &
+            client_pids+=($!)
+            echo "Started client instance $i in background (PID: ${client_pids[-1]})" | tee -a "$FLOX_ENV_CACHE/kafka-logs/service.log"
+        else
+            echo "Starting client instance $i in foreground" | tee -a "$FLOX_ENV_CACHE/kafka-logs/service.log"
+            run_client_instance $i
+        fi
+    done
+    
+    # waits for background processes if running in parallel
+    if [ "$KAFKA_CLIENT_PARALLEL" = "true" ]; then
+        echo "Waiting for all client instances to complete..." | tee -a "$FLOX_ENV_CACHE/kafka-logs/service.log"
+        wait ${client_pids[@]}
+    fi
+    
+    echo "All client instances completed" | tee -a "$FLOX_ENV_CACHE/kafka-logs/service.log"
+    
+else
+    # handles broker/controller mode logic
+    echo "Starting Kafka in $KAFKA_MODE mode" | tee -a "$FLOX_ENV_CACHE/kafka-logs/startup.log"
+    echo "KAFKA_NODE_ID = $KAFKA_NODE_ID" >> "$FLOX_ENV_CACHE/kafka-logs/service.log"
+    echo "KAFKA_HOST = $KAFKA_HOST" >> "$FLOX_ENV_CACHE/kafka-logs/service.log"
+    echo "KAFKA_PORT = $KAFKA_PORT" >> "$FLOX_ENV_CACHE/kafka-logs/service.log"
+    echo "KRAFT_CONTROLLER_PORT = $KRAFT_CONTROLLER_PORT" >> "$FLOX_ENV_CACHE/kafka-logs/service.log"
+    echo "KAFKA_CLUSTER_ID = $KAFKA_CLUSTER_ID" >> "$FLOX_ENV_CACHE/kafka-logs/service.log"
+    echo "KAFKA_DATA_DIR = $KAFKA_DATA_DIR" >> "$FLOX_ENV_CACHE/kafka-logs/service.log"
+
+    # ensures data directory exists
+    mkdir -p "$KAFKA_DATA_DIR"
+
+    # regenerates kraft.properties from base file
+    if [ -f "$KAFKA_CONFIG_DIR/kraft.properties.base" ]; then
+        cp "$KAFKA_CONFIG_DIR/kraft.properties.base" "$KAFKA_CONFIG_DIR/kraft.properties"
+    else
+        echo "ERROR: kraft.properties.base not found" | tee -a "$FLOX_ENV_CACHE/kafka-logs/startup.log"
+        exit 1
+    fi
+    
+    # adds runtime config settings if set
+    if [ -n "$KAFKA_NUM_NETWORK_THREADS" ]; then
+        echo "num.network.threads=$KAFKA_NUM_NETWORK_THREADS" >> "$KAFKA_CONFIG_DIR/kraft.properties"
+        echo "  ✓ Applied num.network.threads=$KAFKA_NUM_NETWORK_THREADS" | tee -a "$FLOX_ENV_CACHE/kafka-logs/startup.log"
+    fi
+    if [ -n "$KAFKA_NUM_IO_THREADS" ]; then
+        echo "num.io.threads=$KAFKA_NUM_IO_THREADS" >> "$KAFKA_CONFIG_DIR/kraft.properties"
+        echo "  ✓ Applied num.io.threads=$KAFKA_NUM_IO_THREADS" | tee -a "$FLOX_ENV_CACHE/kafka-logs/startup.log"
+    fi
+    if [ -n "$KAFKA_NUM_REPLICA_FETCHERS" ]; then
+        echo "num.replica.fetchers=$KAFKA_NUM_REPLICA_FETCHERS" >> "$KAFKA_CONFIG_DIR/kraft.properties"
+        echo "  ✓ Applied num.replica.fetchers=$KAFKA_NUM_REPLICA_FETCHERS" | tee -a "$FLOX_ENV_CACHE/kafka-logs/startup.log"
+    fi
+    if [ -n "$KAFKA_MESSAGE_MAX_BYTES" ]; then
+        echo "message.max.bytes=$KAFKA_MESSAGE_MAX_BYTES" >> "$KAFKA_CONFIG_DIR/kraft.properties"
+        echo "  ✓ Applied message.max.bytes=$KAFKA_MESSAGE_MAX_BYTES" | tee -a "$FLOX_ENV_CACHE/kafka-logs/startup.log"
+    fi
+    if [ -n "$KAFKA_AUTO_CREATE_TOPICS" ]; then
+        echo "auto.create.topics.enable=$KAFKA_AUTO_CREATE_TOPICS" >> "$KAFKA_CONFIG_DIR/kraft.properties"
+        echo "  ✓ Applied auto.create.topics.enable=$KAFKA_AUTO_CREATE_TOPICS" | tee -a "$FLOX_ENV_CACHE/kafka-logs/startup.log"
+    fi
+    if [ -n "$KAFKA_LOG_RETENTION_HOURS" ]; then
+        echo "log.retention.hours=$KAFKA_LOG_RETENTION_HOURS" >> "$KAFKA_CONFIG_DIR/kraft.properties"
+        echo "  ✓ Applied log.retention.hours=$KAFKA_LOG_RETENTION_HOURS" | tee -a "$FLOX_ENV_CACHE/kafka-logs/startup.log"
+    fi
+
+    # formats storage if meta.properties not exist
+    if [ ! -f "$KAFKA_DATA_DIR/meta.properties" ]; then
+        echo "  ℹ️  Formatting KRaft storage directory (first-time setup)" | tee -a "$FLOX_ENV_CACHE/kafka-logs/startup.log"
+        echo "  ℹ️  Using cluster ID: $KAFKA_CLUSTER_ID" | tee -a "$FLOX_ENV_CACHE/kafka-logs/startup.log"
+
+        if KAFKA_CLUSTER_ID=$KAFKA_CLUSTER_ID KAFKA_DATA_DIR=$KAFKA_DATA_DIR kafka-storage.sh format --cluster-id "$KAFKA_CLUSTER_ID" --config "$KAFKA_CONFIG_DIR/kraft.properties"; then
+            echo "  ✓ Storage formatted successfully" | tee -a "$FLOX_ENV_CACHE/kafka-logs/startup.log"
+        else
+            echo "  ❌ ERROR: Storage format failed" | tee -a "$FLOX_ENV_CACHE/kafka-logs/startup.log"
+            exit 1
+        fi
+    else
+        echo "  ✓ Using existing KRaft storage directory" | tee -a "$FLOX_ENV_CACHE/kafka-logs/startup.log"
+    fi
+
+    # checks controller connectivity if in  broker mode
+    if [ "$KAFKA_MODE" = "kraft-broker" ]; then
+        echo "  ℹ️  Checking controller connectivity..." | tee -a "$FLOX_ENV_CACHE/kafka-logs/startup.log"
+        CONTROLLER_REACHABLE=false
+        
+        # parses controller quorum to check each controller
+        IFS=',' read -ra CONTROLLERS <<< "$CONTROLLER_QUORUM"
+        for controller in "${CONTROLLERS[@]}"; do
+            # extracts host:port from "id@host:port"
+            CONTROLLER_ADDRESS=${controller#*@}
+            CONTROLLER_HOST=${CONTROLLER_ADDRESS%:*}
+            CONTROLLER_PORT=${CONTROLLER_ADDRESS#*:}
+            
+            if nc -z "$CONTROLLER_HOST" "$CONTROLLER_PORT" >/dev/null 2>&1; then
+                echo "  ✓ Controller reachable at $CONTROLLER_HOST:$CONTROLLER_PORT" | tee -a "$FLOX_ENV_CACHE/kafka-logs/startup.log"
+                CONTROLLER_REACHABLE=true
+                break
+            fi
+        done
+        
+        if [ "$CONTROLLER_REACHABLE" = false ]; then
+            echo "  ⚠️  WARNING: No controllers in quorum are reachable" | tee -a "$FLOX_ENV_CACHE/kafka-logs/startup.log"
+            echo "  ⚠️  Controller quorum: $CONTROLLER_QUORUM" | tee -a "$FLOX_ENV_CACHE/kafka-logs/startup.log"
+            echo "  ⚠️  Continuing anyway - controllers might come up later" | tee -a "$FLOX_ENV_CACHE/kafka-logs/startup.log"
+        fi
+    fi
+
+    # exports kafka env vars
+    [ -n "$KAFKA_HEAP_OPTS" ] && export KAFKA_HEAP_OPTS
+    [ -n "$KAFKA_JVM_PERFORMANCE_OPTS" ] && export KAFKA_JVM_PERFORMANCE_OPTS
+    [ -n "$KAFKA_JMX_OPTS" ] && export KAFKA_JMX_OPTS
+    
+    # logs environment settings if set
+    if [ -n "$KAFKA_JMX_OPTS" ]; then
+        echo "  ✓ JMX enabled: $KAFKA_JMX_OPTS" | tee -a "$FLOX_ENV_CACHE/kafka-logs/startup.log"
+    fi
+    if [ -n "$KAFKA_HEAP_OPTS" ]; then
+        echo "  ✓ Custom heap settings: $KAFKA_HEAP_OPTS" | tee -a "$FLOX_ENV_CACHE/kafka-logs/startup.log"
+    fi
+    if [ -n "$KAFKA_JVM_PERFORMANCE_OPTS" ]; then
+        echo "  ✓ JVM performance options: $KAFKA_JVM_PERFORMANCE_OPTS" | tee -a "$FLOX_ENV_CACHE/kafka-logs/startup.log"
+    fi
+    
+    # starts kafka
+    echo "" | tee -a "$FLOX_ENV_CACHE/kafka-logs/startup.log"
+    echo "Starting Kafka $KAFKA_MODE service..." | tee -a "$FLOX_ENV_CACHE/kafka-logs/startup.log"
+    echo "  - Node ID: $KAFKA_NODE_ID" | tee -a "$FLOX_ENV_CACHE/kafka-logs/startup.log"
+    echo "  - Host: $KAFKA_HOST" | tee -a "$FLOX_ENV_CACHE/kafka-logs/startup.log"
+    
+    if [ "$KAFKA_MODE" = "kraft-controller" ]; then
+        echo "  - Controller Port: $KRAFT_CONTROLLER_PORT" | tee -a "$FLOX_ENV_CACHE/kafka-logs/startup.log"
+        echo "  - Quorum: $CONTROLLER_QUORUM" | tee -a "$FLOX_ENV_CACHE/kafka-logs/startup.log"
+    elif [ "$KAFKA_MODE" = "kraft-broker" ]; then
+        echo "  - Broker Port: $KAFKA_PORT" | tee -a "$FLOX_ENV_CACHE/kafka-logs/startup.log"
+        echo "  - Controller Quorum: $CONTROLLER_QUORUM" | tee -a "$FLOX_ENV_CACHE/kafka-logs/startup.log"
+    else  # kraft-combined
+        echo "  - Broker Port: $KAFKA_PORT" | tee -a "$FLOX_ENV_CACHE/kafka-logs/startup.log"
+        echo "  - Controller Port: $KRAFT_CONTROLLER_PORT" | tee -a "$FLOX_ENV_CACHE/kafka-logs/startup.log"
+    fi
+    
+    echo "  - Data directory: $KAFKA_DATA_DIR" | tee -a "$FLOX_ENV_CACHE/kafka-logs/startup.log"
+    echo "  - Config file: $KAFKA_CONFIG_DIR/kraft.properties" | tee -a "$FLOX_ENV_CACHE/kafka-logs/startup.log"
+    echo "" | tee -a "$FLOX_ENV_CACHE/kafka-logs/startup.log"
+    
+    # runs kafka
+    exec kafka-server-start.sh "$KAFKA_CONFIG_DIR/kraft.properties"
+fi
+'''
+
+## Other Environment Options -----------------------------------------
+[options]
+# Systems that environment is compatible with
+systems = [
+  "aarch64-linux",
+  "x86_64-linux",
+  "aarch64-darwin",
+  "x86_64-darwin",
+]
