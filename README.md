@@ -29,6 +29,14 @@ This repo contains pre-configured [Flox](https://flox.dev/docs) environments for
 ### Data Analysis & Visualization
 
 - [**postgres-metabase**](./postgres-metabase) - PostgreSQL + Metabase BI platform
+- [**superset**](./superset) - Apache Superset + PostgreSQL for BI / Analytics
+
+### Data Integration + Data Engineering + General Distributed Compute
+
+- [**spark**](./spark) - Apache Spark with interactive configuration wizard
+- [**kafka**](./kafka) - Apache Kafka with interactive configuration wizard
+- [**spark-basic**](./spark-basic) - Apache Spark designed for headless use
+- [**kafka-basic**](./kafka-basic) - Apache Kafka designed for headless use
 
 ### Containers and Kubernetes (K8s)
 - [**kind**](./kind) - Kubernetes IN Docker, essential K8s tools, and a KIND auto-configuration wizard
