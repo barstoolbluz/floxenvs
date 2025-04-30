@@ -1,6 +1,6 @@
 # 🔥 A Flox Environment for Apache Kafka Event Streaming
 
-The `kafka` environment is designed for local, interactive use—especially when users need help configuring things step by step. It's designed both to be usable and to be a teaching tool for learning about Flox.
+The `kafka` environment is designed for local, interactive use—especially when users need help configuring things step by step. It's designed both to be usable and to be a teaching tool for learning about Kafka.
 
 This environment simplifies Apache Kafka deployment by providing an interactive configuration wizard, automatic network detection, and service management using the KRaft protocol, which eliminates the need for Apache ZooKeeper.
 
