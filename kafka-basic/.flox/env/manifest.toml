@@ -29,14 +29,14 @@ gnugrep.pkg-group = "gnugrep"		# package group defined just for macOS/darwin
 
 ## Environment Variables ---------------------------------------------
 [vars]
-# Define base variables that are always available
+# defines base variables that are always-already available in the runtime env
 KAFKA_CONFIG_DIR = "$FLOX_ENV_CACHE/kafka-config"
 KAFKA_LOG_DIR = "$FLOX_ENV_CACHE/kafka-logs"
 KAFKA_DATA_DIR = "$FLOX_ENV_CACHE/data/kafka"
 
 [hook]
 on-activate = '''
-# Create required directories
+# terraforms dirs
 mkdir -p "$FLOX_ENV_CACHE/kafka-config"
 mkdir -p "$FLOX_ENV_CACHE/kafka-logs" 
 mkdir -p "$FLOX_ENV_CACHE/data/kafka"
