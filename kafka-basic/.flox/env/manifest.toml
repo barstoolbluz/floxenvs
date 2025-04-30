@@ -43,7 +43,7 @@ mkdir -p "$FLOX_ENV_CACHE/data/kafka"
 mkdir -p "$FLOX_ENV_CACHE/kafka-message-output"
 mkdir -p "$FLOX_ENV_CACHE/kafka-scripts"
 
-# Define the hash generation correctly
+# generates a hash for runtime idempotency
 generate_config_hash() {
   (
     # List of critical configuration variables that define the setup
@@ -60,49 +60,48 @@ generate_config_hash() {
   ) | sha256sum | awk '{print $1}'
 }
 
-# Check if configuration has changed
+# checks 'is config changed?'
 CONFIG_HASH_FILE="$FLOX_ENV_CACHE/kafka-config/config_hash"
 CURRENT_HASH=$(generate_config_hash)
 
-# Create hash directory if it doesn't exist
+# create hash directory if not exists
 mkdir -p "$(dirname "$CONFIG_HASH_FILE")"
 
-# Detect configuration changes and reset if needed
+# detects config changes and resets if required
 if [ -f "$CONFIG_HASH_FILE" ]; then
   STORED_HASH=$(cat "$CONFIG_HASH_FILE")
   if [ "$CURRENT_HASH" != "$STORED_HASH" ]; then
     echo "Configuration change detected. Resetting Kafka state..."
     
-    # Stop any running Kafka service (non-interactive)
+    # stops running Kafka service(s)
     if command -v systemctl >/dev/null 2>&1 && systemctl is-active --quiet flox-kafka; then
       systemctl stop flox-kafka >/dev/null 2>&1
     fi
     
-    # Clean up existing data and configuration
+    # cleans up existing data + config
     rm -rf "$FLOX_ENV_CACHE/data/kafka"/*
     rm -f "$FLOX_ENV_CACHE/kafka-config/cluster_id"
     rm -f "$FLOX_ENV_CACHE/kafka_config.sh"
     rm -f "$FLOX_ENV_CACHE/kafka-config/kraft.properties"
     rm -f "$FLOX_ENV_CACHE/kafka-config/kraft.properties.base"
     
-    # Create fresh directories
+    # terraforms required dirs
     mkdir -p "$FLOX_ENV_CACHE/data/kafka"
     
-    # Store new hash
     echo "$CURRENT_HASH" > "$CONFIG_HASH_FILE"
     echo "Reset complete. New configuration will be applied."
   fi
 else
-  # First run, just store the hash
+  # stores hash on first run
   echo "$CURRENT_HASH" > "$CONFIG_HASH_FILE"
 fi
 
-# Set Kafka home if not already set
+# sets kafka home if not exists
 if [ -z "$KAFKA_HOME" ]; then
   export KAFKA_HOME="$(dirname $(which kafka-server-start.sh))/.."
 fi
 
-# Set default directories
+# set default dirs
 if [ -z "$KAFKA_CONFIG_DIR" ]; then
   export KAFKA_CONFIG_DIR="$FLOX_ENV_CACHE/kafka-config"
 fi
@@ -115,22 +114,22 @@ if [ -z "$KAFKA_DATA_DIR" ]; then
   export KAFKA_DATA_DIR="$FLOX_ENV_CACHE/data/kafka"
 fi
 
-# Set default mode
+# sets default mode; edit to change
 if [ -z "$KAFKA_MODE" ]; then
   export KAFKA_MODE="kraft-combined"
 fi
 
-# Detect IP address if needed
+# detects ip ...
 if [ -z "$KAFKA_HOST" ]; then
-  # Try to detect IP based on OS
+  # ... based on OS
   if [ "$(uname)" = "Darwin" ]; then
-    # macOS detection
+    # detecs macos/darwin
     DETECTED_IP=$(ifconfig | grep "inet " | grep -v 127.0.0.1 | awk '{print $2}' | head -n 1)
   else
-    # Linux detection
+    # detects linux
     DETECTED_IP=$(hostname -I 2>/dev/null | awk '{print $1}')
     
-    # Fallback methods if needed
+    # falls back if needed
     if [ -z "$DETECTED_IP" ]; then
       if command -v ip >/dev/null 2>&1; then
         DETECTED_IP=$(ip -4 addr | grep -v "127.0.0.1" | grep inet | awk '{print $2}' | cut -d/ -f1 | head -n 1)
@@ -140,7 +139,7 @@ if [ -z "$KAFKA_HOST" ]; then
     fi
   fi
   
-  # Default to localhost if detection failed
+  # if all else fails, defaults to localhost
   if [ -z "$DETECTED_IP" ]; then
     DETECTED_IP="localhost"
     echo "Warning: Could not detect IP address, using localhost as fallback."
@@ -149,7 +148,7 @@ if [ -z "$KAFKA_HOST" ]; then
   export KAFKA_HOST="$DETECTED_IP"
 fi
 
-# Set default ports
+# sets default ports
 if [ -z "$KAFKA_PORT" ]; then
   export KAFKA_PORT="9092"
 fi
@@ -158,12 +157,12 @@ if [ -z "$KRAFT_CONTROLLER_PORT" ]; then
   export KRAFT_CONTROLLER_PORT="9093"
 fi
 
-# Set default node ID
+# sets default node ID
 if [ -z "$KAFKA_NODE_ID" ]; then
   export KAFKA_NODE_ID="1"
 fi
 
-# Set process roles based on mode
+# sets process roles based on kafka mode
 if [ -z "$PROCESS_ROLES" ]; then
   if [ "$KAFKA_MODE" = "kraft-combined" ]; then
     export PROCESS_ROLES="broker,controller"
@@ -174,7 +173,7 @@ if [ -z "$PROCESS_ROLES" ]; then
   fi
 fi
 
-# Set default replication and partitions
+# sets default replication + partitioning values; edit as needed
 if [ -z "$KAFKA_REPLICATION_FACTOR" ]; then
   export KAFKA_REPLICATION_FACTOR="1"
 fi
@@ -183,13 +182,12 @@ if [ -z "$KAFKA_NUM_PARTITIONS" ]; then
   export KAFKA_NUM_PARTITIONS="1"
 fi
 
-# Set controller quorum if needed
+# sets controller quorum if required
 if [ -z "$CONTROLLER_QUORUM" ]; then
   if [ "$KAFKA_MODE" = "kraft-combined" ] || [ "$KAFKA_MODE" = "kraft-controller" ]; then
     export CONTROLLER_QUORUM="${KAFKA_NODE_ID}@${KAFKA_HOST}:${KRAFT_CONTROLLER_PORT}"
   elif [ "$KAFKA_MODE" = "kraft-broker" ]; then
-    # For broker mode, the controller quorum should NOT include our node ID
-    # Default to a controller with node ID 101 (to avoid conflicts)
+    # defaults to a controller with node ID 101 for to avoid conflicts
     CONTROLLER_NODE_ID=101
     export CONTROLLER_QUORUM="${CONTROLLER_NODE_ID}@${KAFKA_HOST}:${KRAFT_CONTROLLER_PORT}"
     echo "WARNING: Using default CONTROLLER_QUORUM=${CONTROLLER_QUORUM}"
@@ -197,7 +195,7 @@ if [ -z "$CONTROLLER_QUORUM" ]; then
   fi
 fi
 
-# Set client mode defaults
+# sets client mode defaults
 if [ "$KAFKA_MODE" = "client" ]; then
   if [ -z "$BOOTSTRAP_SERVERS" ]; then
     export BOOTSTRAP_SERVERS="localhost:9092"
@@ -236,14 +234,14 @@ if [ "$KAFKA_MODE" = "client" ]; then
   fi
 fi
 
-# Create kafka_config.sh file
+# generates kafka_config.sh
 echo "# Kafka config generated by Flox environment" > "$FLOX_ENV_CACHE/kafka_config.sh"
 echo "KAFKA_MODE=\"$KAFKA_MODE\"" >> "$FLOX_ENV_CACHE/kafka_config.sh"
 echo "KAFKA_CONFIG_DIR=\"$KAFKA_CONFIG_DIR\"" >> "$FLOX_ENV_CACHE/kafka_config.sh" 
 echo "KAFKA_LOG_DIR=\"$KAFKA_LOG_DIR\"" >> "$FLOX_ENV_CACHE/kafka_config.sh"
 echo "KAFKA_DATA_DIR=\"$KAFKA_DATA_DIR\"" >> "$FLOX_ENV_CACHE/kafka_config.sh"
 
-# Add KRaft mode settings
+# adds KRaft mode settings
 if [ "$KAFKA_MODE" = "kraft-combined" ] || [ "$KAFKA_MODE" = "kraft-controller" ] || [ "$KAFKA_MODE" = "kraft-broker" ]; then
   echo "KAFKA_NODE_ID=\"$KAFKA_NODE_ID\"" >> "$FLOX_ENV_CACHE/kafka_config.sh"
   echo "KAFKA_HOST=\"$KAFKA_HOST\"" >> "$FLOX_ENV_CACHE/kafka_config.sh"
@@ -251,12 +249,12 @@ if [ "$KAFKA_MODE" = "kraft-combined" ] || [ "$KAFKA_MODE" = "kraft-controller" 
   echo "KRAFT_CONTROLLER_PORT=\"$KRAFT_CONTROLLER_PORT\"" >> "$FLOX_ENV_CACHE/kafka_config.sh"
   echo "PROCESS_ROLES=\"$PROCESS_ROLES\"" >> "$FLOX_ENV_CACHE/kafka_config.sh"
   
-  # Add controller quorum if set
+  # adds controller quorum if set
   if [ -n "$CONTROLLER_QUORUM" ]; then
     echo "CONTROLLER_QUORUM=\"$CONTROLLER_QUORUM\"" >> "$FLOX_ENV_CACHE/kafka_config.sh"
   fi
   
-  # Handle cluster ID
+  # handles cluster ID
   if [ -f "$KAFKA_CONFIG_DIR/cluster_id" ]; then
     CLUSTER_ID=$(cat "$KAFKA_CONFIG_DIR/cluster_id")
     echo "KAFKA_CLUSTER_ID=\"$CLUSTER_ID\"" >> "$FLOX_ENV_CACHE/kafka_config.sh"
@@ -269,12 +267,12 @@ if [ "$KAFKA_MODE" = "kraft-combined" ] || [ "$KAFKA_MODE" = "kraft-controller" 
     echo "KAFKA_CLUSTER_ID=\"$GENERATED_CLUSTER_ID\"" >> "$FLOX_ENV_CACHE/kafka_config.sh"
   fi
 
-  # Create kraft.properties.base file
+  # generates kraft.properties.base
   echo "# KRaft config generated by Flox" > "$KAFKA_CONFIG_DIR/kraft.properties.base"
   echo "node.id=$KAFKA_NODE_ID" >> "$KAFKA_CONFIG_DIR/kraft.properties.base"
   echo "process.roles=$PROCESS_ROLES" >> "$KAFKA_CONFIG_DIR/kraft.properties.base"
   
-  # Add listeners based on role
+  # adds listeners based on role
   if [ "$PROCESS_ROLES" = "broker,controller" ]; then
     echo "listeners=PLAINTEXT://$KAFKA_HOST:$KAFKA_PORT,CONTROLLER://$KAFKA_HOST:$KRAFT_CONTROLLER_PORT" >> "$KAFKA_CONFIG_DIR/kraft.properties.base"
     echo "advertised.listeners=PLAINTEXT://$KAFKA_HOST:$KAFKA_PORT" >> "$KAFKA_CONFIG_DIR/kraft.properties.base"
@@ -286,7 +284,7 @@ if [ "$KAFKA_MODE" = "kraft-combined" ] || [ "$KAFKA_MODE" = "kraft-controller" 
     echo "listeners=CONTROLLER://$KAFKA_HOST:$KRAFT_CONTROLLER_PORT" >> "$KAFKA_CONFIG_DIR/kraft.properties.base"
   fi
   
-  # Add security protocols and other settings
+  # adds security protocols + odds / ends
   echo "listener.security.protocol.map=CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT" >> "$KAFKA_CONFIG_DIR/kraft.properties.base"
   echo "controller.listener.names=CONTROLLER" >> "$KAFKA_CONFIG_DIR/kraft.properties.base"
   echo "controller.quorum.voters=$CONTROLLER_QUORUM" >> "$KAFKA_CONFIG_DIR/kraft.properties.base"
@@ -294,7 +292,7 @@ if [ "$KAFKA_MODE" = "kraft-combined" ] || [ "$KAFKA_MODE" = "kraft-controller" 
   echo "default.replication.factor=$KAFKA_REPLICATION_FACTOR" >> "$KAFKA_CONFIG_DIR/kraft.properties.base"
   echo "num.partitions=$KAFKA_NUM_PARTITIONS" >> "$KAFKA_CONFIG_DIR/kraft.properties.base"
   
-  # Set additional properties with defaults if not specified
+  # sets other defaults if not specified
   if [ -n "$KAFKA_LOG_RETENTION_HOURS" ]; then
     echo "log.retention.hours=$KAFKA_LOG_RETENTION_HOURS" >> "$KAFKA_CONFIG_DIR/kraft.properties.base"
   else
@@ -331,7 +329,7 @@ if [ "$KAFKA_MODE" = "kraft-combined" ] || [ "$KAFKA_MODE" = "kraft-controller" 
     echo "transaction.state.log.min.isr=1" >> "$KAFKA_CONFIG_DIR/kraft.properties.base"
   fi
 
-# Add client mode settings
+# adds client mode settings
 elif [ "$KAFKA_MODE" = "client" ]; then
   echo "BOOTSTRAP_SERVERS=\"$BOOTSTRAP_SERVERS\"" >> "$FLOX_ENV_CACHE/kafka_config.sh"
   echo "CLIENT_TYPE=\"$CLIENT_TYPE\"" >> "$FLOX_ENV_CACHE/kafka_config.sh"
@@ -344,12 +342,12 @@ elif [ "$KAFKA_MODE" = "client" ]; then
   echo "KAFKA_FILE_APPEND=\"$KAFKA_FILE_APPEND\"" >> "$FLOX_ENV_CACHE/kafka_config.sh"
 fi
 
-# Find JAVA_HOME if not set
+# finds JAVA_HOME if not set
 if [ -z "$JAVA_HOME" ]; then
   export JAVA_HOME="$(dirname $(dirname $(which java)))"
 fi
 
-# Display current configuration
+# prints current config to console
 echo "Kafka Environment Configuration:"
 echo "  Mode:            $KAFKA_MODE"
 if [ "$KAFKA_MODE" = "kraft-combined" ] || [ "$KAFKA_MODE" = "kraft-controller" ] || [ "$KAFKA_MODE" = "kraft-broker" ]; then
