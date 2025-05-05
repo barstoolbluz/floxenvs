@@ -11,18 +11,18 @@ version = 1
 
 ## Install Packages --------------------------------------------------
 [install]
-curl.pkg-path = "curl"			    # for sourcing README.md and helper script
+curl.pkg-path = "curl"			# for sourcing README.md and helper script
 curl.pkg-group = "helper-tools"
-bat.pkg-path = "bat"			    # for displaying README.md
+bat.pkg-path = "bat"			# for displaying README.md
 bat.pkg-group = "helper-tools"
-jq.pkg-path = "jq"			        # for formatting json with helper script commands
+jq.pkg-path = "jq"			# for formatting json with helper script commands
 jq.pkg-group = "helper-tools"
 gum.pkg-path = "gum"
 kafka.pkg-path = "apacheKafka"
 jdk.pkg-path = "jdk"
 coreutils.pkg-path = "coreutils"	# for macOS/darwin compatibility
 coreutils.pkg-group = "darwin-tools"	# package group defined just for macOS/darwin
-gawk.pkg-path = "gawk"			    # for macOS/darwin compatibility
+gawk.pkg-path = "gawk"			# for macOS/darwin compatibility
 gawk.pkg-group = "darwin-tools"		# package group defined just for macOS/darwin
 gnugrep.pkg-path = "gnugrep"		# for macOS/darwin compatibility
 gnugrep.pkg-group = "gnugrep"		# package group defined just for macOS/darwin
