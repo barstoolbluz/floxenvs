@@ -571,7 +571,7 @@ else
         echo "  ℹ️  Formatting KRaft storage directory (first-time setup)" | tee -a "$FLOX_ENV_CACHE/kafka-logs/startup.log"
         echo "  ℹ️  Using cluster ID: $KAFKA_CLUSTER_ID" | tee -a "$FLOX_ENV_CACHE/kafka-logs/startup.log"
 
-        if env KAFKA_CLUSTER_ID="$KAFKA_CLUSTER_ID" KAFKA_DATA_DIR="$KAFKA_DATA_DIR" kafka-storage.sh format --cluster-id "$KAFKA_CLUSTER_ID" --config "$KAFKA_CONFIG_DIR/kraft.properties"; then
+        if env KAFKA_CLUSTER_ID="$KAFKA_CLUSTER_ID" KAFKA_DATA_DIR="$KAFKA_DATA_DIR" kafka-storage.sh format --ignore-formatted --cluster-id "$KAFKA_CLUSTER_ID" --config "$KAFKA_CONFIG_DIR/kraft.properties"; then
             echo "  ✓ Storage formatted successfully" | tee -a "$FLOX_ENV_CACHE/kafka-logs/startup.log"
         else
             echo "  ❌ ERROR: Storage format failed" | tee -a "$FLOX_ENV_CACHE/kafka-logs/startup.log"
