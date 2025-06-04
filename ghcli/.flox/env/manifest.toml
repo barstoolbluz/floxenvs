@@ -1,19 +1,7 @@
-## Flox Environment Manifest -----------------------------------------
-##
-##   _Everything_ you need to know about the _manifest_ is here:
-##
-##               https://flox.dev/docs/concepts/manifest
-##
-## -------------------------------------------------------------------
-# Flox manifest version managed by Flox CLI
+# f l o x   manifest managed by f l o x  cli
 version = 1
 
 
-## Install Packages --------------------------------------------------
-##  $ flox install gum  <- puts a package in [install] section below
-##  $ flox search gum   <- search for a package
-##  $ flox show gum     <- show all versions of a package
-## -------------------------------------------------------------------
 [install]
 gh.pkg-path = "gh"
 git.pkg-path = "git"
@@ -26,21 +14,11 @@ gawk.pkg-path = "gawk"
 gnugrep.pkg-path = "gnugrep"
 coreutils.pkg-path = "coreutils"
 
-## Environment Variables ---------------------------------------------
-##  ... available for use in the activated environment
-##      as well as [hook], [profile] scripts and [services] below.
-## -------------------------------------------------------------------
-[vars]
-# INTRO_MESSAGE = "It's gettin' Flox in here"
 
-
-## Activation Hook ---------------------------------------------------
-##  ... run by _bash_ shell when you run 'flox activate'.
-## -------------------------------------------------------------------
 [hook]
 on-activate = '''
 # define paths
-CONFIG_DIR="$HOME/.cache/flox/ghcli"
+CONFIG_DIR="$HOME/.config/gh/flox"
 CONFIG_FILE="$CONFIG_DIR/github_config"
 ENCRYPTED_TOKEN_FILE="$CONFIG_DIR/github_token.enc"
 GIT_CREDENTIALS_FILE="$CONFIG_DIR/git_credentials.enc"
@@ -327,7 +305,7 @@ _gh_wrapper_retrieve_github_token_keyring() {
 # retrieve token from encrypted file
 _gh_wrapper_retrieve_github_token_encrypted() {
     local password=$(_gh_wrapper_derive_password)
-    local token_file="${FLOX_ENV_CACHE:-$HOME/.cache/flox}/github_token.enc"
+    local token_file="$HOME/.config/gh/flox/github_token.enc"
     
     if [[ -f "$token_file" ]]; then
         openssl enc -aes-256-cbc -d -salt -pbkdf2 -pass pass:"$password" -in "$token_file" 2>/dev/null
@@ -338,7 +316,7 @@ _gh_wrapper_retrieve_github_token_encrypted() {
 
 # retrieve github token
 _gh_wrapper_retrieve_github_token() {
-    local config_file="${FLOX_ENV_CACHE:-$HOME/.cache/flox}/github_config"
+    local config_file="$HOME/.config/gh/flox/github_config"
     
     if [[ -f "$config_file" ]]; then
         source "$config_file"
@@ -412,7 +390,7 @@ end
 # retrieve token from encrypted file
 function _gh_wrapper_retrieve_github_token_encrypted
     set -l password (_gh_wrapper_derive_password)
-    set -l token_file "$HOME/.cache/flox/ghcli/github_token.enc"
+    set -l token_file "$HOME/.config/gh/flox/github_token.enc"
     
     if test -f "$token_file"
         openssl enc -aes-256-cbc -d -salt -pbkdf2 -pass pass:"$password" -in "$token_file" 2>/dev/null
@@ -423,7 +401,7 @@ end
 
 # retrieve github token
 function _gh_wrapper_retrieve_github_token
-    set -l config_file "$HOME/.cache/flox/ghcli/github_config"
+    set -l config_file "$HOME/.config/gh/flox/github_config"
     
     if test -f "$config_file"
         set -l storage_method (grep "STORAGE_METHOD" "$config_file" | cut -d '=' -f2)
@@ -540,10 +518,10 @@ EOF
             cat > "$git_credential_helper" << 'EOF'
 #!/bin/bash
 
-# Path to encrypted credentials file
-CREDENTIALS_FILE="$HOME/.cache/flox/ghcli/git_credentials.enc"
+# this is the path to our encrypted token file
+CREDENTIALS_FILE="$HOME/.config/gh/flox/git_credentials.enc"
 
-# Function to derive password
+# this derives our encrypted token's password
 derive_password() {
     # combine username, hostname and machine id for a unique but deterministic password
     local user_info="$USER"
@@ -603,7 +581,7 @@ EOF
     fi
 }
 
-# Check and configure Git user.name and user.email if needed
+# this checks + configures Git user.name and user.email if needed
 check_and_configure_git_user_info() {
     local git_user_name=$(git config --global user.name)
     local git_user_email=$(git config --global user.email)
@@ -1068,21 +1046,12 @@ mkdir -p "$(dirname "$CONFIG_FILE")"
 setup_github_integration
 '''
 
-## ... sourced by _your shell_ when you run 'flox activate'.
-## -------------------------------------------------------------------
 [profile]
-# common = '''
-#   gum style \
-#   --foreground 212 --border-foreground 212 --border double \
-#   --align center --width 50 --margin "1 2" --padding "2 4" \
-#     $INTRO_MESSAGE
-# '''
-## Shell specific profiles go here:
 bash = '''
-if [[ -f "$HOME/.cache/flox/ghcli/github_config" ]]; then
-    source "$HOME/.cache/flox/ghcli/github_config"
-    if [[ "$NEEDS_WRAPPER" == "true" && -f "$HOME/.cache/flox/ghcli/gh_wrapper.bash" ]]; then
-        source "$HOME/.cache/flox/ghcli/gh_wrapper.bash"
+if [[ -f "$HOME/.config/gh/flox/github_config" ]]; then
+    source "$HOME/.config/gh/flox/github_config"
+    if [[ "$NEEDS_WRAPPER" == "true" && -f "$HOME/.config/gh/flox/gh_wrapper.bash" ]]; then
+        source "$HOME/.config/gh/flox/gh_wrapper.bash"
     fi
 fi
 
@@ -1096,10 +1065,10 @@ readme() {
 '''
 
 zsh = '''
-if [[ -f "$HOME/.cache/flox/ghcli/github_config" ]]; then
-    source "$HOME/.cache/flox/ghcli/github_config"
-    if [[ "$NEEDS_WRAPPER" == "true" && -f "$HOME/.cache/flox/ghcli/gh_wrapper.zsh" ]]; then
-        source "$HOME/.cache/flox/ghcli/gh_wrapper.zsh"
+if [[ -f "$HOME/.config/gh/flox/github_config" ]]; then
+    source "$HOME/.config/gh/flox/github_config"
+    if [[ "$NEEDS_WRAPPER" == "true" && -f "$HOME/.config/gh/flox/gh_wrapper.zsh" ]]; then
+        source "$HOME/.config/gh/flox/gh_wrapper.zsh"
     fi
 fi
 
@@ -1113,10 +1082,10 @@ readme() {
 '''
 
 fish = '''
-if test -f "$HOME/.cache/flox/ghcli/github_config"
-    set -l needs_wrapper (grep "NEEDS_WRAPPER" "$HOME/.cache/flox/ghcli/github_config" | cut -d '=' -f2)
-    if test "$needs_wrapper" = "true"; and test -f "$HOME/.cache/flox/ghcli/gh_wrapper.fish"
-        source $HOME/.cache/flox/ghcli/gh_wrapper.fish
+if test -f "$HOME/.config/gh/flox/github_config"
+    set -l needs_wrapper (grep "NEEDS_WRAPPER" "$HOME/.config/gh/flox/github_config" | cut -d '=' -f2)
+    if test "$needs_wrapper" = "true"; and test -f "$HOME/.config/gh/flox/gh_wrapper.fish"
+        source $HOME/.config/gh/flox/gh_wrapper.fish
     end
 end
 
@@ -1128,24 +1097,3 @@ function readme
   bat --language markdown "$FLOX_ENV_PROJECT/README.md" 2>/dev/null
 end
 '''
-
-## Services ----------------------------------------------------------
-##  $ flox services start             <- Starts all services
-##  $ flox services status            <- Status of running services
-##  $ flox activate --start-services  <- Activates & starts all
-## -------------------------------------------------------------------
-[services]
-# myservice.command = "python3 -m http.server"
-
-
-## Other Environment Options -----------------------------------------
-[options]
-# Systems that environment is compatible with
-systems = [
-  "aarch64-darwin",
-  "aarch64-linux",
-  "x86_64-darwin",
-  "x86_64-linux",
-]
-# Uncomment to disable CUDA detection.
-# cuda-detection = false
