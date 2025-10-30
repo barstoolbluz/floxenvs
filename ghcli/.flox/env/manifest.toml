@@ -234,6 +234,8 @@ check_existing_token() {
         # if no wrapper needed, verify with gh auth status
         if [[ "$NEEDS_WRAPPER" == "false" ]]; then
             if gh auth status &>/dev/null; then
+                # Check and fix Git credentials if needed
+                check_and_fix_git_credentials
                 return 0
             else
                 echo "GitHub integration was set up, but authentication is no longer working."
@@ -247,6 +249,8 @@ check_existing_token() {
                 if [[ ! -f "$BASH_WRAPPER" ]]; then
                     create_shell_wrappers
                 fi
+                # Check and fix Git credentials if needed
+                check_and_fix_git_credentials
                 return 0
             else
                 echo "Stored GitHub token is invalid or expired."
@@ -255,6 +259,84 @@ check_existing_token() {
         fi
     fi
     return 1
+}
+
+# setup git credentials without full wizard
+setup_git_credentials_only() {
+    echo ""
+    show_git_instructions
+
+    local term_width=$(tput cols)
+    if [[ $term_width -gt 70 ]]; then
+        term_width=70
+    fi
+
+    # Collect username
+    local git_username=""
+    while [[ -z "$git_username" ]]; do
+        git_username=$(gum input --prompt "Enter your GitHub username: " --width "$term_width")
+        if [[ "$git_username" == "exit" || "$git_username" == "quit" ]]; then
+            echo "Skipped Git credentials setup."
+            return 1
+        fi
+    done
+
+    # Ask if they want to use existing GitHub token
+    local git_password=""
+    local github_token=$(retrieve_github_token)
+
+    if [[ -n "$github_token" ]] && gum confirm "Use your existing GitHub token for Git?" --default=true; then
+        git_password="$github_token"
+    else
+        while [[ -z "$git_password" ]]; do
+            git_password=$(gum input --prompt "Enter your GitHub password/token: " --password --width "$term_width")
+            if [[ "$git_password" == "exit" || "$git_password" == "quit" ]]; then
+                echo "Skipped Git credentials setup."
+                return 1
+            fi
+        done
+    fi
+
+    # Configure credentials
+    if configure_git_credentials "$git_username" "$git_password"; then
+        echo "✅ Git credentials configured successfully!"
+        return 0
+    else
+        echo "❌ Failed to configure Git credentials."
+        return 1
+    fi
+}
+
+# check and fix git credentials if needed
+check_and_fix_git_credentials() {
+    local helper=$(git config --global credential.helper 2>/dev/null)
+    local needs_setup=false
+
+    # Check if no helper configured
+    if [[ -z "$helper" ]] || [[ ! -f "$helper" ]]; then
+        echo ""
+        gum style --foreground 214 "⚠️  Git credentials not configured."
+        if gum confirm "Set up Git credentials now?" --default=false; then
+            needs_setup=true
+        fi
+    # Check if helper script is outdated
+    elif [[ "$helper" == *"git-credential-flox-helper"* ]]; then
+        if ! grep -q "elif.*store" "$helper" 2>/dev/null; then
+            echo ""
+            gum style --foreground 214 "⚠️  Git credential helper needs updating."
+            if gum confirm "Update now? (Git credentials will need to be re-entered)" --default=true; then
+                needs_setup=true
+            fi
+        fi
+    fi
+
+    if [ "$needs_setup" = true ]; then
+        # Clean up old files
+        rm -f "$CONFIG_DIR/git-credential-flox-helper" 2>/dev/null
+        secret-tool clear service git-https host github.com 2>/dev/null || true
+        # Re-setup
+        setup_git_credentials_only
+    fi
 }
 
 # create wrappers for different shells
@@ -432,50 +514,38 @@ configure_git_credentials() {
     local os=$(detect_os)
     local username="$1"
     local password="$2"
-    
+
     # Check and configure git user.name and user.email if needed
     check_and_configure_git_user_info
-    
+
     # Configure git credential helper based on OS
     if [[ "$os" == "macos" ]]; then
         # Use the macOS keychain helper
         git config --global credential.helper osxkeychain
-        
-        # Store credentials in the keychain
-        # Create a temporary file to pass to git credential
-        local temp_file=$(mktemp)
-        cat > "$temp_file" << EOF
-protocol=https
-host=github.com
-username=$username
-password=$password
-EOF
-        
-        # Store credentials
-        cat "$temp_file" | git credential approve
-        
-        # Remove temporary file
-        rm "$temp_file"
-        
+
+        # Store credentials in the keychain using proper protocol
+        printf "protocol=https\nhost=github.com\nusername=%s\npassword=%s\n\n" "$username" "$password" | git credential approve
+
         echo "Git credentials stored in macOS keychain."
         return 0
     elif [[ "$os" == "linux" ]]; then
         # Check if secret-tool is available for keyring storage
         if command -v secret-tool &> /dev/null; then
-            git config --global credential.helper store
-            
-            # Use secret-tool to store credentials
-            echo -n "$password" | secret-tool store --label="Git Credentials" service git-https host github.com user "$username"
-            
+            # Store both username and password in secret-tool
+            # We store credentials as "username:password" so we can retrieve both
+            echo -n "$username:$password" | secret-tool store --label="Git Credentials for GitHub" service git-https host github.com
+
             # Create a credential helper script that uses secret-tool
             local git_credential_helper="$CONFIG_DIR/git-credential-flox-helper"
-            
+
             cat > "$git_credential_helper" << 'EOF'
 #!/bin/bash
 
 if [ "$1" = "get" ]; then
-    # Read the input to extract username
-    while read line; do
+    # Read the input to extract host and username
+    username=""
+    host=""
+    while IFS= read -r line; do
         if [[ "$line" =~ ^username=(.*)$ ]]; then
             username="${BASH_REMATCH[1]}"
         fi
@@ -486,29 +556,52 @@ if [ "$1" = "get" ]; then
             break
         fi
     done
-    
-    # Try to get password from secret-tool
-    if [[ -n "$username" && -n "$host" ]]; then
-        password=$(secret-tool lookup service git-https host "$host" user "$username" 2>/dev/null)
-        if [[ -n "$password" ]]; then
-            echo "password=$password"
+
+    # Get credentials from secret-tool
+    if [[ "$host" == "github.com" ]]; then
+        creds=$(secret-tool lookup service git-https host github.com 2>/dev/null)
+        if [[ -n "$creds" && "$creds" =~ ^([^:]+):(.+)$ ]]; then
+            stored_username="${BASH_REMATCH[1]}"
+            stored_password="${BASH_REMATCH[2]}"
+
+            # If git provided a username, verify it matches
+            if [[ -n "$username" && "$username" != "$stored_username" ]]; then
+                exit 0
+            fi
+
+            echo "username=$stored_username"
+            echo "password=$stored_password"
         fi
     fi
+elif [ "$1" = "store" ]; then
+    # Read and discard input - already stored during setup
+    while IFS= read -r line; do
+        if [[ -z "$line" ]]; then
+            break
+        fi
+    done
+elif [ "$1" = "erase" ]; then
+    # Read and discard input - we don't auto-erase from keyring
+    while IFS= read -r line; do
+        if [[ -z "$line" ]]; then
+            break
+        fi
+    done
 fi
 EOF
-            
+
             chmod +x "$git_credential_helper"
             git config --global credential.helper "$git_credential_helper"
-            
+
             echo "Git credentials stored in keyring using secret-tool."
             return 0
         else
             # Use encrypted storage as fallback
             local password_derive=$(derive_password)
-            
-            # Create credentials file content
-            local credentials="https://$username:$password@github.com"
-            
+
+            # Create credentials file content (same format as secret-tool)
+            local credentials="$username:$password"
+
             # Encrypt credentials
             echo -n "$credentials" | openssl enc -aes-256-cbc -salt -pbkdf2 -pass pass:"$password_derive" -out "$GIT_CREDENTIALS_FILE"
             
@@ -541,37 +634,60 @@ derive_password() {
 if [ "$1" = "get" ]; then
     # Read input to ensure we're being asked about GitHub
     is_github=false
-    while read line; do
+    username=""
+    while IFS= read -r line; do
         if [[ "$line" =~ ^host=github.com$ ]]; then
             is_github=true
+        fi
+        if [[ "$line" =~ ^username=(.*)$ ]]; then
+            username="${BASH_REMATCH[1]}"
         fi
         if [[ -z "$line" ]]; then
             break
         fi
     done
-    
+
     if [ "$is_github" = true ] && [ -f "$CREDENTIALS_FILE" ]; then
         # Decrypt the credentials file
         password=$(derive_password)
         credentials=$(openssl enc -aes-256-cbc -d -salt -pbkdf2 -pass pass:"$password" -in "$CREDENTIALS_FILE" 2>/dev/null)
-        
+
         if [[ $? -eq 0 && -n "$credentials" ]]; then
-            # Extract username and password from credentials
-            if [[ "$credentials" =~ https://([^:]+):([^@]+)@github.com ]]; then
-                username="${BASH_REMATCH[1]}"
-                password="${BASH_REMATCH[2]}"
-                
-                echo "username=$username"
-                echo "password=$password"
+            # Extract username and password from credentials (same format as secret-tool)
+            if [[ "$credentials" =~ ^([^:]+):(.+)$ ]]; then
+                stored_username="${BASH_REMATCH[1]}"
+                stored_password="${BASH_REMATCH[2]}"
+
+                # If git provided a username, verify it matches
+                if [[ -n "$username" && "$username" != "$stored_username" ]]; then
+                    exit 0
+                fi
+
+                echo "username=$stored_username"
+                echo "password=$stored_password"
             fi
         fi
     fi
+elif [ "$1" = "store" ]; then
+    # Read and discard input - already stored during setup
+    while IFS= read -r line; do
+        if [[ -z "$line" ]]; then
+            break
+        fi
+    done
+elif [ "$1" = "erase" ]; then
+    # Read and discard input - we don't auto-erase from encrypted storage
+    while IFS= read -r line; do
+        if [[ -z "$line" ]]; then
+            break
+        fi
+    done
 fi
 EOF
-            
+
             chmod +x "$git_credential_helper"
             git config --global credential.helper "$git_credential_helper"
-            
+
             echo "Git credentials stored in encrypted file."
             return 0
         fi
@@ -1097,3 +1213,4 @@ function readme
   bat --language markdown "$FLOX_ENV_PROJECT/README.md" 2>/dev/null
 end
 '''
+
