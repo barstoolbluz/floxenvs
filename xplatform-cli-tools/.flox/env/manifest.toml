@@ -1,5 +1,5 @@
-# This is a Flox environment manifest.
-# Visit flox.dev/docs/concepts/manifest/
+# this is a   f l o x   manifest.
+# visit flox.dev/docs/concepts/manifest/
 # or see flox-edit(1), manifest.toml(5) for more information.
 version = 1
 
@@ -14,95 +14,97 @@ curl.pkg-path = "curl"
 
 [vars]
 # 1password github config
-OP_GITHUB_VAULT = "1password"           # Name of 1Password vault containing GitHub tokens
-OP_GITHUB_TOKEN_ITEM = "repo"    # Name of the item storing GitHub token
-OP_GITHUB_TOKEN_FIELD = "token"               # Field name containing the GitHub token
+OP_GITHUB_VAULT = "1password"           # name of 1password vault containing github token(s)
+OP_GITHUB_TOKEN_ITEM = "repo"    # name of the item storing github token(s)
+OP_GITHUB_TOKEN_FIELD = "token"               # field name containing the github token(s)
 
 # 1password aws config
-OP_AWS_VAULT = "1password"              # Name of 1Password vault containing AWS credentials
-OP_AWS_CREDENTIALS_ITEM = "awskeyz"   # Name of the item storing AWS credentials
-OP_AWS_USERNAME_FIELD = "username"            # Field name for AWS access key ID
-OP_AWS_CREDENTIALS_FIELD = "credential"      # Field name for AWS secret access key
+OP_AWS_VAULT = "1password"              # name of 1password vault containing aws creds
+OP_AWS_CREDENTIALS_ITEM = "awskeyz"   # name of the item storing aws creds
+OP_AWS_USERNAME_FIELD = "username"            # field name for aws access key ID
+OP_AWS_CREDENTIALS_FIELD = "credential"      # field name for aws secret access key
 
 [hook]
 on-activate = '''
-# 1Password authentication with CI support
+# 1password auth with CI support
 detect_environment() {
-  # GitHub Actions detection
+  # detect github actions if a thing
   if [[ -n "$GITHUB_ACTIONS" ]]; then
     echo "github_actions"
     return 0
   fi
   
-  # Add detection for other CI platforms here if needed:
-  # Example:
+  # add detection for other CI platforms if needed; e.g.:
   # if [[ -n "$CIRCLECI" ]]; then
   #   echo "circle_ci"
   #   return 0
   # fi
   
-  # No CI detected - we're local
+  # if no CI -> then we're local
   echo "local"
   return 0
 }
 
 authenticate_1password() {
   SESSION_FILE="$HOME/.config/op/1password-session.token"
-  
-  # Check if we already have a valid session (file-based for local, env var for CI)
+
+  # do we/do we not already have a valid session? we use files + tokens for local, env vars for CI
   local env=$(detect_environment)
-  
+
   if [[ "$env" == "local" ]]; then
-    # Local environment - check for file-based token
+    # are we/are we not local? we check for a file-based token
     if [[ -f "$SESSION_FILE" ]] && OP_SESSION_TOKEN=$(cat "$SESSION_FILE") && op whoami --session "$OP_SESSION_TOKEN" >/dev/null 2>&1; then
-      echo "Using existing 1Password session from file"
       export OP_SESSION_TOKEN
       return 0
     fi
-    
-    # Local environment - interactive authentication
-    echo "Local environment detected. Authenticating interactively..."
-    for i in {1..3}; do
-      if OP_SESSION_TOKEN=$(op signin --raw 2>/dev/null); then
-        mkdir -p "$(dirname "$SESSION_FILE")"
-        echo "$OP_SESSION_TOKEN" > "$SESSION_FILE"
-        chmod 700 "$SESSION_FILE"
-        export OP_SESSION_TOKEN
-        return 0
-      fi
-      [[ $i -eq 3 ]] && { echo "Authentication failed after 3 attempts."; return 1; } || echo "Attempt $i failed."
-    done
+
+    # oh snap! we do not have a valid session; user needs to run 'op-login' function
+    return 1
   else
-    # CI environment - check for existing token in env var
+    # are we/are we not in CI? we check for existing token in env var
     if [[ -n "$OP_SESSION_TOKEN" ]] && op whoami --session "$OP_SESSION_TOKEN" >/dev/null 2>&1; then
-      echo "Using existing 1Password session token from environment"
       return 0
     fi
-    
-    # CI environment (GitHub Actions)
-    echo "CI environment detected: $env"
-    
+
+    # we are in CI: setup logic for github actions
     if [[ -z "$OP_SERVICE_ACCOUNT_TOKEN" ]]; then
-      echo "Error: OP_SERVICE_ACCOUNT_TOKEN is not set. Required for CI authentication."
+      echo "⚠️  OP_SERVICE_ACCOUNT_TOKEN is not set. 1Password authentication unavailable in CI."
       return 1
     fi
-    
-    echo "Authenticating with 1Password service account..."
+
     if OP_SESSION_TOKEN=$(op signin --raw --service-account-token "$OP_SERVICE_ACCOUNT_TOKEN" 2>/dev/null); then
       export OP_SESSION_TOKEN
-      echo "Successfully authenticated with 1Password service account"
       return 0
     else
-      echo "Failed to authenticate with 1Password service account"
+      echo "⚠️  Failed to authenticate with 1Password service account"
       return 1
     fi
   fi
-  
+
   return 1
 }
 
-# Authenticate with 1Password
-authenticate_1password
+detect_1password_state() {
+  # are we/are we not auth-ed?
+  if [[ -n "$(op whoami 2>/dev/null)" ]]; then
+    export OP_STATE="authenticated"
+    return 0
+  fi
+
+  # are/are not accounts configured (we're looking for non-empty output)
+  if [[ -n "$(op account list 2>/dev/null)" ]]; then
+    export OP_STATE="needs_login"
+    return 0
+  fi
+
+  # oops: no accounts configured
+  export OP_STATE="needs_setup"
+  return 0
+}
+
+# let's try to auth; this is non-blocking: i.e., not being auth-ed doesn't fail activation
+authenticate_1password || true
+detect_1password_state
 
 # create shell-specific wrapper files
 mkdir -p "${FLOX_ENV_CACHE}/shell"
@@ -113,12 +115,23 @@ cat > "${FLOX_ENV_CACHE}/shell/wrapper.bash" << 'EOBASH'
 [[ -z "$OP_SESSION_TOKEN" && -f "$HOME/.config/op/1password-session.token" ]] && export OP_SESSION_TOKEN=$(cat "$HOME/.config/op/1password-session.token")
 
 # gh wrapper function
-gh() { 
+gh() {
   if [[ -n "$OP_SESSION_TOKEN" ]]; then
     op run --session "$OP_SESSION_TOKEN" --env-file <(echo "GITHUB_TOKEN=op://$OP_GITHUB_VAULT/$OP_GITHUB_TOKEN_ITEM/$OP_GITHUB_TOKEN_FIELD") -- gh "$@"
   else
-    echo "Error: No 1Password session found. Please authenticate first."
-    return 1
+    case "$OP_STATE" in
+      needs_setup)
+        echo "⚠️  1Password not configured. Run 'op-setup' for automated setup."
+        ;;
+      needs_login)
+        echo "⚠️  Not signed in to 1Password. Run 'op-login'"
+        ;;
+      *)
+        echo "⚠️  1Password unavailable. Run 'op-setup'"
+        ;;
+    esac
+    echo "Falling back to standard gh authentication..."
+    command gh "$@"
   fi
 }
 
@@ -129,7 +142,7 @@ git() {
     if [[ -n "$token" ]]; then
       askpass=$(mktemp)
       
-      # Set up cleanup trap for the temporary file
+      # set up cleanup trap for our temp file
       trap 'rm -f "$askpass"' EXIT INT TERM
       
       echo -e "#!/bin/sh\necho $token" > "$askpass"
@@ -137,7 +150,7 @@ git() {
       GIT_ASKPASS="$askpass" GIT_TERMINAL_PROMPT=0 command git -c credential.helper= "$@"
       status=$?
       
-      # Manually remove the file and clear the trap
+      # manually remove temp file + clear the trap
       rm -f "$askpass"
       trap - EXIT INT TERM
       
@@ -148,12 +161,23 @@ git() {
 }
 
 # aws wrapper function
-aws() { 
+aws() {
   if [[ -n "$OP_SESSION_TOKEN" ]]; then
     op run --session "$OP_SESSION_TOKEN" --env-file <(echo -e "AWS_ACCESS_KEY_ID=op://$OP_AWS_VAULT/$OP_AWS_CREDENTIALS_ITEM/$OP_AWS_USERNAME_FIELD\nAWS_SECRET_ACCESS_KEY=op://$OP_AWS_VAULT/$OP_AWS_CREDENTIALS_ITEM/$OP_AWS_CREDENTIALS_FIELD") -- aws "$@"
   else
-    echo "Error: No 1Password session found. Please authenticate first."
-    return 1
+    case "$OP_STATE" in
+      needs_setup)
+        echo "⚠️  1Password not configured. Run 'op-setup' for automated setup."
+        ;;
+      needs_login)
+        echo "⚠️  Not signed in to 1Password. Run 'op-login'"
+        ;;
+      *)
+        echo "⚠️  1Password unavailable. Run 'op-setup'"
+        ;;
+    esac
+    echo "Falling back to standard aws authentication..."
+    command aws "$@"
   fi
 }
 EOBASH
@@ -165,12 +189,23 @@ cat > "${FLOX_ENV_CACHE}/shell/wrapper.zsh" << 'EOZSH'
 [[ -z "$OP_SESSION_TOKEN" && -f "$HOME/.config/op/1password-session.token" ]] && export OP_SESSION_TOKEN=$(cat "$HOME/.config/op/1password-session.token")
 
 # gh wrapper function
-function gh() { 
+function gh() {
   if [[ -n "$OP_SESSION_TOKEN" ]]; then
     op run --session "$OP_SESSION_TOKEN" --env-file =(echo "GITHUB_TOKEN=op://$OP_GITHUB_VAULT/$OP_GITHUB_TOKEN_ITEM/$OP_GITHUB_TOKEN_FIELD") -- gh "$@"
   else
-    echo "Error: No 1Password session found. Please authenticate first."
-    return 1
+    case "$OP_STATE" in
+      needs_setup)
+        echo "⚠️  1Password not configured. Run 'op-setup' for automated setup."
+        ;;
+      needs_login)
+        echo "⚠️  Not signed in to 1Password. Run 'op-login'"
+        ;;
+      *)
+        echo "⚠️  1Password unavailable. Run 'op-setup'"
+        ;;
+    esac
+    echo "Falling back to standard gh authentication..."
+    command gh "$@"
   fi
 }
 
@@ -201,12 +236,23 @@ function git() {
 }
 
 # aws wrapper function
-function aws() { 
+function aws() {
   if [[ -n "$OP_SESSION_TOKEN" ]]; then
     op run --session "$OP_SESSION_TOKEN" --env-file =(echo "AWS_ACCESS_KEY_ID=op://$OP_AWS_VAULT/$OP_AWS_CREDENTIALS_ITEM/$OP_AWS_USERNAME_FIELD\nAWS_SECRET_ACCESS_KEY=op://$OP_AWS_VAULT/$OP_AWS_CREDENTIALS_ITEM/$OP_AWS_CREDENTIALS_FIELD") -- aws "$@"
   else
-    echo "Error: No 1Password session found. Please authenticate first."
-    return 1
+    case "$OP_STATE" in
+      needs_setup)
+        echo "⚠️  1Password not configured. Run 'op-setup' for automated setup."
+        ;;
+      needs_login)
+        echo "⚠️  Not signed in to 1Password. Run 'op-login'"
+        ;;
+      *)
+        echo "⚠️  1Password unavailable. Run 'op-setup'"
+        ;;
+    esac
+    echo "Falling back to standard aws authentication..."
+    command aws "$@"
   fi
 }
 EOZSH
@@ -224,8 +270,16 @@ function gh
     if test -n "$OP_SESSION_TOKEN"
         op run --session "$OP_SESSION_TOKEN" --env-file (echo "GITHUB_TOKEN=op://$OP_GITHUB_VAULT/$OP_GITHUB_TOKEN_ITEM/$OP_GITHUB_TOKEN_FIELD" | psub) -- gh $argv
     else
-        echo "Error: No 1Password session found. Please authenticate first."
-        return 1
+        switch "$OP_STATE"
+            case needs_setup
+                echo "⚠️  1Password not configured. Run 'op-setup' for automated setup."
+            case needs_login
+                echo "⚠️  Not signed in to 1Password. Run 'op-login'"
+            case '*'
+                echo "⚠️  1Password unavailable. Run 'op-setup'"
+        end
+        echo "Falling back to standard gh authentication..."
+        command gh $argv
     end
 end
 
@@ -262,8 +316,16 @@ function aws
     if test -n "$OP_SESSION_TOKEN"
         op run --session "$OP_SESSION_TOKEN" --env-file (echo -e "AWS_ACCESS_KEY_ID=op://$OP_AWS_VAULT/$OP_AWS_CREDENTIALS_ITEM/$OP_AWS_USERNAME_FIELD\nAWS_SECRET_ACCESS_KEY=op://$OP_AWS_VAULT/$OP_AWS_CREDENTIALS_ITEM/$OP_AWS_CREDENTIALS_FIELD" | psub) -- aws $argv
     else
-        echo "Error: No 1Password session found. Please authenticate first."
-        return 1
+        switch "$OP_STATE"
+            case needs_setup
+                echo "⚠️  1Password not configured. Run 'op-setup' for automated setup."
+            case needs_login
+                echo "⚠️  Not signed in to 1Password. Run 'op-login'"
+            case '*'
+                echo "⚠️  1Password unavailable. Run 'op-setup'"
+        end
+        echo "Falling back to standard aws authentication..."
+        command aws $argv
     end
 end
 EOFISH
@@ -284,6 +346,23 @@ get_help() {
 
 # informational message; comment-out or delete 'show_help' under # runnit to disable
 show_help() {
+    # Check authentication status based on OP_STATE
+    local auth_status=""
+    case "$OP_STATE" in
+      authenticated)
+        auth_status="$(gum style --foreground 82 '✅ Authenticated')"
+        ;;
+      needs_login)
+        auth_status="$(gum style --foreground 214 '⚠️  Account configured - run') $(gum style --foreground 212 'op-login')"
+        ;;
+      needs_setup)
+        auth_status="$(gum style --foreground 196 '❌ Not configured - run') $(gum style --foreground 212 'op-setup')"
+        ;;
+      *)
+        auth_status="$(gum style --foreground 214 '⚠️  Unknown state - run') $(gum style --foreground 212 'op-setup')"
+        ;;
+    esac
+
     gum style \
         --border rounded \
         --border-foreground 240 \
@@ -305,10 +384,11 @@ show_help() {
     • In scripts, source the shell wrapper files from:
       $(gum style --foreground 212 "\$FLOX_ENV_CACHE/shell/wrapper.[bash|zsh|fish]")
     • Bypass wrappers with $(gum style --foreground 212 'command aws'), $(gum style --foreground 212 'command gh'), or $(gum style --foreground 212 'command git')
-    
+
 👉  Authentication:
-    • Fetches credentials securely from 1Password
-    • Authentication happens automatically when needed"
+    Status: $auth_status
+    • Run $(gum style --foreground 212 'op-setup') for first-time setup, or $(gum style --foreground 212 'op-login') to sign in
+    • Credentials are fetched securely from 1Password when needed"
 
     echo ""
 }
@@ -320,26 +400,363 @@ show_help
 
 [profile]
 bash = '''
-# Source the 1Password wrapper functions
-[[ -f "${FLOX_ENV_CACHE}/shell/wrapper.sh" ]] && source "${FLOX_ENV_CACHE}/shell/wrapper.bash"
+# source 1password wrapper functions
+[[ -f "${FLOX_ENV_CACHE}/shell/wrapper.bash" ]] && source "${FLOX_ENV_CACHE}/shell/wrapper.bash"
 
 help() { [[ -f "$FLOX_ENV_CACHE/README.md" ]] && bat --paging=always --style=plain "$FLOX_ENV_CACHE/README.md"; }
+
+# bootstrap 1password cli setup
+op-bootstrap() {
+  gum style --border rounded "🔐 1Password CLI Setup"
+  echo ""
+  echo "Collect your 1Password credentials to set up CLI access."
+  echo "You'll need: Sign-in address, Email, Secret Key, and Master Password"
+  echo ""
+
+  # get creds
+  local address=$(gum input --placeholder "account.1password.com" --prompt "Sign-in address: ")
+  local email=$(gum input --placeholder "email@example.com" --prompt "Email: ")
+  local secret_key=$(gum input --password --prompt "Secret Key (A3-XXXXXX-...): ")
+  local password=$(gum input --password --prompt "Master password: ")
+  local shorthand=$(gum input --placeholder "personal" --prompt "Account shorthand: " --value "$(echo "$address" | cut -d. -f1)")
+
+  # validate inputs
+  if [[ -z "$address" ]] || [[ -z "$email" ]] || [[ -z "$secret_key" ]] || [[ -z "$password" ]]; then
+    echo "❌ All fields are required"
+    return 1
+  fi
+
+  if [[ ! "$secret_key" =~ ^A3- ]]; then
+    echo "❌ Invalid Secret Key format (should start with A3-)"
+    return 1
+  fi
+
+  echo ""
+  echo "Setting up 1Password account..."
+
+  # add account using env var
+  if ! OP_SECRET_KEY="$secret_key" op account add \
+    --shorthand "$shorthand" \
+    --address "$address" \
+    --email "$email" 2>/dev/null; then
+    echo "❌ Failed to add account. Check your credentials."
+    unset password secret_key
+    return 1
+  fi
+
+  # sign in
+  local session_token
+  if ! session_token=$(printf "%s\n" "$password" | op signin --account "$shorthand" --raw 2>/dev/null); then
+    echo "❌ Failed to authenticate. Check your password."
+    unset password secret_key
+    return 1
+  fi
+
+  # store session token
+  local session_file="$HOME/.config/op/1password-session.token"
+  mkdir -p "$(dirname "$session_file")"
+  echo "$session_token" > "$session_file"
+  chmod 600 "$session_file"
+  export OP_SESSION_TOKEN="$session_token"
+
+  # clear sensitive vars
+  unset password secret_key
+
+  echo "✅ 1Password CLI configured and authenticated!"
+  return 0
+}
+
+# smart setup dispatcher
+op-setup() {
+  case "$OP_STATE" in
+    authenticated)
+      echo "✅ Already authenticated with 1Password"
+      op whoami
+      ;;
+    needs_login)
+      echo "✅ Account configured. Running login..."
+      op-login
+      ;;
+    needs_setup)
+      echo "No 1Password account configured."
+      if gum confirm "Set up 1Password CLI now?" --default=true; then
+        op-bootstrap
+      fi
+      ;;
+    *)
+      echo "❌ Unexpected state: $OP_STATE"
+      return 1
+      ;;
+  esac
+}
+
+# interactive 1password login
+op-login() {
+  local SESSION_FILE="$HOME/.config/op/1password-session.token"
+
+  # check does account exist? (we're looking for non-empty output)
+  if [[ -z "$(op account list 2>/dev/null)" ]]; then
+    echo "⚠️  No 1Password account configured."
+    if gum confirm "Set up 1Password CLI now?" --default=true; then
+      op-bootstrap
+      return $?
+    fi
+    return 1
+  fi
+
+  # try auth
+  for i in {1..3}; do
+    if OP_SESSION_TOKEN=$(op signin --raw 2>/dev/null); then
+      mkdir -p "$(dirname "$SESSION_FILE")"
+      echo "$OP_SESSION_TOKEN" > "$SESSION_FILE"
+      chmod 600 "$SESSION_FILE"
+      export OP_SESSION_TOKEN
+      echo "✅ Successfully authenticated with 1Password"
+      return 0
+    fi
+    [[ $i -eq 3 ]] && { echo "❌ Authentication failed after 3 attempts."; return 1; } || echo "⚠️  Attempt $i failed. Try again."
+  done
+}
 '''
 
 zsh = '''
-# Source the 1Password wrapper functions
-[[ -f "${FLOX_ENV_CACHE}/shell/wrapper.sh" ]] && source "${FLOX_ENV_CACHE}/shell/wrapper.zsh"
+# source 1password wrapper functions
+[[ -f "${FLOX_ENV_CACHE}/shell/wrapper.zsh" ]] && source "${FLOX_ENV_CACHE}/shell/wrapper.zsh"
 
 help() { [[ -f "$FLOX_ENV_CACHE/README.md" ]] && bat --paging=always --style=plain "$FLOX_ENV_CACHE/README.md"; }
+
+# bootstrap 1password cli setup
+op-bootstrap() {
+  gum style --border rounded "🔐 1Password CLI Setup"
+  echo ""
+  echo "Collect your 1Password credentials to set up CLI access."
+  echo "You'll need: Sign-in address, Email, Secret Key, and Master Password"
+  echo ""
+
+  # collect creds
+  local address=$(gum input --placeholder "account.1password.com" --prompt "Sign-in address: ")
+  local email=$(gum input --placeholder "email@example.com" --prompt "Email: ")
+  local secret_key=$(gum input --password --prompt "Secret Key (A3-XXXXXX-...): ")
+  local password=$(gum input --password --prompt "Master password: ")
+  local shorthand=$(gum input --placeholder "personal" --prompt "Account shorthand: " --value "$(echo "$address" | cut -d. -f1)")
+
+  # validate inputs
+  if [[ -z "$address" ]] || [[ -z "$email" ]] || [[ -z "$secret_key" ]] || [[ -z "$password" ]]; then
+    echo "❌ All fields are required"
+    return 1
+  fi
+
+  if [[ ! "$secret_key" =~ ^A3- ]]; then
+    echo "❌ Invalid Secret Key format (should start with A3-)"
+    return 1
+  fi
+
+  echo ""
+  echo "Setting up 1Password account..."
+
+  # add account using env var
+  if ! OP_SECRET_KEY="$secret_key" op account add \
+    --shorthand "$shorthand" \
+    --address "$address" \
+    --email "$email" 2>/dev/null; then
+    echo "❌ Failed to add account. Check your credentials."
+    unset password secret_key
+    return 1
+  fi
+
+  # sign in
+  local session_token
+  if ! session_token=$(printf "%s\n" "$password" | op signin --account "$shorthand" --raw 2>/dev/null); then
+    echo "❌ Failed to authenticate. Check your password."
+    unset password secret_key
+    return 1
+  fi
+
+  # store session token
+  local session_file="$HOME/.config/op/1password-session.token"
+  mkdir -p "$(dirname "$session_file")"
+  echo "$session_token" > "$session_file"
+  chmod 600 "$session_file"
+  export OP_SESSION_TOKEN="$session_token"
+
+  # clear sensitive vars
+  unset password secret_key
+
+  echo "✅ 1Password CLI configured and authenticated!"
+  return 0
+}
+
+# smart setup dispatcher
+op-setup() {
+  case "$OP_STATE" in
+    authenticated)
+      echo "✅ Already authenticated with 1Password"
+      op whoami
+      ;;
+    needs_login)
+      echo "✅ Account configured. Running login..."
+      op-login
+      ;;
+    needs_setup)
+      echo "No 1Password account configured."
+      if gum confirm "Set up 1Password CLI now?" --default=true; then
+        op-bootstrap
+      fi
+      ;;
+    *)
+      echo "❌ Unexpected state: $OP_STATE"
+      return 1
+      ;;
+  esac
+}
+
+# interactive 1password login
+op-login() {
+  local SESSION_FILE="$HOME/.config/op/1password-session.token"
+
+  # check does account exist? (we're looking for non-empty output)
+  if [[ -z "$(op account list 2>/dev/null)" ]]; then
+    echo "⚠️  No 1Password account configured."
+    if gum confirm "Set up 1Password CLI now?" --default=true; then
+      op-bootstrap
+      return $?
+    fi
+    return 1
+  fi
+
+  # try auth
+  for i in {1..3}; do
+    if OP_SESSION_TOKEN=$(op signin --raw 2>/dev/null); then
+      mkdir -p "$(dirname "$SESSION_FILE")"
+      echo "$OP_SESSION_TOKEN" > "$SESSION_FILE"
+      chmod 600 "$SESSION_FILE"
+      export OP_SESSION_TOKEN
+      echo "✅ Successfully authenticated with 1Password"
+      return 0
+    fi
+    [[ $i -eq 3 ]] && { echo "❌ Authentication failed after 3 attempts."; return 1; } || echo "⚠️  Attempt $i failed. Try again."
+  done
+}
 '''
 
 fish = '''
-# Source the 1Password wrapper functions
+# source the 1password wrapper functions
 test -f "$FLOX_ENV_CACHE/shell/wrapper.fish" && source "$FLOX_ENV_CACHE/shell/wrapper.fish"
 
 function help; test -f "$FLOX_ENV_CACHE/README.md" && bat --paging=always --style=plain "$FLOX_ENV_CACHE/README.md"; end
+
+# bootstrap 1password cli setup
+function op-bootstrap
+  gum style --border rounded "🔐 1Password CLI Setup"
+  echo ""
+  echo "Collect your 1Password credentials to set up CLI access."
+  echo "You'll need: Sign-in address, Email, Secret Key, and Master Password"
+  echo ""
+
+  # collect creds
+  set -l address (gum input --placeholder "account.1password.com" --prompt "Sign-in address: ")
+  set -l email (gum input --placeholder "email@example.com" --prompt "Email: ")
+  set -l secret_key (gum input --password --prompt "Secret Key (A3-XXXXXX-...): ")
+  set -l password (gum input --password --prompt "Master password: ")
+  set -l shorthand (gum input --placeholder "personal" --prompt "Account shorthand: " --value (echo "$address" | cut -d. -f1))
+
+  # validate inputs
+  if test -z "$address"; or test -z "$email"; or test -z "$secret_key"; or test -z "$password"
+    echo "❌ All fields are required"
+    return 1
+  end
+
+  if not string match -qr '^A3-' "$secret_key"
+    echo "❌ Invalid Secret Key format (should start with A3-)"
+    return 1
+  end
+
+  echo ""
+  echo "Setting up 1Password account..."
+
+  # add account if not exist
+  if not env OP_SECRET_KEY="$secret_key" op account add --shorthand "$shorthand" --address "$address" --email "$email" 2>/dev/null
+    echo "❌ Failed to add account. Check your credentials."
+    set -e password secret_key
+    return 1
+  end
+
+  # sign in
+  if not set -l session_token (printf "%s\n" "$password" | op signin --account "$shorthand" --raw 2>/dev/null)
+    echo "❌ Failed to authenticate. Check your password."
+    set -e password secret_key
+    return 1
+  end
+
+  # store token
+  set -l session_file "$HOME/.config/op/1password-session.token"
+  mkdir -p (dirname "$session_file")
+  echo "$session_token" > "$session_file"
+  chmod 600 "$session_file"
+  set -gx OP_SESSION_TOKEN "$session_token"
+
+  # clear sensitive vars
+  set -e password secret_key
+
+  echo "✅ 1Password CLI configured and authenticated!"
+  return 0
+end
+
+# smart setup dispatcher
+function op-setup
+  switch "$OP_STATE"
+    case authenticated
+      echo "✅ Already authenticated with 1Password"
+      op whoami
+    case needs_login
+      echo "✅ Account configured. Running login..."
+      op-login
+    case needs_setup
+      echo "No 1Password account configured."
+      if gum confirm "Set up 1Password CLI now?" --default=true
+        op-bootstrap
+      end
+    case '*'
+      echo "❌ Unexpected state: $OP_STATE"
+      return 1
+  end
+end
+
+# interactive 1password login
+function op-login
+  set -l SESSION_FILE "$HOME/.config/op/1password-session.token"
+
+  # check does account exist? (we're looking for non-empty output)
+  if test -z (op account list 2>/dev/null)
+    echo "⚠️  No 1Password account configured."
+    if gum confirm "Set up 1Password CLI now?" --default=true
+      op-bootstrap
+      return $status
+    end
+    return 1
+  end
+
+  # try auth
+  for i in (seq 3)
+    if set -l token (op signin --raw 2>/dev/null)
+      mkdir -p (dirname "$SESSION_FILE")
+      echo "$token" > "$SESSION_FILE"
+      chmod 600 "$SESSION_FILE"
+      set -gx OP_SESSION_TOKEN "$token"
+      echo "✅ Successfully authenticated with 1Password"
+      return 0
+    end
+
+    if test $i -eq 3
+      echo "❌ Authentication failed after 3 attempts."
+      return 1
+    else
+      echo "⚠️  Attempt $i failed. Try again."
+    end
+  end
+end
 '''
 
-# Settings for compatible systems
+
 [options]
 systems = ["aarch64-darwin", "aarch64-linux", "x86_64-darwin", "x86_64-linux"]
