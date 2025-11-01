@@ -7,14 +7,15 @@
 - [Quick Start](#quick-start)
 - [1Password Vault Configuration](#1password-vault-configuration)
 - [Usage](#usage-)
+- [Available Commands](#available-commands)
 - [CI/CD Integration](#cicd-integration)
 - [Shell Compatibility](#shell-compatibility)
 - [Extensibility](#extensibility)
   - [Extending to Other CLI Tools](#extending-to-other-cli-tools)
   - [Extending to Other CI Environments](#extending-to-other-ci-environments)
 - [Prerequisites](#prerequisites)
-- [Installation](#installation)
 - [Notes](#notes)
+- [Troubleshooting](#troubleshooting)
 - [About Flox](#about-flox)
 
 ## Overview
@@ -48,6 +49,15 @@ This environment mitigates these attack vectors by:
 3. Ensuring credentials exist only for the duration of the command
 4. Preventing unencrypted credentials from persisting on disk
 
+### Bootstrap Security Model
+
+When you run `op-setup`, only device-specific data is stored persistently:
+- **Secret Key** (designed by 1Password to be stored per-device) → `~/.config/op/config`
+- **Session tokens** (expire after 30 minutes) → `~/.config/op/1password-session.token`
+- **Master Password** is never stored and must be re-entered when sessions expire
+
+This follows 1Password's security model: Secret Keys are device-specific cryptographic keys that are safe to persist, while Master Passwords must be kept only in memory.
+
 ## How It Works
 
 The environment's wrapper functions for `git`, `gh`, and `aws`:
@@ -77,13 +87,34 @@ The environment adapts its authentication method based on context:
 - [Local Development](#local-development-setup) - Uses interactive authentication with persistent session tokens;
 - [CI/CD](#cicd-integration) - Uses non-interactive authentication with service accounts.
 
+### State Detection and Graceful Fallback
+
+The environment continuously monitors your 1Password authentication state:
+
+**Three states:**
+- `authenticated` - Active session via desktop app or `op-login`
+- `needs_login` - Account configured but session expired
+- `needs_setup` - No 1Password account configured
+
+**Graceful degradation:**
+If 1Password is unavailable, CLI tools automatically fall back to standard authentication:
+
+```bash
+$ gh repo list
+⚠️  Not signed in to 1Password. Run 'op-login'
+Falling back to standard gh authentication...
+# Command continues with standard gh auth
+```
+
+This ensures your tools **always work**, whether or not 1Password is available.
+
 ## Quick Start
 
-1. [Install the Flox CLI](#installation)
-2. [Set up 1Password CLI](#1password-cli-setup-local-development)
-3. [Configure your 1Password vault structure](#1password-vault-configuration)
-4. Activate the environment with `flox activate`
-5. Use `git`, `gh`, and `aws` commands normally - credential management happens automatically
+1. [Install the Flox CLI](#prerequisites) (one-time Flox setup)
+2. [Configure your 1Password vault structure](#1password-vault-configuration) (edit `manifest.toml`)
+3. Activate the environment: `flox activate`
+4. Run the setup wizard when prompted: `op-setup`
+5. Use `git`, `gh`, and `aws` commands normally - credentials are managed automatically
 
 ## 1Password Vault Configuration
 
@@ -149,6 +180,24 @@ aws s3 ls
 aws ec2 describe-instances
 ```
 
+### When 1Password is Unavailable
+
+All CLI tools gracefully fall back to standard authentication if 1Password isn't configured or your session expires:
+
+```bash
+$ aws s3 ls
+⚠️  Not signed in to 1Password. Run 'op-login'
+Falling back to standard aws authentication...
+# Uses standard AWS credential chain (~/.aws/credentials, env vars, IAM roles)
+```
+
+**State-aware guidance:**
+- `needs_setup` → "Run 'op-setup' for automated setup"
+- `needs_login` → "Run 'op-login' to sign in"
+- Desktop app users → Works automatically when app is unlocked
+
+This ensures your workflow continues even if 1Password is temporarily unavailable.
+
 ### Non-Interactive Shells ⚠️
 
 For scripts, source the wrapper file before using the commands:
@@ -166,6 +215,64 @@ gh repo list
 source "$FLOX_ENV_CACHE/shell/wrapper.fish"
 aws s3 ls
 ```
+
+## Available Commands
+
+The environment provides these commands for 1Password management:
+
+### `op-setup`
+
+Smart setup dispatcher that detects your current state and takes appropriate action.
+
+**Usage:**
+```bash
+op-setup
+```
+
+**Behavior:**
+- **Not configured** → Runs interactive bootstrap wizard
+- **Needs login** → Runs `op-login` automatically
+- **Already authenticated** → Shows current authentication info
+
+**When to use:** First-time setup or when unsure of your current state.
+
+---
+
+### `op-login`
+
+Re-authenticate with an existing 1Password account.
+
+**Usage:**
+```bash
+op-login
+```
+
+**Behavior:**
+- Prompts for your Master Password (up to 3 attempts)
+- Creates a new session token (30-minute expiry)
+- Exports `OP_SESSION_TOKEN` for current shell
+
+**When to use:** When your session expires (after 30 minutes of inactivity).
+
+**Note:** If no account is configured, `op-login` will offer to run `op-setup` for you.
+
+---
+
+### State Variables
+
+The environment exports `$OP_STATE` indicating your authentication state:
+
+- `authenticated` - Active session available
+- `needs_login` - Account configured, session expired
+- `needs_setup` - No account configured
+
+**Check your state:**
+```bash
+echo $OP_STATE
+```
+
+**Check in activation help:**
+The help message shown during `flox activate` displays your current state and suggests the appropriate command to run.
 
 ## CI/CD Integration
 
@@ -257,10 +364,31 @@ OP_DATABRICKS_TOKEN_FIELD = "token"        # Field for Databricks token
 
 ```bash
 # Example for Databricks CLI
-databricks() { 
-  op run --session "$OP_SESSION_TOKEN" --env-file <(echo -e "DATABRICKS_HOST=op://$OP_DATABRICKS_VAULT/$OP_DATABRICKS_ITEM/$OP_DATABRICKS_HOST_FIELD\nDATABRICKS_TOKEN=op://$OP_DATABRICKS_VAULT/$OP_DATABRICKS_ITEM/$OP_DATABRICKS_TOKEN_FIELD") -- databricks "$@"; 
+databricks() {
+  op run --session "$OP_SESSION_TOKEN" --env-file <(echo -e "DATABRICKS_HOST=op://$OP_DATABRICKS_VAULT/$OP_DATABRICKS_ITEM/$OP_DATABRICKS_HOST_FIELD\nDATABRICKS_TOKEN=op://$OP_DATABRICKS_VAULT/$OP_DATABRICKS_ITEM/$OP_DATABRICKS_TOKEN_FIELD") -- databricks "$@";
 }
 ```
+
+**Best Practice: Include Graceful Fallback**
+
+For production use, add state-aware fallback logic like the built-in `gh()` and `aws()` wrappers:
+
+```bash
+databricks() {
+  if [[ -n "$OP_SESSION_TOKEN" ]]; then
+    op run --session "$OP_SESSION_TOKEN" --env-file <(echo -e "DATABRICKS_HOST=op://...\nDATABRICKS_TOKEN=op://...") -- databricks "$@"
+  else
+    case "$OP_STATE" in
+      needs_setup) echo "⚠️  1Password not configured. Run 'op-setup'" ;;
+      needs_login) echo "⚠️  Not signed in. Run 'op-login'" ;;
+    esac
+    echo "Falling back to standard databricks authentication..."
+    command databricks "$@"
+  fi
+}
+```
+
+This ensures your tool works even when 1Password is unavailable.
 
 3. **Add environment detection** to your wrapper function
 
@@ -419,54 +547,65 @@ By extending environment detection and auth logic this way, you get (more) secur
 
 ## Prerequisites
 
-### 1Password CLI Setup (Local Development)
-
-This environment expects the 1Password CLI to be configured. You can set it up in two ways:
-
-#### Option 1: Automatic Setup
-
-```sh
-flox activate -r barstoolbluz/setup-1pass
-```
-
-This wizard will guide you through creating the necessary configuration.
-
-#### Option 2: Manual Setup
-
-Create the config file at `~/.config/op/config` with your 1Password account information:
-
-```json
-{
-        "latest_signin": "your_organization",
-        "device": "2xdzachbrog69jockvku6qshakeyerhips",
-        "accounts": [
-                {
-                        "shorthand": "your_org_shorthand",
-                        "accountUUID": "H4D9BhyE9WmS7-MbaG0qWDsaOi",
-                        "url": "https://your-team.1password.com",
-                        "email": "your.email@example.com",
-                        "accountKey": "Y6bXKI-Z6_9ONAkwYRbFnQRcn3lyIEY4DDpgkURh",
-                        "userUUID": "GR9EqmcQVmIGa6XCIpW8hue6Ef"
-                }
-        ]
-}
-```
-
-## Installation
+### Flox CLI
 
 The only required dependency is the [Flox CLI](https://flox.dev/docs/).
 
-To install:
+**Installation:**
 
-1. Visit the Flox [download page](https://flox.dev/get)
-
+1. Visit the [Flox download page](https://flox.dev/get)
 2. Download the appropriate package for your system:
-   - Linux (Intel/x86_64): Choose either `.deb` or `.rpm` package
-   - Linux (ARM): Choose either `.deb` or `.rpm` package
-   - macOS (Intel): Download the `.pkg` installer
-   - macOS (ARM/Apple Silicon): Download the `.pkg` installer
-
+   - Linux (Intel/ARM): Choose `.deb` or `.rpm` package
+   - macOS (Intel/Apple Silicon): Download `.pkg` installer
 3. Follow your OS's standard installation procedure
+
+### 1Password CLI Setup
+
+This environment includes **built-in automation** for 1Password CLI setup.
+
+**Recommended: Automated Setup (Built-in)**
+
+After activating the environment, simply run:
+
+```bash
+op-setup
+```
+
+The interactive wizard guides you through:
+1. Collecting your credentials (sign-in address, email, Secret Key, Master Password)
+2. Configuring your 1Password CLI account
+3. Authenticating and creating a session token
+
+**What you'll need:**
+- Your 1Password sign-in address (e.g., `mycompany.1password.com`)
+- Your email address
+- Your Secret Key (starts with `A3-`, found in 1Password account settings)
+- Your Master Password
+
+**Advanced: Manual Setup**
+
+If you prefer manual configuration, create `~/.config/op/config` with your account info:
+
+```json
+{
+  "latest_signin": "your_organization",
+  "device": "2xdzachbrog69jockvku6qshakeyerhips",
+  "accounts": [
+    {
+      "shorthand": "your_org_shorthand",
+      "accountUUID": "H4D9BhyE9WmS7-MbaG0qWDsaOi",
+      "url": "https://your-team.1password.com",
+      "email": "your.email@example.com",
+      "accountKey": "Y6bXKI-Z6_9ONAkwYRbFnQRcn3lyIEY4DDpgkURh",
+      "userUUID": "GR9EqmcQVmIGa6XCIpW8hue6Ef"
+    }
+  ]
+}
+```
+
+Then run `op signin` manually.
+
+**Note:** The automated `op-setup` wizard is strongly recommended for most users.
 
 ## Notes
 
@@ -504,6 +643,80 @@ This environment includes:
 - **Curl** (`curl`): Command-line tool for transferring data
 
 Run `flox edit` to view or modify this environment's configuration, or add packages with `flox install <package_name>`.
+
+## Troubleshooting
+
+### Session Expired
+
+**Symptom:** Commands show `⚠️  Not signed in to 1Password. Run 'op-login'`
+
+**Solution:**
+```bash
+op-login
+```
+
+Re-enter your Master Password to create a new session.
+
+---
+
+### No Account Configured
+
+**Symptom:** Activation shows `❌ Not configured - run op-setup`
+
+**Solution:**
+```bash
+op-setup
+```
+
+Follow the interactive wizard to configure your account.
+
+---
+
+### Wrong Credentials or Account Switch
+
+**Symptom:** Authentication fails or you need a different account
+
+**Solution:**
+```bash
+# Remove existing configuration
+rm ~/.config/op/config
+rm ~/.config/op/1password-session.token
+
+# Run setup wizard
+op-setup
+```
+
+---
+
+### Verify Current State
+
+Check your authentication state anytime:
+
+```bash
+# Check state variable
+echo $OP_STATE
+
+# Check 1Password authentication
+op whoami
+
+# List configured accounts
+op account list
+```
+
+---
+
+### Desktop App Integration
+
+If you have the 1Password desktop app installed and unlocked:
+- The CLI automatically uses it for authentication
+- You don't need to run `op-setup` or `op-login`
+- The environment detects this and shows `authenticated` state
+
+---
+
+### Commands Work Without 1Password
+
+All CLI tools (`gh`, `aws`, `git`) gracefully fall back to standard authentication if 1Password is unavailable. This is **by design** - your tools will always work.
 
 ## About Flox
 
