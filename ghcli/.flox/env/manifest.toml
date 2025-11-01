@@ -327,6 +327,16 @@ check_and_fix_git_credentials() {
             if gum confirm "Update now? (Git credentials will need to be re-entered)" --default=true; then
                 needs_setup=true
             fi
+        else
+            # Helper script is up-to-date, but check if credentials actually exist
+            local test_creds=$(printf "protocol=https\nhost=github.com\n\n" | "$helper" get 2>/dev/null)
+            if ! echo "$test_creds" | grep -q "password="; then
+                echo ""
+                gum style --foreground 214 "⚠️  Git credentials are not stored."
+                if gum confirm "Set up Git credentials now?" --default=false; then
+                    needs_setup=true
+                fi
+            fi
         fi
     fi
 
@@ -334,6 +344,7 @@ check_and_fix_git_credentials() {
         # Clean up old files
         rm -f "$CONFIG_DIR/git-credential-flox-helper" 2>/dev/null
         secret-tool clear service git-https host github.com 2>/dev/null || true
+        rm -f "$GIT_CREDENTIALS_FILE" 2>/dev/null
         # Re-setup
         setup_git_credentials_only
     fi
@@ -509,106 +520,176 @@ end
 FISH_EOF
 }
 
-# Configure Git credentials
-configure_git_credentials() {
-    local os=$(detect_os)
+# Attempt to store credentials in keyring and detect state
+attempt_keyring_storage() {
     local username="$1"
     local password="$2"
+    local temp_error=$(mktemp)
 
-    # Check and configure git user.name and user.email if needed
-    check_and_configure_git_user_info
+    # Try to store, capture stderr
+    echo -n "$username:$password" | secret-tool store --label="Git Credentials for GitHub" service git-https host github.com 2>"$temp_error"
+    local store_result=${PIPESTATUS[1]}
+    local error_msg=$(cat "$temp_error")
+    rm -f "$temp_error"
 
-    # Configure git credential helper based on OS
-    if [[ "$os" == "macos" ]]; then
-        # Use the macOS keychain helper
-        git config --global credential.helper osxkeychain
-
-        # Store credentials in the keychain using proper protocol
-        printf "protocol=https\nhost=github.com\nusername=%s\npassword=%s\n\n" "$username" "$password" | git credential approve
-
-        echo "Git credentials stored in macOS keychain."
-        return 0
-    elif [[ "$os" == "linux" ]]; then
-        # Check if secret-tool is available for keyring storage
-        if command -v secret-tool &> /dev/null; then
-            # Store both username and password in secret-tool
-            # We store credentials as "username:password" so we can retrieve both
-            echo -n "$username:$password" | secret-tool store --label="Git Credentials for GitHub" service git-https host github.com
-
-            # Create a credential helper script that uses secret-tool
-            local git_credential_helper="$CONFIG_DIR/git-credential-flox-helper"
-
-            cat > "$git_credential_helper" << 'EOF'
-#!/bin/bash
-
-if [ "$1" = "get" ]; then
-    # Read the input to extract host and username
-    username=""
-    host=""
-    while IFS= read -r line; do
-        if [[ "$line" =~ ^username=(.*)$ ]]; then
-            username="${BASH_REMATCH[1]}"
-        fi
-        if [[ "$line" =~ ^host=(.*)$ ]]; then
-            host="${BASH_REMATCH[1]}"
-        fi
-        if [[ -z "$line" ]]; then
-            break
-        fi
-    done
-
-    # Get credentials from secret-tool
-    if [[ "$host" == "github.com" ]]; then
-        creds=$(secret-tool lookup service git-https host github.com 2>/dev/null)
-        if [[ -n "$creds" && "$creds" =~ ^([^:]+):(.+)$ ]]; then
-            stored_username="${BASH_REMATCH[1]}"
-            stored_password="${BASH_REMATCH[2]}"
-
-            # If git provided a username, verify it matches
-            if [[ -n "$username" && "$username" != "$stored_username" ]]; then
-                exit 0
-            fi
-
-            echo "username=$stored_username"
-            echo "password=$stored_password"
+    # First check: Did storage command succeed?
+    if [ $store_result -eq 0 ]; then
+        # Second check: Can we retrieve it?
+        if secret-tool lookup service git-https host github.com &>/dev/null; then
+            return 0  # Definite success
+        else
+            # Stored but can't retrieve - daemon issue
+            return 1  # Other error
         fi
     fi
-elif [ "$1" = "store" ]; then
-    # Read and discard input - already stored during setup
-    while IFS= read -r line; do
-        if [[ -z "$line" ]]; then
-            break
-        fi
-    done
-elif [ "$1" = "erase" ]; then
-    # Read and discard input - we don't auto-erase from keyring
-    while IFS= read -r line; do
-        if [[ -z "$line" ]]; then
-            break
-        fi
-    done
-fi
-EOF
 
-            chmod +x "$git_credential_helper"
-            git config --global credential.helper "$git_credential_helper"
+    # Storage command failed - check why
+    if echo "$error_msg" | grep -qi "locked"; then
+        return 2  # Locked keyring
+    else
+        return 1  # Other error
+    fi
+}
 
-            echo "Git credentials stored in keyring using secret-tool."
-            return 0
+# Detect desktop environment
+detect_desktop_environment() {
+    if command -v gnome-keyring-daemon &>/dev/null; then
+        echo "gnome"
+    else
+        echo "other"
+    fi
+}
+
+# Unlock keyring interactively with user password
+unlock_keyring_interactive() {
+    local max_attempts=5
+    local attempt=1
+
+    echo ""
+    gum style --foreground 212 "Unlocking GNOME Keyring"
+    echo ""
+
+    while [ $attempt -le $max_attempts ]; do
+        echo "Attempt $attempt of $max_attempts"
+        echo "(Enter 'exit' or 'quit' to cancel)"
+
+        local login_password
+        login_password=$(gum input --password --prompt "System login password: " --placeholder "The password you use to log into this computer")
+
+        if [[ -z "$login_password" ]] || [[ "$login_password" == "exit" ]] || [[ "$login_password" == "quit" ]]; then
+            echo "Cancelled."
+            unset login_password
+            return 1
+        fi
+
+        # Attempt unlock - capture and export the environment variables
+        local unlock_output=$(echo -n "$login_password" | gnome-keyring-daemon --replace --unlock 2>/dev/null)
+        unset login_password
+
+        # Export the keyring control variables
+        if [[ -n "$unlock_output" ]]; then
+            eval "export $unlock_output"
+        fi
+
+        # Wait and verify unlock succeeded
+        sleep 0.5
+        for i in {1..10}; do
+            # Test if we can communicate with the keyring
+            # When locked: secret-tool returns non-zero and prints error about locked collection
+            # When unlocked: secret-tool returns zero (even if entry doesn't exist)
+            secret-tool lookup service test-verify test test &>/dev/null
+            local verify_exit=$?
+
+            if [ $verify_exit -eq 0 ]; then
+                echo "✅ Keyring unlocked successfully!"
+                return 0
+            fi
+            sleep 0.5
+        done
+
+        if [ $attempt -lt $max_attempts ]; then
+            echo "❌ Incorrect password. Please try again."
+            echo ""
         else
-            # Use encrypted storage as fallback
-            local password_derive=$(derive_password)
+            echo "❌ Maximum attempts reached."
+        fi
 
-            # Create credentials file content (same format as secret-tool)
-            local credentials="$username:$password"
+        ((attempt++))
+    done
 
-            # Encrypt credentials
-            echo -n "$credentials" | openssl enc -aes-256-cbc -salt -pbkdf2 -pass pass:"$password_derive" -out "$GIT_CREDENTIALS_FILE"
-            
-            # Create a credential helper script
-            local git_credential_helper="$CONFIG_DIR/git-credential-flox-helper"
-            
-            cat > "$git_credential_helper" << 'EOF'
+    return 1
+}
+
+# Show locked keyring prompt and get user choice
+show_locked_keyring_prompt() {
+    local desktop="$1"
+
+    # Send all display output to stderr so only the choice goes to stdout
+    {
+        echo ""
+        gum style \
+            --border rounded \
+            --border-foreground 214 \
+            --padding "1 2" \
+            --margin "1 0" \
+            --width 80 \
+            "$(gum style --foreground 214 --bold '⚠️  System Keyring is Locked')
+
+Your system keyring (password storage) is currently locked.
+
+$(gum style --bold 'Why is this happening?')
+  • You logged in via SSH
+  • You'\''re using auto-login
+  • Keyring wasn'\''t unlocked at login
+
+$(gum style --bold 'Your options:')
+  1. $(gum style --foreground 212 'Unlock keyring') - More secure, integrates with system
+  2. $(gum style --foreground 212 'Encrypted file') - Stored locally, always works"
+
+        echo ""
+    } >&2
+
+    if [[ "$desktop" == "gnome" ]]; then
+        local choice=$(gum choose "Unlock keyring" "Use encrypted file")
+        local gum_exit=$?
+        if [ $gum_exit -ne 0 ] || [ -z "$choice" ]; then
+            # User cancelled - default to encrypted file
+            echo "Use encrypted file"
+        else
+            echo "$choice"
+        fi
+    else
+        # KDE or other - no unlock support
+        {
+            gum style --foreground 214 "Note: Automatic keyring unlock is only available for GNOME.
+KDE Wallet requires manual unlock through System Settings."
+            echo ""
+        } >&2
+        gum confirm "Use encrypted file storage?" --default=true && echo "Use encrypted file" || echo "cancel"
+    fi
+}
+
+# Use encrypted storage for Git credentials
+use_encrypted_git_storage() {
+    local username="$1"
+    local password="$2"
+    local password_derive=$(derive_password)
+
+    # Create credentials file content (same format as secret-tool)
+    local credentials="$username:$password"
+
+    # Encrypt credentials
+    echo -n "$credentials" | openssl enc -aes-256-cbc -salt -pbkdf2 -pass pass:"$password_derive" -out "$GIT_CREDENTIALS_FILE"
+
+    if [ $? -ne 0 ] || [ ! -f "$GIT_CREDENTIALS_FILE" ]; then
+        echo "❌ Failed to create encrypted credentials file"
+        return 1
+    fi
+
+    # Create a credential helper script
+    local git_credential_helper="$CONFIG_DIR/git-credential-flox-helper"
+
+    cat > "$git_credential_helper" << 'EOF'
 #!/bin/bash
 
 # this is the path to our encrypted token file
@@ -620,13 +701,13 @@ derive_password() {
     local user_info="$USER"
     local host_info=$(hostname)
     local machine_id=""
-    
+
     if [[ -f "/etc/machine-id" ]]; then
         machine_id=$(cat /etc/machine-id)
     elif [[ -f "/var/lib/dbus/machine-id" ]]; then
         machine_id=$(cat /var/lib/dbus/machine-id)
     fi
-    
+
     # combine and hash the information
     echo -n "${user_info}${host_info}${machine_id}flox-github-token" | openssl dgst -sha256 | awk '{print $2}'
 }
@@ -685,11 +766,234 @@ elif [ "$1" = "erase" ]; then
 fi
 EOF
 
-            chmod +x "$git_credential_helper"
-            git config --global credential.helper "$git_credential_helper"
+    if [ ! -f "$git_credential_helper" ]; then
+        echo "❌ Failed to create credential helper script"
+        return 1
+    fi
 
-            echo "Git credentials stored in encrypted file."
-            return 0
+    chmod +x "$git_credential_helper"
+    git config --global credential.helper "$git_credential_helper"
+
+    echo ""
+    gum style --foreground 212 "✅ Git credentials stored in encrypted file."
+    echo "Location: ~/.config/gh/flox/git_credentials.enc"
+    echo "This file is encrypted and only readable by you."
+    return 0
+}
+
+# Configure Git credentials
+configure_git_credentials() {
+    local os=$(detect_os)
+    local username="$1"
+    local password="$2"
+
+    # Check and configure git user.name and user.email if needed
+    check_and_configure_git_user_info
+
+    # Configure git credential helper based on OS
+    if [[ "$os" == "macos" ]]; then
+        # Use the macOS keychain helper
+        git config --global credential.helper osxkeychain
+
+        # Store credentials in the keychain using proper protocol
+        local temp_error=$(mktemp)
+        printf "protocol=https\nhost=github.com\nusername=%s\npassword=%s\n\n" "$username" "$password" | git credential approve 2>"$temp_error"
+        local approve_result=$?
+        rm -f "$temp_error"
+
+        if [ $approve_result -eq 0 ]; then
+            # Verify credentials were stored
+            local verify_output=$(printf "protocol=https\nhost=github.com\n\n" | git credential fill 2>/dev/null)
+            if echo "$verify_output" | grep -q "password="; then
+                echo "✅ Git credentials stored in macOS keychain."
+                return 0
+            fi
+        fi
+
+        # If macOS keychain failed, fall back to encrypted storage
+        echo "⚠️  macOS keychain storage failed, using encrypted file storage..."
+        use_encrypted_git_storage "$username" "$password"
+        return $?
+
+    elif [[ "$os" == "linux" ]]; then
+        # Check if secret-tool is available for keyring storage
+        if command -v secret-tool &> /dev/null; then
+            # Attempt to store in keyring and detect state
+            attempt_keyring_storage "$username" "$password"
+            local storage_result=$?
+
+            if [ $storage_result -eq 0 ]; then
+                # Success - create secret-tool helper script
+                local git_credential_helper="$CONFIG_DIR/git-credential-flox-helper"
+
+                cat > "$git_credential_helper" << 'EOF'
+#!/bin/bash
+
+if [ "$1" = "get" ]; then
+    # Read the input to extract host and username
+    username=""
+    host=""
+    while IFS= read -r line; do
+        if [[ "$line" =~ ^username=(.*)$ ]]; then
+            username="${BASH_REMATCH[1]}"
+        fi
+        if [[ "$line" =~ ^host=(.*)$ ]]; then
+            host="${BASH_REMATCH[1]}"
+        fi
+        if [[ -z "$line" ]]; then
+            break
+        fi
+    done
+
+    # Get credentials from secret-tool
+    if [[ "$host" == "github.com" ]]; then
+        creds=$(secret-tool lookup service git-https host github.com 2>/dev/null)
+        if [[ -n "$creds" && "$creds" =~ ^([^:]+):(.+)$ ]]; then
+            stored_username="${BASH_REMATCH[1]}"
+            stored_password="${BASH_REMATCH[2]}"
+
+            # If git provided a username, verify it matches
+            if [[ -n "$username" && "$username" != "$stored_username" ]]; then
+                exit 0
+            fi
+
+            echo "username=$stored_username"
+            echo "password=$stored_password"
+        fi
+    fi
+elif [ "$1" = "store" ]; then
+    # Read and discard input - already stored during setup
+    while IFS= read -r line; do
+        if [[ -z "$line" ]]; then
+            break
+        fi
+    done
+elif [ "$1" = "erase" ]; then
+    # Read and discard input - we don't auto-erase from keyring
+    while IFS= read -r line; do
+        if [[ -z "$line" ]]; then
+            break
+        fi
+    done
+fi
+EOF
+
+                chmod +x "$git_credential_helper"
+                git config --global credential.helper "$git_credential_helper"
+
+                echo "✅ Git credentials stored in keyring using secret-tool."
+                return 0
+
+            elif [ $storage_result -eq 2 ]; then
+                # Locked keyring detected
+                local desktop=$(detect_desktop_environment)
+                local user_choice=$(show_locked_keyring_prompt "$desktop")
+
+                if [[ "$user_choice" == "Unlock keyring" ]]; then
+                    # User wants to try unlocking
+                    unlock_keyring_interactive
+                    local unlock_result=$?
+
+                    if [ $unlock_result -eq 0 ]; then
+                        # Unlock successful - retry storage
+                        attempt_keyring_storage "$username" "$password"
+                        if [ $? -eq 0 ]; then
+                            # Create secret-tool helper script (same as above)
+                            local git_credential_helper="$CONFIG_DIR/git-credential-flox-helper"
+
+                            cat > "$git_credential_helper" << 'EOF'
+#!/bin/bash
+
+if [ "$1" = "get" ]; then
+    # Read the input to extract host and username
+    username=""
+    host=""
+    while IFS= read -r line; do
+        if [[ "$line" =~ ^username=(.*)$ ]]; then
+            username="${BASH_REMATCH[1]}"
+        fi
+        if [[ "$line" =~ ^host=(.*)$ ]]; then
+            host="${BASH_REMATCH[1]}"
+        fi
+        if [[ -z "$line" ]]; then
+            break
+        fi
+    done
+
+    # Get credentials from secret-tool
+    if [[ "$host" == "github.com" ]]; then
+        creds=$(secret-tool lookup service git-https host github.com 2>/dev/null)
+        if [[ -n "$creds" && "$creds" =~ ^([^:]+):(.+)$ ]]; then
+            stored_username="${BASH_REMATCH[1]}"
+            stored_password="${BASH_REMATCH[2]}"
+
+            # If git provided a username, verify it matches
+            if [[ -n "$username" && "$username" != "$stored_username" ]]; then
+                exit 0
+            fi
+
+            echo "username=$stored_username"
+            echo "password=$stored_password"
+        fi
+    fi
+elif [ "$1" = "store" ]; then
+    # Read and discard input - already stored during setup
+    while IFS= read -r line; do
+        if [[ -z "$line" ]]; then
+            break
+        fi
+    done
+elif [ "$1" = "erase" ]; then
+    # Read and discard input - we don't auto-erase from keyring
+    while IFS= read -r line; do
+        if [[ -z "$line" ]]; then
+            break
+        fi
+    done
+fi
+EOF
+
+                            chmod +x "$git_credential_helper"
+                            git config --global credential.helper "$git_credential_helper"
+
+                            echo "✅ Git credentials stored in keyring using secret-tool."
+                            return 0
+                        else
+                            echo "⚠️  Keyring storage still failed, using encrypted file..."
+                            use_encrypted_git_storage "$username" "$password"
+                            return $?
+                        fi
+                    else
+                        # Unlock failed or was cancelled - offer encrypted storage
+                        echo ""
+                        echo "⚠️  Keyring unlock was cancelled or failed."
+                        if gum confirm "Use encrypted file storage instead?" --default=true; then
+                            use_encrypted_git_storage "$username" "$password"
+                            return $?
+                        else
+                            echo "❌ Git credential setup cancelled"
+                            return 1
+                        fi
+                    fi
+                elif [[ "$user_choice" == "Use encrypted file" ]]; then
+                    # User chose encrypted storage
+                    use_encrypted_git_storage "$username" "$password"
+                    return $?
+                else
+                    # User cancelled
+                    echo "❌ Git credential setup cancelled"
+                    return 1
+                fi
+            else
+                # Other error - fall back to encrypted storage
+                echo "⚠️  Keyring storage failed, using encrypted file..."
+                use_encrypted_git_storage "$username" "$password"
+                return $?
+            fi
+        else
+            # No secret-tool - use encrypted storage
+            use_encrypted_git_storage "$username" "$password"
+            return $?
         fi
     else
         echo "Error: Unsupported operating system for Git credential setup."
@@ -1213,4 +1517,3 @@ function readme
   bat --language markdown "$FLOX_ENV_PROJECT/README.md" 2>/dev/null
 end
 '''
-
