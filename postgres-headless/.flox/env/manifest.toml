@@ -1,0 +1,326 @@
+version = 1
+
+[install]
+postgresql.pkg-path = "postgresql_16"
+postgis.pkg-path = "postgresql16Packages.postgis"
+
+[vars]
+# Base configuration paths (invariant)
+POSTGRES_CONFIG_DIR = "$FLOX_ENV_CACHE/postgres-config"
+POSTGRES_LOG_DIR = "$FLOX_ENV_CACHE/postgres-logs"
+POSTGRES_DATA_DIR = "$FLOX_ENV_CACHE/postgres-data"
+POSTGRES_RUN_DIR = "$FLOX_ENV_CACHE/postgres-run"
+
+[hook]
+on-activate = '''
+# Create required directories
+mkdir -p "$FLOX_ENV_CACHE/postgres-config"
+mkdir -p "$FLOX_ENV_CACHE/postgres-logs"
+mkdir -p "$FLOX_ENV_CACHE/postgres-data"
+mkdir -p "$FLOX_ENV_CACHE/postgres-run"
+
+# === INIT-TIME VARIABLES ===
+# These affect initdb and cannot change without deleting PGDATA
+export PGUSER="${PGUSER:-pguser}"
+export PGPASSWORD="${PGPASSWORD:-pgpass}"
+export POSTGRES_HOST_AUTH_METHOD="${POSTGRES_HOST_AUTH_METHOD:-md5}"
+export POSTGRES_ENCODING="${POSTGRES_ENCODING:-UTF8}"
+export POSTGRES_LOCALE="${POSTGRES_LOCALE:-C}"
+export POSTGRES_DATA_CHECKSUMS="${POSTGRES_DATA_CHECKSUMS:-}"
+export POSTGRES_INITDB_ARGS="${POSTGRES_INITDB_ARGS:-}"
+
+# === RUNTIME VARIABLES - Connection ===
+# These can be changed by restarting the service
+export PGHOSTADDR="${PGHOSTADDR:-127.0.0.1}"
+export PGPORT="${PGPORT:-15432}"
+export PGHOST="${PGHOST:-}"
+export PGDATABASE="${PGDATABASE:-postgres}"
+
+# === RUNTIME VARIABLES - Performance ===
+export POSTGRES_MAX_CONNECTIONS="${POSTGRES_MAX_CONNECTIONS:-100}"
+export POSTGRES_SHARED_BUFFERS="${POSTGRES_SHARED_BUFFERS:-128MB}"
+export POSTGRES_WORK_MEM="${POSTGRES_WORK_MEM:-4MB}"
+export POSTGRES_EFFECTIVE_CACHE_SIZE="${POSTGRES_EFFECTIVE_CACHE_SIZE:-4GB}"
+export POSTGRES_FSYNC="${POSTGRES_FSYNC:-on}"
+export POSTGRES_SYNCHRONOUS_COMMIT="${POSTGRES_SYNCHRONOUS_COMMIT:-on}"
+export POSTGRES_FULL_PAGE_WRITES="${POSTGRES_FULL_PAGE_WRITES:-on}"
+
+# === RUNTIME VARIABLES - WAL ===
+export POSTGRES_MAX_WAL_SIZE="${POSTGRES_MAX_WAL_SIZE:-1GB}"
+export POSTGRES_MIN_WAL_SIZE="${POSTGRES_MIN_WAL_SIZE:-80MB}"
+export POSTGRES_CHECKPOINT_TIMEOUT="${POSTGRES_CHECKPOINT_TIMEOUT:-5min}"
+
+# === RUNTIME VARIABLES - Logging ===
+export POSTGRES_LOG_STATEMENT="${POSTGRES_LOG_STATEMENT:-none}"
+export POSTGRES_LOG_DURATION="${POSTGRES_LOG_DURATION:-off}"
+export POSTGRES_LOG_MIN_DURATION="${POSTGRES_LOG_MIN_DURATION:-}"
+export POSTGRES_LOG_CONNECTIONS="${POSTGRES_LOG_CONNECTIONS:-off}"
+export POSTGRES_LOG_DISCONNECTIONS="${POSTGRES_LOG_DISCONNECTIONS:-off}"
+
+# === FLEXIBILITY ===
+export POSTGRES_EXTRA_OPTS="${POSTGRES_EXTRA_OPTS:-}"
+
+# === DERIVED VARIABLES ===
+export POSTGRES_DIR="${POSTGRES_DIR:-$FLOX_ENV_CACHE/postgres-data}"
+export PGDATA="$POSTGRES_DIR/data"
+export PGHOST_SOCKET="$POSTGRES_DIR/run"
+
+# PGHOST logic: If empty or unset, use Unix socket
+if [ -z "$PGHOST" ]; then
+    export PGHOST="$PGHOST_SOCKET"
+    export DATABASE_URL="postgresql:///$PGDATABASE?host=$PGHOST&port=$PGPORT"
+else
+    # User specified host for TCP
+    export DATABASE_URL="postgresql://$PGUSER:$PGPASSWORD@$PGHOST:$PGPORT/$PGDATABASE"
+fi
+
+# === INITIALIZATION FUNCTION ===
+initialize_postgres() {
+    # Check if already initialized
+    if [ -f "$PGDATA/PG_VERSION" ]; then
+        return 0
+    fi
+
+    # Create directories with proper permissions
+    mkdir -p "$PGDATA" "$PGHOST_SOCKET"
+    chmod 700 "$PGDATA" "$PGHOST_SOCKET"
+
+    # Initialize PostgreSQL with direct execution
+    echo "Initializing PostgreSQL database..."
+    initdb "$PGDATA" \
+        --username="$PGUSER" \
+        --pwfile=<(echo "$PGPASSWORD") \
+        --encoding="$POSTGRES_ENCODING" \
+        --locale="$POSTGRES_LOCALE" \
+        --auth="$POSTGRES_HOST_AUTH_METHOD" \
+        $([ -n "$POSTGRES_DATA_CHECKSUMS" ] && echo "--data-checksums") \
+        $POSTGRES_INITDB_ARGS \
+        > /dev/null 2>&1
+
+    if [ $? -ne 0 ]; then
+        echo "❌ Failed to initialize PostgreSQL"
+        return 1
+    fi
+
+    # Create database if not "postgres"
+    if [ "$PGDATABASE" != "postgres" ]; then
+        echo "Creating database '$PGDATABASE'..."
+
+        # Start postgres temporarily
+        postgres -D "$PGDATA" \
+            -c listen_addresses='' \
+            -c unix_socket_directories="$PGHOST_SOCKET" \
+            -p "$PGPORT" \
+            > /dev/null 2>&1 &
+        PG_PID=$!
+
+        sleep 3  # Wait for startup
+
+        # Create database
+        createdb "$PGDATABASE" > /dev/null 2>&1 || true
+
+        # Stop postgres
+        pg_ctl stop -D "$PGDATA" -m fast -w > /dev/null 2>&1
+    fi
+
+    echo "✅ PostgreSQL initialized successfully"
+    return 0
+}
+
+# Run initialization
+initialize_postgres
+
+# Display info with safety warnings
+echo ""
+echo "✅ PostgreSQL environment ready (headless mode)"
+echo ""
+
+# Safety warnings
+if [ "$POSTGRES_FSYNC" = "off" ]; then
+    echo "⚠️  WARNING: fsync disabled - DATA LOSS RISK if crash occurs"
+fi
+if [ "$POSTGRES_HOST_AUTH_METHOD" = "trust" ]; then
+    echo "⚠️  WARNING: Authentication disabled - NO PASSWORD REQUIRED"
+fi
+if [ "$PGHOSTADDR" = "0.0.0.0" ]; then
+    echo "⚠️  WARNING: Listening on all interfaces - NETWORK EXPOSED"
+fi
+[ "$POSTGRES_FSYNC" = "off" ] || [ "$POSTGRES_HOST_AUTH_METHOD" = "trust" ] || [ "$PGHOSTADDR" = "0.0.0.0" ] && echo ""
+
+echo "Connection:"
+echo "  Listen address: ${PGHOSTADDR}:${PGPORT}"
+echo "  Client connects to: ${PGHOST}"
+echo "  Database: ${PGDATABASE}"
+echo "  User: ${PGUSER}"
+echo ""
+echo "Performance:"
+echo "  Max connections: ${POSTGRES_MAX_CONNECTIONS}"
+echo "  Shared buffers: ${POSTGRES_SHARED_BUFFERS}"
+echo "  fsync: ${POSTGRES_FSYNC}"
+echo ""
+echo "Commands:"
+echo "  flox activate -s        Start PostgreSQL"
+echo "  psql                    Connect to database"
+echo "  postgres-info           Show configuration"
+echo ""
+'''
+
+[services]
+postgres.command = '''
+# Ensure socket directory exists
+mkdir -p "$PGHOST_SOCKET"
+chmod 700 "$PGHOST_SOCKET"
+
+# Start PostgreSQL with all runtime configuration
+exec postgres -D "$PGDATA" \
+  -c listen_addresses="$PGHOSTADDR" \
+  -p "$PGPORT" \
+  -c unix_socket_directories="$PGHOST_SOCKET" \
+  -c unix_socket_permissions=0700 \
+  ${POSTGRES_MAX_CONNECTIONS:+-c max_connections="$POSTGRES_MAX_CONNECTIONS"} \
+  ${POSTGRES_SHARED_BUFFERS:+-c shared_buffers="$POSTGRES_SHARED_BUFFERS"} \
+  ${POSTGRES_WORK_MEM:+-c work_mem="$POSTGRES_WORK_MEM"} \
+  ${POSTGRES_EFFECTIVE_CACHE_SIZE:+-c effective_cache_size="$POSTGRES_EFFECTIVE_CACHE_SIZE"} \
+  $([ "$POSTGRES_FSYNC" = "off" ] && echo "-c fsync=off") \
+  ${POSTGRES_SYNCHRONOUS_COMMIT:+-c synchronous_commit="$POSTGRES_SYNCHRONOUS_COMMIT"} \
+  ${POSTGRES_FULL_PAGE_WRITES:+-c full_page_writes="$POSTGRES_FULL_PAGE_WRITES"} \
+  ${POSTGRES_MAX_WAL_SIZE:+-c max_wal_size="$POSTGRES_MAX_WAL_SIZE"} \
+  ${POSTGRES_MIN_WAL_SIZE:+-c min_wal_size="$POSTGRES_MIN_WAL_SIZE"} \
+  ${POSTGRES_CHECKPOINT_TIMEOUT:+-c checkpoint_timeout="$POSTGRES_CHECKPOINT_TIMEOUT"} \
+  ${POSTGRES_LOG_STATEMENT:+-c log_statement="$POSTGRES_LOG_STATEMENT"} \
+  ${POSTGRES_LOG_DURATION:+-c log_duration="$POSTGRES_LOG_DURATION"} \
+  ${POSTGRES_LOG_MIN_DURATION:+-c log_min_duration_statement="$POSTGRES_LOG_MIN_DURATION"} \
+  ${POSTGRES_LOG_CONNECTIONS:+-c log_connections="$POSTGRES_LOG_CONNECTIONS"} \
+  ${POSTGRES_LOG_DISCONNECTIONS:+-c log_disconnections="$POSTGRES_LOG_DISCONNECTIONS"} \
+  $POSTGRES_EXTRA_OPTS
+'''
+
+[profile]
+bash = '''
+postgres-info() {
+    echo "PostgreSQL (Headless Mode) - Configuration"
+    echo ""
+    echo "Connection:"
+    echo "  Listen address: ${PGHOSTADDR}:${PGPORT}"
+    echo "  Client connects to: ${PGHOST}"
+    echo "  Database: ${PGDATABASE}"
+    echo "  User: ${PGUSER}"
+    echo "  Auth method: ${POSTGRES_HOST_AUTH_METHOD}"
+    echo ""
+    echo "Performance:"
+    echo "  Max connections: ${POSTGRES_MAX_CONNECTIONS}"
+    echo "  Shared buffers: ${POSTGRES_SHARED_BUFFERS}"
+    echo "  Work mem: ${POSTGRES_WORK_MEM}"
+    echo "  Effective cache size: ${POSTGRES_EFFECTIVE_CACHE_SIZE}"
+    echo "  fsync: ${POSTGRES_FSYNC}"
+    echo "  Synchronous commit: ${POSTGRES_SYNCHRONOUS_COMMIT}"
+    echo ""
+    echo "WAL:"
+    echo "  Max WAL size: ${POSTGRES_MAX_WAL_SIZE}"
+    echo "  Min WAL size: ${POSTGRES_MIN_WAL_SIZE}"
+    echo "  Checkpoint timeout: ${POSTGRES_CHECKPOINT_TIMEOUT}"
+    echo ""
+    echo "Logging:"
+    echo "  Statement logging: ${POSTGRES_LOG_STATEMENT}"
+    echo "  Duration logging: ${POSTGRES_LOG_DURATION}"
+    echo "  Connection logging: ${POSTGRES_LOG_CONNECTIONS}"
+    echo ""
+    echo "Data Directory: ${PGDATA}"
+    echo ""
+    echo "Commands:"
+    echo "  psql                        Connect to database"
+    echo "  flox activate -s            Start PostgreSQL service"
+    echo "  flox services status        Check service status"
+    echo "  flox services logs postgres View service logs"
+    echo "  flox services restart postgres Restart with new settings"
+}
+export -f postgres-info
+'''
+
+zsh = '''
+postgres-info() {
+    echo "PostgreSQL (Headless Mode) - Configuration"
+    echo ""
+    echo "Connection:"
+    echo "  Listen address: ${PGHOSTADDR}:${PGPORT}"
+    echo "  Client connects to: ${PGHOST}"
+    echo "  Database: ${PGDATABASE}"
+    echo "  User: ${PGUSER}"
+    echo "  Auth method: ${POSTGRES_HOST_AUTH_METHOD}"
+    echo ""
+    echo "Performance:"
+    echo "  Max connections: ${POSTGRES_MAX_CONNECTIONS}"
+    echo "  Shared buffers: ${POSTGRES_SHARED_BUFFERS}"
+    echo "  Work mem: ${POSTGRES_WORK_MEM}"
+    echo "  Effective cache size: ${POSTGRES_EFFECTIVE_CACHE_SIZE}"
+    echo "  fsync: ${POSTGRES_FSYNC}"
+    echo "  Synchronous commit: ${POSTGRES_SYNCHRONOUS_COMMIT}"
+    echo ""
+    echo "WAL:"
+    echo "  Max WAL size: ${POSTGRES_MAX_WAL_SIZE}"
+    echo "  Min WAL size: ${POSTGRES_MIN_WAL_SIZE}"
+    echo "  Checkpoint timeout: ${POSTGRES_CHECKPOINT_TIMEOUT}"
+    echo ""
+    echo "Logging:"
+    echo "  Statement logging: ${POSTGRES_LOG_STATEMENT}"
+    echo "  Duration logging: ${POSTGRES_LOG_DURATION}"
+    echo "  Connection logging: ${POSTGRES_LOG_CONNECTIONS}"
+    echo ""
+    echo "Data Directory: ${PGDATA}"
+    echo ""
+    echo "Commands:"
+    echo "  psql                        Connect to database"
+    echo "  flox activate -s            Start PostgreSQL service"
+    echo "  flox services status        Check service status"
+    echo "  flox services logs postgres View service logs"
+    echo "  flox services restart postgres Restart with new settings"
+}
+'''
+
+fish = '''
+function postgres-info
+    echo "PostgreSQL (Headless Mode) - Configuration"
+    echo ""
+    echo "Connection:"
+    echo "  Listen address: $PGHOSTADDR:$PGPORT"
+    echo "  Client connects to: $PGHOST"
+    echo "  Database: $PGDATABASE"
+    echo "  User: $PGUSER"
+    echo "  Auth method: $POSTGRES_HOST_AUTH_METHOD"
+    echo ""
+    echo "Performance:"
+    echo "  Max connections: $POSTGRES_MAX_CONNECTIONS"
+    echo "  Shared buffers: $POSTGRES_SHARED_BUFFERS"
+    echo "  Work mem: $POSTGRES_WORK_MEM"
+    echo "  Effective cache size: $POSTGRES_EFFECTIVE_CACHE_SIZE"
+    echo "  fsync: $POSTGRES_FSYNC"
+    echo "  Synchronous commit: $POSTGRES_SYNCHRONOUS_COMMIT"
+    echo ""
+    echo "WAL:"
+    echo "  Max WAL size: $POSTGRES_MAX_WAL_SIZE"
+    echo "  Min WAL size: $POSTGRES_MIN_WAL_SIZE"
+    echo "  Checkpoint timeout: $POSTGRES_CHECKPOINT_TIMEOUT"
+    echo ""
+    echo "Logging:"
+    echo "  Statement logging: $POSTGRES_LOG_STATEMENT"
+    echo "  Duration logging: $POSTGRES_LOG_DURATION"
+    echo "  Connection logging: $POSTGRES_LOG_CONNECTIONS"
+    echo ""
+    echo "Data Directory: $PGDATA"
+    echo ""
+    echo "Commands:"
+    echo "  psql                        Connect to database"
+    echo "  flox activate -s            Start PostgreSQL service"
+    echo "  flox services status        Check service status"
+    echo "  flox services logs postgres View service logs"
+    echo "  flox services restart postgres Restart with new settings"
+end
+'''
+
+[options]
+systems = [
+  "aarch64-darwin",
+  "aarch64-linux",
+  "x86_64-darwin",
+  "x86_64-linux",
+]
