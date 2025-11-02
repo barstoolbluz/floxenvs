@@ -3,9 +3,6 @@
   "manifest": {
     "version": 1,
     "install": {
-      "figlet": {
-        "pkg-path": "toilet"
-      },
       "gum": {
         "pkg-path": "gum"
       },
@@ -53,12 +50,12 @@
       "JUPYTER_SERVER_TOKEN": "floxfan123456"
     },
     "hook": {
-      "on-activate": "# Define default values\nDEFAULT_JUPYTER_HOST=\"0.0.0.0\"\nDEFAULT_JUPYTER_PORT=\"8888\"\nDEFAULT_JUPYTER_TOKEN=\"${JUPYTER_SERVER_TOKEN:-floxfan123456}\"\nDEFAULT_NOTEBOOK_DIR=\"$(pwd)\"\nDEFAULT_JUPYTER_THEME=\"JupyterLab Light\"\nDEFAULT_INSTALL_REQUIREMENTS=\"true\"\nDEFAULT_AUTO_START=\"false\"\n\n# Configuration file path\nCONFIG_FILE=\"$FLOX_ENV_CACHE/jupyter_config.sh\"\n\n# Load saved configuration if exists\nload_config() {\n  if [[ -f \"$CONFIG_FILE\" ]]; then\n    source \"$CONFIG_FILE\"\n  else\n    # Set defaults if no config file exists\n    JUPYTER_HOST=\"$DEFAULT_JUPYTER_HOST\"\n    JUPYTER_PORT=\"$DEFAULT_JUPYTER_PORT\"\n    JUPYTER_TOKEN=\"$DEFAULT_JUPYTER_TOKEN\"\n    NOTEBOOK_DIR=\"$DEFAULT_NOTEBOOK_DIR\"\n    JUPYTER_THEME=\"$DEFAULT_JUPYTER_THEME\"\n    INSTALL_REQUIREMENTS=\"$DEFAULT_INSTALL_REQUIREMENTS\"\n    AUTO_START=\"$DEFAULT_AUTO_START\"\n  fi\n}\n\n# Save configuration to file\nsave_config() {\n  mkdir -p \"$(dirname \"$CONFIG_FILE\")\"\n  cat > \"$CONFIG_FILE\" << EOF\n# JupyterLab configuration\n# Generated on $(date)\nJUPYTER_HOST=\"$JUPYTER_HOST\"\nJUPYTER_PORT=\"$JUPYTER_PORT\"\nJUPYTER_TOKEN=\"$JUPYTER_TOKEN\"\nNOTEBOOK_DIR=\"$NOTEBOOK_DIR\"\nJUPYTER_THEME=\"$JUPYTER_THEME\"\nINSTALL_REQUIREMENTS=\"$INSTALL_REQUIREMENTS\"\nAUTO_START=\"$AUTO_START\"\nEOF\n}\n\n# Function to prompt for configuration\nprompt_for_config() {\n  echo \"\"\n  if gum confirm \"$(gum style --foreground 240 'Would you like to customize your JupyterLab configuration?')\" --default=false; then\n    \n    # Host address configuration\n    echo \"$(gum style --foreground 212 'Network Configuration')\"\n    echo \"$(gum style --foreground 240 '0.0.0.0 - Allow connections from any IP address')\"\n    echo \"$(gum style --foreground 240 '127.0.0.1 - Allow connections only from this computer')\"\n    JUPYTER_HOST=$(gum input --placeholder \"$DEFAULT_JUPYTER_HOST\" --value \"$JUPYTER_HOST\" --prompt \"Host Address: \")\n    JUPYTER_PORT=$(gum input --placeholder \"$DEFAULT_JUPYTER_PORT\" --value \"$JUPYTER_PORT\" --prompt \"Port: \")\n    \n    # Authentication\n    echo \"$(gum style --foreground 212 'Authentication')\"\n    JUPYTER_TOKEN=$(gum input --placeholder \"$DEFAULT_JUPYTER_TOKEN\" --value \"$JUPYTER_TOKEN\" --prompt \"Access Token: \")\n    \n    # Notebook directory\n    echo \"$(gum style --foreground 212 'Notebook Settings')\"\n    NOTEBOOK_DIR=$(gum input --placeholder \"$DEFAULT_NOTEBOOK_DIR\" --value \"$NOTEBOOK_DIR\" --prompt \"Notebook Directory: \")\n    \n    # Theme selection\n    JUPYTER_THEME=$(gum choose \"JupyterLab Light\" \"JupyterLab Dark\" --selected=\"$JUPYTER_THEME\")\n    \n    # Installation options\n    echo \"$(gum style --foreground 212 'Package Management')\"\n    if gum confirm \"Automatically install packages from requirements.txt?\" --default=${INSTALL_REQUIREMENTS}; then\n      INSTALL_REQUIREMENTS=\"true\"\n    else\n      INSTALL_REQUIREMENTS=\"false\"\n    fi\n    \n    # Auto-start option\n    if gum confirm \"Automatically start JupyterLab when environment activates?\" --default=${AUTO_START}; then\n      AUTO_START=\"true\"\n    else\n      AUTO_START=\"false\"\n    fi\n  fi\n  \n  # Save the configuration\n  save_config\n}\n\n# Function to activate Flox Python environment\nactivate_venv() {\n  # Use the environment variable or default to the Flox env cache\n  export PYTHON_ENV=\"${PYTHON_ENV:-$FLOX_ENV_CACHE/python}\" \n\n  if [[ -d $PYTHON_ENV ]]; then\n    echo; echo -n \"⚡️ Activating existing venv in $PYTHON_ENV...\"\n    . $PYTHON_ENV/bin/activate\n    echo \"done.\"\n  else\n    # Create virtual environment if it doesn't exist\n    python -m venv $PYTHON_ENV\n    . $PYTHON_ENV/bin/activate\n  fi\n\n  # If we see a requirements.txt file and install_requirements is true, install its contents\n  if [[ -f requirements.txt ]] && [[ \"$INSTALL_REQUIREMENTS\" == \"true\" ]]; then\n    gum spin --spinner dot --title \"Updating packages in $PYTHON_ENV\" -- pip install -r \"./requirements.txt\" --quiet\n  fi\n}\n\n# Function to display Jupyter Lab information\nshow_jupyter_help() {\n    # Create access URL based on host configuration\n    if [[ \"$JUPYTER_HOST\" == \"0.0.0.0\" ]]; then\n      ACCESS_URL=\"http://localhost:$JUPYTER_PORT\"\n      NETWORK_NOTE=\"(accessible from other devices on your network)\"\n    else\n      ACCESS_URL=\"http://$JUPYTER_HOST:$JUPYTER_PORT\"\n      NETWORK_NOTE=\"(accessible only from this computer)\"\n    fi\n    \n    # Create the help message with Gum styling\n    gum style \\\n        --border rounded \\\n        --border-foreground 240 \\\n        --padding \"1 2\" \\\n        --margin \"1 0\" \\\n        --width 84 \\\n        \"$(gum style --foreground 141 --bold 'This is a  F l o x  JupyterLab environment')\n\n👉  Access JupyterLab:\n    URL: $(gum style --foreground 212 \"$ACCESS_URL\") $NETWORK_NOTE\n    Token: $(gum style --foreground 212 \"${JUPYTER_TOKEN}\")\n    Theme: $(gum style --foreground 212 \"${JUPYTER_THEME}\")\n\n👉  Environment Commands:\n    $(gum style --foreground 212 'jupyter-lab')         Start JupyterLab\n    $(gum style --foreground 212 'jupyter-lab list')    List running Jupyter servers\n    $(gum style --foreground 212 'pip install')         Install Python packages\n\n👉  Notebook Directory:\n    $(gum style --foreground 212 \"${NOTEBOOK_DIR}\")\n\n👉  Quick Tips:\n    - Start services with: $(gum style --foreground 212 'flox activate --start-services')\n    - Add packages to 'requirements.txt' for automatic installation\"\n\n    echo \"\"\n}\n\n# Main execution flow\nload_config  # Load existing config or set defaults\nprompt_for_config  # Run the configuration wizard\nactivate_venv  # Activate or create Python environment\nshow_jupyter_help  # Show information\n\n# Auto-start JupyterLab if configured\nif [[ \"$AUTO_START\" == \"true\" ]]; then\n  jupyter-lab --no-browser --IdentityProvider.token=\"${JUPYTER_TOKEN}\" --ip=\"${JUPYTER_HOST}\" --port=\"${JUPYTER_PORT}\" --notebook-dir=\"${NOTEBOOK_DIR}\" &\n  echo \"JupyterLab started in background. Use 'jupyter-lab list' to see running servers.\"\nfi\n"
+      "on-activate": "# define defaults\nDEFAULT_JUPYTER_HOST=\"0.0.0.0\"\nDEFAULT_JUPYTER_PORT=\"8888\"\nDEFAULT_JUPYTER_TOKEN=\"${JUPYTER_SERVER_TOKEN:-floxfan123456}\"\nDEFAULT_NOTEBOOK_DIR=\"$(pwd)\"\nDEFAULT_INSTALL_REQUIREMENTS=\"true\"\n\n# export config file path\nCONFIG_FILE=\"$FLOX_ENV_CACHE/jupyter_config.sh\"\n\n# load saved config if exists\nload_config() {\n  if [[ -f \"$CONFIG_FILE\" ]]; then\n    source \"$CONFIG_FILE\"\n  else\n    # set defaults if no config\n    export JUPYTER_HOST=\"$DEFAULT_JUPYTER_HOST\"\n    export JUPYTER_PORT=\"$DEFAULT_JUPYTER_PORT\"\n    export JUPYTER_SERVER_TOKEN=\"$DEFAULT_JUPYTER_TOKEN\"\n    export NOTEBOOK_DIR=\"$DEFAULT_NOTEBOOK_DIR\"\n    export INSTALL_REQUIREMENTS=\"$DEFAULT_INSTALL_REQUIREMENTS\"\n  fi\n}\n\n# save config to file\nsave_config() {\n  mkdir -p \"$(dirname \"$CONFIG_FILE\")\"\n  cat > \"$CONFIG_FILE\" << EOF\n# jupyterlab config - Generated on $(date)\nexport JUPYTER_HOST=\"$JUPYTER_HOST\"\nexport JUPYTER_PORT=\"$JUPYTER_PORT\"\nexport JUPYTER_SERVER_TOKEN=\"$JUPYTER_SERVER_TOKEN\"\nexport NOTEBOOK_DIR=\"$NOTEBOOK_DIR\"\nexport VENV_DIR=\"$VENV_DIR\"\nexport INSTALL_REQUIREMENTS=\"$INSTALL_REQUIREMENTS\"\n\n## HOOK FUNCTIONS ##\n$(declare -f jupyter_reconfigure)\n$(declare -f jupyter_help)\nEOF\n}\n\n# prompt for config\nprompt_for_config() {\n  echo \"\"\n  if gum confirm \"$(gum style --foreground 240 'Would you like to customize your JupyterLab configuration?')\" --default=false; then\n    \n    # host address config\n    echo \"$(gum style --foreground 212 'Network Configuration')\"\n    echo \"$(gum style --foreground 240 '0.0.0.0 - Allow connections from any IP address')\"\n    echo \"$(gum style --foreground 240 '127.0.0.1 - Allow connections only from this computer')\"\n    JUPYTER_HOST=$(gum input --placeholder \"$DEFAULT_JUPYTER_HOST\" --value \"$JUPYTER_HOST\" --prompt \"Host Address: \")\n    JUPYTER_PORT=$(gum input --placeholder \"$DEFAULT_JUPYTER_PORT\" --value \"$JUPYTER_PORT\" --prompt \"Port: \")\n    \n    # auth\n    echo \"$(gum style --foreground 212 'Authentication')\"\n    JUPYTER_SERVER_TOKEN=$(gum input --placeholder \"$DEFAULT_JUPYTER_TOKEN\" --value \"$JUPYTER_SERVER_TOKEN\" --prompt \"Access Token: \")\n    \n    # notebook dir\n    echo \"$(gum style --foreground 212 'Notebook Settings')\"\n    NOTEBOOK_DIR=$(gum input --placeholder \"$DEFAULT_NOTEBOOK_DIR\" --value \"$NOTEBOOK_DIR\" --prompt \"Notebook Directory: \")\n\n    # install from requirements.txt yes/no?\n    echo \"$(gum style --foreground 212 'Package Management')\"\n    if gum confirm \"Automatically install packages from requirements.txt?\" --default=${INSTALL_REQUIREMENTS}; then\n      INSTALL_REQUIREMENTS=\"true\"\n    else\n      INSTALL_REQUIREMENTS=\"false\"\n    fi\n  fi\n\n  # save the config\n  save_config\n\n  # export vars for jupyterlab service\n  export JUPYTER_HOST\n  export JUPYTER_PORT\n  export JUPYTER_SERVER_TOKEN\n  export NOTEBOOK_DIR\n  export INSTALL_REQUIREMENTS\n}\n\n# activate python venv\nactivate_venv() {\n  # use an env var or default to $FLOX_ENV_CACHE\n  export VENV_DIR=\"${VENV_DIR:-$FLOX_ENV_CACHE/venv}\" \n\n  if [[ -d \"$VENV_DIR\" ]]; then\n    echo; echo -n \"⚡️ Activating existing venv in $VENV_DIR...\"\n    if [[ -f \"$VENV_DIR/bin/activate\" ]]; then\n      source \"$VENV_DIR/bin/activate\"\n      echo \"done.\"\n    fi\n  else\n    # create venv if not exist\n    python3.12 -m venv \"$VENV_DIR\"\n    if [[ -f \"$VENV_DIR/bin/activate\" ]]; then\n      source \"$VENV_DIR/bin/activate\"\n    fi\n  fi\n\n  # if exists requirements.txt and install_requirements = true then install from requirements.txt\n  if [[ -f requirements.txt ]] && [[ \"$INSTALL_REQUIREMENTS\" == \"true\" ]]; then\n    gum spin --spinner dot --title \"Updating packages in $VENV_DIR\" -- pip install -r \"./requirements.txt\" --quiet\n  fi\n}\n\n# display informational message\nshow_jupyter_help() {\n    # dynamically generate access url based on host config\n    local ACCESS_URL\n    local NETWORK_NOTE\n\n    if [[ \"$JUPYTER_HOST\" == \"0.0.0.0\" ]]; then\n      ACCESS_URL=\"http://localhost:$JUPYTER_PORT\"\n      NETWORK_NOTE=\"(accessible from other devices on your network)\"\n    else\n      ACCESS_URL=\"http://$JUPYTER_HOST:$JUPYTER_PORT\"\n      NETWORK_NOTE=\"(accessible only from this computer)\"\n    fi\n\n    gum style \\\n        --border rounded \\\n        --border-foreground 240 \\\n        --padding \"1 2\" \\\n        --margin \"1 0\" \\\n        --width 96 \\\n        \"$(gum style --foreground 141 --bold 'This is a  F l o x  JupyterLab Environment')\n\n👉  Access JupyterLab:\n    URL:   $(gum style --foreground 212 \"$ACCESS_URL\")\n           $NETWORK_NOTE\n    Token: $(gum style --foreground 212 \"${JUPYTER_SERVER_TOKEN}\")\n\n👉  Service Management:\n    $(gum style --foreground 212 'flox activate -s')      Start JupyterLab service\n    $(gum style --foreground 212 'flox services status')  Check service status\n    $(gum style --foreground 212 'flox services logs jupyter-lab')  View service logs\n\n👉  Helper Functions:\n    $(gum style --foreground 212 'jupyter-help')          Show detailed help\n    $(gum style --foreground 212 'jupyter-reconfigure')   Reconfigure JupyterLab settings\n\n👉  Python Package Management:\n    $(gum style --foreground 212 'pip install <package>') Install Python packages\n    Virtual Environment: $(gum style --foreground 212 \"$VENV_DIR\")\n\n👉  Notebook Directory:\n    $(gum style --foreground 212 \"${NOTEBOOK_DIR}\")\n\n👉  Quick Tips:\n    •  Add packages to 'requirements.txt' for automatic installation\n    •  Set INSTALL_REQUIREMENTS=true to auto-install requirements.txt on activation\n    •  Use jupyter-reconfigure to change configuration\"\n\n    echo \"\"\n}\n\n# helper functions (callable from profile)\njupyter_reconfigure() {\n  local CONFIG_FILE=\"$FLOX_ENV_CACHE/jupyter_config.sh\"\n  rm -f \"$CONFIG_FILE\"\n  echo \"Configuration removed. Deactivate and reactivate to reconfigure.\"\n}\n\njupyter_help() {\n    # dynamically generate access URL based on host config\n    local ACCESS_URL\n    local NETWORK_NOTE\n\n    if [[ \"$JUPYTER_HOST\" == \"0.0.0.0\" ]]; then\n      ACCESS_URL=\"http://localhost:$JUPYTER_PORT\"\n      NETWORK_NOTE=\"(accessible from other devices on your network)\"\n    else\n      ACCESS_URL=\"http://$JUPYTER_HOST:$JUPYTER_PORT\"\n      NETWORK_NOTE=\"(accessible only from this computer)\"\n    fi\n\n    gum style \\\n        --border rounded \\\n        --border-foreground 240 \\\n        --padding \"1 2\" \\\n        --margin \"1 0\" \\\n        --width 96 \\\n        \"$(gum style --foreground 141 --bold 'This is a  F l o x  JupyterLab Environment')\n\n👉  Access JupyterLab:\n    URL:   $(gum style --foreground 212 \"$ACCESS_URL\")\n           $NETWORK_NOTE\n    Token: $(gum style --foreground 212 \"${JUPYTER_SERVER_TOKEN}\")\n\n👉  Service Management:\n    $(gum style --foreground 212 'flox activate -s')      Start JupyterLab service\n    $(gum style --foreground 212 'flox services status')  Check service status\n    $(gum style --foreground 212 'flox services logs jupyter-lab')  View service logs\n\n👉  Helper Functions:\n    $(gum style --foreground 212 'jupyter-help')          Show detailed help\n    $(gum style --foreground 212 'jupyter-reconfigure')   Reconfigure JupyterLab settings\n\n👉  Python Package Management:\n    $(gum style --foreground 212 'pip install <package>') Install Python packages\n    Virtual Environment: $(gum style --foreground 212 \"$VENV_DIR\")\n\n👉  Notebook Directory:\n    $(gum style --foreground 212 \"${NOTEBOOK_DIR}\")\n\n👉  Quick Tips:\n    •  Add packages to 'requirements.txt' for automatic installation\n    •  Set INSTALL_REQUIREMENTS=true to auto-install requirements.txt on activation\n    •  Use jupyter-reconfigure to change configuration\"\n\n    echo \"\"\n}\n\n# runnit\nload_config  # Load existing config or set defaults\nif [[ ! -f \"$CONFIG_FILE\" ]]; then\n  prompt_for_config  # run wizard if no config exists\nfi\nactivate_venv  # activate or create venv\nshow_jupyter_help  # show informational message\n"
     },
     "profile": {
-      "bash": "  if [ -d \"$VENV_DIR\" ]; then\n    source \"$VENV_DIR/bin/activate\"\n  fi\n  \n  # Source Jupyter helpers\n  HELPER_SCRIPT=\"$FLOX_ENV_CACHE/jupyter_helpers.sh\"\n  if [ -f \"$HELPER_SCRIPT\" ]; then\n    source \"$HELPER_SCRIPT\"\n  fi\n",
-      "zsh": "  if [ -d \"$VENV_DIR\" ]; then\n    source \"$VENV_DIR/bin/activate\"\n  fi\n  \n  # Source Jupyter helpers\n  HELPER_SCRIPT=\"$FLOX_ENV_CACHE/jupyter_helpers.sh\"\n  if [ -f \"$HELPER_SCRIPT\" ]; then\n    source \"$HELPER_SCRIPT\"\n  fi\n",
-      "fish": "  if test -d \"$VENV_DIR\"\n    source \"$VENV_DIR/bin/activate.fish\"\n  end\n  \n  # Source Jupyter helpers\n  set HELPER_SCRIPT \"$FLOX_ENV_CACHE/jupyter_helpers.fish\"\n  if test -f \"$HELPER_SCRIPT\"\n    source \"$HELPER_SCRIPT\"\n  end\n"
+      "bash": "# source config for helper functions\nsource \"$FLOX_ENV_CACHE/jupyter_config.sh\" 2>/dev/null || true\n\n# user-friendly wrappers\njupyter-reconfigure() {\n    jupyter_reconfigure\n}\n\njupyter-help() {\n    jupyter_help\n}\n",
+      "zsh": "# source config for helper functions\nsource \"$FLOX_ENV_CACHE/jupyter_config.sh\" 2>/dev/null || true\n\n# user-friendly wrappers\njupyter-reconfigure() {\n    jupyter_reconfigure\n}\n\njupyter-help() {\n    jupyter_help\n}\n",
+      "fish": "# source config for helper functions (bash functions should work in fish when sourced?)\nsource \"$FLOX_ENV_CACHE/jupyter_config.sh\" 2>/dev/null || true\n\n# user-friendly wrappers\nfunction jupyter-reconfigure\n    jupyter_reconfigure\nend\n\nfunction jupyter-help\n    jupyter_help\nend\n"
     },
     "options": {
       "systems": [
@@ -66,164 +63,15 @@
         "aarch64-darwin",
         "aarch64-linux",
         "x86_64-darwin"
-      ],
-      "allow": {
-        "licenses": []
-      },
-      "semver": {}
+      ]
     },
     "services": {
       "jupyter-lab": {
-        "command": "jupyter-lab --no-browser --IdentityProvider.token=${JUPYTER_SERVER_TOKEN} --ip=0.0.0.0"
+        "command": "# activate venv\nif [ -f \"$VENV_DIR/bin/activate\" ]; then\n    source \"$VENV_DIR/bin/activate\"\nfi\n\nexec jupyter-lab \\\n  --no-browser \\\n  --ip=\"$JUPYTER_HOST\" \\\n  --port=\"$JUPYTER_PORT\" \\\n  --IdentityProvider.token=\"$JUPYTER_SERVER_TOKEN\" \\\n  --notebook-dir=\"$NOTEBOOK_DIR\"\n"
       }
     }
   },
   "packages": [
-    {
-      "attr_path": "toilet",
-      "broken": false,
-      "derivation": "/nix/store/x7lv18aw8h4pb10s2afd55ydmrzis0lz-toilet-0.3.drv",
-      "description": "Display large colourful characters in text mode",
-      "install_id": "figlet",
-      "license": "WTFPL",
-      "locked_url": "https://github.com/flox/nixpkgs?rev=a84ebe20c6bc2ecbcfb000a50776219f48d134cc",
-      "name": "toilet-0.3",
-      "pname": "toilet",
-      "rev": "a84ebe20c6bc2ecbcfb000a50776219f48d134cc",
-      "rev_count": 770807,
-      "rev_date": "2025-03-19T22:12:44Z",
-      "scrape_date": "2025-03-22T02:00:34.189210Z",
-      "stabilities": [
-        "unstable"
-      ],
-      "unfree": false,
-      "version": "0.3",
-      "outputs_to_install": [
-        "out"
-      ],
-      "outputs": {
-        "out": "/nix/store/gycj2gclgdv16azrq5x60ka4vzvbh8mc-toilet-0.3"
-      },
-      "system": "x86_64-linux",
-      "group": "toplevel",
-      "priority": 5
-    },
-    {
-      "attr_path": "toilet",
-      "broken": false,
-      "derivation": "/nix/store/ss4in1hpgq1ym0nfrmba46v60x5lqfyp-toilet-0.3.drv",
-      "description": "Display large colourful characters in text mode",
-      "install_id": "figlet",
-      "license": "WTFPL",
-      "locked_url": "https://github.com/flox/nixpkgs?rev=a84ebe20c6bc2ecbcfb000a50776219f48d134cc",
-      "name": "toilet-0.3",
-      "pname": "toilet",
-      "rev": "a84ebe20c6bc2ecbcfb000a50776219f48d134cc",
-      "rev_count": 770807,
-      "rev_date": "2025-03-19T22:12:44Z",
-      "scrape_date": "2025-03-22T01:09:54.528536Z",
-      "stabilities": [
-        "unstable"
-      ],
-      "unfree": false,
-      "version": "0.3",
-      "outputs_to_install": [
-        "out"
-      ],
-      "outputs": {
-        "out": "/nix/store/ifv20sr6v04i14rgmqgcw89zph3nyxh2-toilet-0.3"
-      },
-      "system": "aarch64-darwin",
-      "group": "toplevel",
-      "priority": 5
-    },
-    {
-      "attr_path": "toilet",
-      "broken": false,
-      "derivation": "/nix/store/a1hrrvlhj78n8wjs1cscgcmr9dcca6f3-toilet-0.3.drv",
-      "description": "Display large colourful characters in text mode",
-      "install_id": "figlet",
-      "license": "WTFPL",
-      "locked_url": "https://github.com/flox/nixpkgs?rev=a84ebe20c6bc2ecbcfb000a50776219f48d134cc",
-      "name": "toilet-0.3",
-      "pname": "toilet",
-      "rev": "a84ebe20c6bc2ecbcfb000a50776219f48d134cc",
-      "rev_count": 770807,
-      "rev_date": "2025-03-19T22:12:44Z",
-      "scrape_date": "2025-03-22T01:27:11.111863Z",
-      "stabilities": [
-        "unstable"
-      ],
-      "unfree": false,
-      "version": "0.3",
-      "outputs_to_install": [
-        "out"
-      ],
-      "outputs": {
-        "out": "/nix/store/lxvjknf0zc2sngr7fn8r1r9khqi6b2xz-toilet-0.3"
-      },
-      "system": "aarch64-linux",
-      "group": "toplevel",
-      "priority": 5
-    },
-    {
-      "attr_path": "toilet",
-      "broken": false,
-      "derivation": "/nix/store/lg4assh0nv89cvjmc8gccqq7y85pk7jn-toilet-0.3.drv",
-      "description": "Display large colourful characters in text mode",
-      "install_id": "figlet",
-      "license": "WTFPL",
-      "locked_url": "https://github.com/flox/nixpkgs?rev=a84ebe20c6bc2ecbcfb000a50776219f48d134cc",
-      "name": "toilet-0.3",
-      "pname": "toilet",
-      "rev": "a84ebe20c6bc2ecbcfb000a50776219f48d134cc",
-      "rev_count": 770807,
-      "rev_date": "2025-03-19T22:12:44Z",
-      "scrape_date": "2025-03-22T01:41:58.197728Z",
-      "stabilities": [
-        "unstable"
-      ],
-      "unfree": false,
-      "version": "0.3",
-      "outputs_to_install": [
-        "out"
-      ],
-      "outputs": {
-        "out": "/nix/store/f9bns50lhi3p1xvpnh0i2vkjkpjh8i0s-toilet-0.3"
-      },
-      "system": "x86_64-darwin",
-      "group": "toplevel",
-      "priority": 5
-    },
-    {
-      "attr_path": "gum",
-      "broken": false,
-      "derivation": "/nix/store/24a1pj733gimjh92rd6biprlpql2fdaa-gum-0.16.0.drv",
-      "description": "Tasty Bubble Gum for your shell",
-      "install_id": "gum",
-      "license": "MIT",
-      "locked_url": "https://github.com/flox/nixpkgs?rev=a84ebe20c6bc2ecbcfb000a50776219f48d134cc",
-      "name": "gum-0.16.0",
-      "pname": "gum",
-      "rev": "a84ebe20c6bc2ecbcfb000a50776219f48d134cc",
-      "rev_count": 770807,
-      "rev_date": "2025-03-19T22:12:44Z",
-      "scrape_date": "2025-03-22T01:59:13.062040Z",
-      "stabilities": [
-        "unstable"
-      ],
-      "unfree": false,
-      "version": "0.16.0",
-      "outputs_to_install": [
-        "out"
-      ],
-      "outputs": {
-        "out": "/nix/store/hn1dl52063dlljmzjlx0cw1f59yk5r2n-gum-0.16.0"
-      },
-      "system": "x86_64-linux",
-      "group": "toplevel",
-      "priority": 5
-    },
     {
       "attr_path": "gum",
       "broken": false,
@@ -312,30 +160,29 @@
       "priority": 5
     },
     {
-      "attr_path": "python312Packages.jupyterlab",
+      "attr_path": "gum",
       "broken": false,
-      "derivation": "/nix/store/mkb0ikavs5ajn1cp5p1lis45c71ksgg8-python3.12-jupyterlab-4.3.4.drv",
-      "description": "Jupyter lab environment notebook server extension",
-      "install_id": "jupyterlab",
-      "license": "BSD-3-Clause",
+      "derivation": "/nix/store/24a1pj733gimjh92rd6biprlpql2fdaa-gum-0.16.0.drv",
+      "description": "Tasty Bubble Gum for your shell",
+      "install_id": "gum",
+      "license": "MIT",
       "locked_url": "https://github.com/flox/nixpkgs?rev=a84ebe20c6bc2ecbcfb000a50776219f48d134cc",
-      "name": "python3.12-jupyterlab-4.3.4",
-      "pname": "jupyterlab",
+      "name": "gum-0.16.0",
+      "pname": "gum",
       "rev": "a84ebe20c6bc2ecbcfb000a50776219f48d134cc",
       "rev_count": 770807,
       "rev_date": "2025-03-19T22:12:44Z",
-      "scrape_date": "2025-03-22T01:59:39.244344Z",
+      "scrape_date": "2025-03-22T01:59:13.062040Z",
       "stabilities": [
         "unstable"
       ],
       "unfree": false,
-      "version": "4.3.4",
+      "version": "0.16.0",
       "outputs_to_install": [
         "out"
       ],
       "outputs": {
-        "dist": "/nix/store/a41v3xjn21a0wplpdv5xhprl5f2yz3pw-python3.12-jupyterlab-4.3.4-dist",
-        "out": "/nix/store/ck8fqic6ifxk8ylr5qsap7nn3kqhs3nn-python3.12-jupyterlab-4.3.4"
+        "out": "/nix/store/hn1dl52063dlljmzjlx0cw1f59yk5r2n-gum-0.16.0"
       },
       "system": "x86_64-linux",
       "group": "toplevel",
@@ -432,30 +279,30 @@
       "priority": 5
     },
     {
-      "attr_path": "python312Packages.jupyterlab-execute-time",
+      "attr_path": "python312Packages.jupyterlab",
       "broken": false,
-      "derivation": "/nix/store/pvqahfrvg4xhdmpc7mr9bxd0jj7j41bx-python3.12-jupyterlab-execute-time-3.2.0.drv",
-      "description": "JupyterLab extension for displaying cell timings",
-      "install_id": "jupyterlab-execute-time",
+      "derivation": "/nix/store/mkb0ikavs5ajn1cp5p1lis45c71ksgg8-python3.12-jupyterlab-4.3.4.drv",
+      "description": "Jupyter lab environment notebook server extension",
+      "install_id": "jupyterlab",
       "license": "BSD-3-Clause",
       "locked_url": "https://github.com/flox/nixpkgs?rev=a84ebe20c6bc2ecbcfb000a50776219f48d134cc",
-      "name": "python3.12-jupyterlab-execute-time-3.2.0",
-      "pname": "jupyterlab-execute-time",
+      "name": "python3.12-jupyterlab-4.3.4",
+      "pname": "jupyterlab",
       "rev": "a84ebe20c6bc2ecbcfb000a50776219f48d134cc",
       "rev_count": 770807,
       "rev_date": "2025-03-19T22:12:44Z",
-      "scrape_date": "2025-03-22T01:59:39.245651Z",
+      "scrape_date": "2025-03-22T01:59:39.244344Z",
       "stabilities": [
         "unstable"
       ],
       "unfree": false,
-      "version": "3.2.0",
+      "version": "4.3.4",
       "outputs_to_install": [
         "out"
       ],
       "outputs": {
-        "dist": "/nix/store/x4zmdkij5y0ic3r32qi6xnk1xrb8mmsl-python3.12-jupyterlab-execute-time-3.2.0-dist",
-        "out": "/nix/store/129z42nj849wkf0d8m1kcpjcznhrclmi-python3.12-jupyterlab-execute-time-3.2.0"
+        "dist": "/nix/store/a41v3xjn21a0wplpdv5xhprl5f2yz3pw-python3.12-jupyterlab-4.3.4-dist",
+        "out": "/nix/store/ck8fqic6ifxk8ylr5qsap7nn3kqhs3nn-python3.12-jupyterlab-4.3.4"
       },
       "system": "x86_64-linux",
       "group": "toplevel",
@@ -552,30 +399,30 @@
       "priority": 5
     },
     {
-      "attr_path": "python312Packages.jupyterlab-lsp",
+      "attr_path": "python312Packages.jupyterlab-execute-time",
       "broken": false,
-      "derivation": "/nix/store/x4dy7dk01pgi63ah13b5fhpyma1x1xdz-python3.12-jupyterlab-lsp-5.1.0.drv",
-      "description": "Language Server Protocol integration for Jupyter(Lab)",
-      "install_id": "jupyterlab-lsp",
+      "derivation": "/nix/store/pvqahfrvg4xhdmpc7mr9bxd0jj7j41bx-python3.12-jupyterlab-execute-time-3.2.0.drv",
+      "description": "JupyterLab extension for displaying cell timings",
+      "install_id": "jupyterlab-execute-time",
       "license": "BSD-3-Clause",
       "locked_url": "https://github.com/flox/nixpkgs?rev=a84ebe20c6bc2ecbcfb000a50776219f48d134cc",
-      "name": "python3.12-jupyterlab-lsp-5.1.0",
-      "pname": "jupyterlab-lsp",
+      "name": "python3.12-jupyterlab-execute-time-3.2.0",
+      "pname": "jupyterlab-execute-time",
       "rev": "a84ebe20c6bc2ecbcfb000a50776219f48d134cc",
       "rev_count": 770807,
       "rev_date": "2025-03-19T22:12:44Z",
-      "scrape_date": "2025-03-22T01:59:39.248280Z",
+      "scrape_date": "2025-03-22T01:59:39.245651Z",
       "stabilities": [
         "unstable"
       ],
       "unfree": false,
-      "version": "5.1.0",
+      "version": "3.2.0",
       "outputs_to_install": [
         "out"
       ],
       "outputs": {
-        "dist": "/nix/store/09346vc6mznnk8dl7w1ymcnxig4qsyk1-python3.12-jupyterlab-lsp-5.1.0-dist",
-        "out": "/nix/store/qc318yx3494v6kqhgr6q67mkhprkjfxq-python3.12-jupyterlab-lsp-5.1.0"
+        "dist": "/nix/store/x4zmdkij5y0ic3r32qi6xnk1xrb8mmsl-python3.12-jupyterlab-execute-time-3.2.0-dist",
+        "out": "/nix/store/129z42nj849wkf0d8m1kcpjcznhrclmi-python3.12-jupyterlab-execute-time-3.2.0"
       },
       "system": "x86_64-linux",
       "group": "toplevel",
@@ -672,30 +519,30 @@
       "priority": 5
     },
     {
-      "attr_path": "python312Packages.jupyterlab-pygments",
+      "attr_path": "python312Packages.jupyterlab-lsp",
       "broken": false,
-      "derivation": "/nix/store/l7d0ldhhjrpyxyr6i9hr3idjkxqm0f9z-python3.12-jupyterlab-pygments-0.3.0.drv",
-      "description": "Jupyterlab syntax coloring theme for pygments",
-      "install_id": "jupyterlab-pygments",
+      "derivation": "/nix/store/x4dy7dk01pgi63ah13b5fhpyma1x1xdz-python3.12-jupyterlab-lsp-5.1.0.drv",
+      "description": "Language Server Protocol integration for Jupyter(Lab)",
+      "install_id": "jupyterlab-lsp",
       "license": "BSD-3-Clause",
       "locked_url": "https://github.com/flox/nixpkgs?rev=a84ebe20c6bc2ecbcfb000a50776219f48d134cc",
-      "name": "python3.12-jupyterlab-pygments-0.3.0",
-      "pname": "jupyterlab-pygments",
+      "name": "python3.12-jupyterlab-lsp-5.1.0",
+      "pname": "jupyterlab-lsp",
       "rev": "a84ebe20c6bc2ecbcfb000a50776219f48d134cc",
       "rev_count": 770807,
       "rev_date": "2025-03-19T22:12:44Z",
-      "scrape_date": "2025-03-22T01:59:39.249585Z",
+      "scrape_date": "2025-03-22T01:59:39.248280Z",
       "stabilities": [
         "unstable"
       ],
       "unfree": false,
-      "version": "0.3.0",
+      "version": "5.1.0",
       "outputs_to_install": [
         "out"
       ],
       "outputs": {
-        "dist": "/nix/store/r59qmksjikf7fbpk30x1dbsyx90kz6pf-python3.12-jupyterlab-pygments-0.3.0-dist",
-        "out": "/nix/store/z4yk8hwc45afj5bz0nwkqlm1wksg3gq9-python3.12-jupyterlab-pygments-0.3.0"
+        "dist": "/nix/store/09346vc6mznnk8dl7w1ymcnxig4qsyk1-python3.12-jupyterlab-lsp-5.1.0-dist",
+        "out": "/nix/store/qc318yx3494v6kqhgr6q67mkhprkjfxq-python3.12-jupyterlab-lsp-5.1.0"
       },
       "system": "x86_64-linux",
       "group": "toplevel",
@@ -792,30 +639,30 @@
       "priority": 5
     },
     {
-      "attr_path": "python312Packages.jupyterlab-server",
+      "attr_path": "python312Packages.jupyterlab-pygments",
       "broken": false,
-      "derivation": "/nix/store/shj2zkwsjdr659xix0304d59lyb8fsi6-python3.12-jupyterlab-server-2.27.3.drv",
-      "description": "Set of server components for JupyterLab and JupyterLab like applications",
-      "install_id": "jupyterlab-server",
+      "derivation": "/nix/store/l7d0ldhhjrpyxyr6i9hr3idjkxqm0f9z-python3.12-jupyterlab-pygments-0.3.0.drv",
+      "description": "Jupyterlab syntax coloring theme for pygments",
+      "install_id": "jupyterlab-pygments",
       "license": "BSD-3-Clause",
       "locked_url": "https://github.com/flox/nixpkgs?rev=a84ebe20c6bc2ecbcfb000a50776219f48d134cc",
-      "name": "python3.12-jupyterlab-server-2.27.3",
-      "pname": "jupyterlab-server",
+      "name": "python3.12-jupyterlab-pygments-0.3.0",
+      "pname": "jupyterlab-pygments",
       "rev": "a84ebe20c6bc2ecbcfb000a50776219f48d134cc",
       "rev_count": 770807,
       "rev_date": "2025-03-19T22:12:44Z",
-      "scrape_date": "2025-03-22T01:59:39.250902Z",
+      "scrape_date": "2025-03-22T01:59:39.249585Z",
       "stabilities": [
         "unstable"
       ],
       "unfree": false,
-      "version": "2.27.3",
+      "version": "0.3.0",
       "outputs_to_install": [
         "out"
       ],
       "outputs": {
-        "dist": "/nix/store/aan6r9rvpgmcplwv8ln6b62xdvar72cb-python3.12-jupyterlab-server-2.27.3-dist",
-        "out": "/nix/store/6c9dp2fppwa2q3mym1aqxxbw4vfkamkg-python3.12-jupyterlab-server-2.27.3"
+        "dist": "/nix/store/r59qmksjikf7fbpk30x1dbsyx90kz6pf-python3.12-jupyterlab-pygments-0.3.0-dist",
+        "out": "/nix/store/z4yk8hwc45afj5bz0nwkqlm1wksg3gq9-python3.12-jupyterlab-pygments-0.3.0"
       },
       "system": "x86_64-linux",
       "group": "toplevel",
@@ -912,30 +759,30 @@
       "priority": 5
     },
     {
-      "attr_path": "python312Packages.jupyterlab-widgets",
+      "attr_path": "python312Packages.jupyterlab-server",
       "broken": false,
-      "derivation": "/nix/store/w3bfh9gscav4w3ja74vas5fyfdpzb453-python3.12-jupyterlab-widgets-3.0.13.drv",
-      "description": "Jupyter Widgets JupyterLab Extension",
-      "install_id": "jupyterlab-widgets",
+      "derivation": "/nix/store/shj2zkwsjdr659xix0304d59lyb8fsi6-python3.12-jupyterlab-server-2.27.3.drv",
+      "description": "Set of server components for JupyterLab and JupyterLab like applications",
+      "install_id": "jupyterlab-server",
       "license": "BSD-3-Clause",
       "locked_url": "https://github.com/flox/nixpkgs?rev=a84ebe20c6bc2ecbcfb000a50776219f48d134cc",
-      "name": "python3.12-jupyterlab-widgets-3.0.13",
-      "pname": "jupyterlab-widgets",
+      "name": "python3.12-jupyterlab-server-2.27.3",
+      "pname": "jupyterlab-server",
       "rev": "a84ebe20c6bc2ecbcfb000a50776219f48d134cc",
       "rev_count": 770807,
       "rev_date": "2025-03-19T22:12:44Z",
-      "scrape_date": "2025-03-22T01:59:39.252213Z",
+      "scrape_date": "2025-03-22T01:59:39.250902Z",
       "stabilities": [
         "unstable"
       ],
       "unfree": false,
-      "version": "3.0.13",
+      "version": "2.27.3",
       "outputs_to_install": [
         "out"
       ],
       "outputs": {
-        "dist": "/nix/store/ggaavi8ybzi6h32vhqlm95z4hid6hya8-python3.12-jupyterlab-widgets-3.0.13-dist",
-        "out": "/nix/store/fr9m6ign3bczx7pwl2lasgpbfyn8vn7k-python3.12-jupyterlab-widgets-3.0.13"
+        "dist": "/nix/store/aan6r9rvpgmcplwv8ln6b62xdvar72cb-python3.12-jupyterlab-server-2.27.3-dist",
+        "out": "/nix/store/6c9dp2fppwa2q3mym1aqxxbw4vfkamkg-python3.12-jupyterlab-server-2.27.3"
       },
       "system": "x86_64-linux",
       "group": "toplevel",
@@ -1032,30 +879,30 @@
       "priority": 5
     },
     {
-      "attr_path": "python312Packages.matplotlib",
+      "attr_path": "python312Packages.jupyterlab-widgets",
       "broken": false,
-      "derivation": "/nix/store/cdydxdcx5nhg1phm1s1bg0jdkh546dam-python3.12-matplotlib-3.10.0.drv",
-      "description": "Python plotting library, making publication quality plots",
-      "install_id": "matplotlib",
-      "license": "[ Python-2.0, 0BSD ]",
+      "derivation": "/nix/store/w3bfh9gscav4w3ja74vas5fyfdpzb453-python3.12-jupyterlab-widgets-3.0.13.drv",
+      "description": "Jupyter Widgets JupyterLab Extension",
+      "install_id": "jupyterlab-widgets",
+      "license": "BSD-3-Clause",
       "locked_url": "https://github.com/flox/nixpkgs?rev=a84ebe20c6bc2ecbcfb000a50776219f48d134cc",
-      "name": "python3.12-matplotlib-3.10.0",
-      "pname": "matplotlib",
+      "name": "python3.12-jupyterlab-widgets-3.0.13",
+      "pname": "jupyterlab-widgets",
       "rev": "a84ebe20c6bc2ecbcfb000a50776219f48d134cc",
       "rev_count": 770807,
       "rev_date": "2025-03-19T22:12:44Z",
-      "scrape_date": "2025-03-22T01:59:39.905968Z",
+      "scrape_date": "2025-03-22T01:59:39.252213Z",
       "stabilities": [
         "unstable"
       ],
       "unfree": false,
-      "version": "3.10.0",
+      "version": "3.0.13",
       "outputs_to_install": [
         "out"
       ],
       "outputs": {
-        "dist": "/nix/store/sk2bi7yyk90fvymg66d91ndrk53psfya-python3.12-matplotlib-3.10.0-dist",
-        "out": "/nix/store/hzq7hzz3ngmgdp13hnycrg0h512wwcr0-python3.12-matplotlib-3.10.0"
+        "dist": "/nix/store/ggaavi8ybzi6h32vhqlm95z4hid6hya8-python3.12-jupyterlab-widgets-3.0.13-dist",
+        "out": "/nix/store/fr9m6ign3bczx7pwl2lasgpbfyn8vn7k-python3.12-jupyterlab-widgets-3.0.13"
       },
       "system": "x86_64-linux",
       "group": "toplevel",
@@ -1152,30 +999,30 @@
       "priority": 5
     },
     {
-      "attr_path": "python312Packages.numpy",
+      "attr_path": "python312Packages.matplotlib",
       "broken": false,
-      "derivation": "/nix/store/1psn87v7db7b5pcpw7zmfywp9vb8v9mm-python3.12-numpy-2.2.3.drv",
-      "description": "Scientific tools for Python",
-      "install_id": "numpy",
-      "license": "BSD-3-Clause",
+      "derivation": "/nix/store/cdydxdcx5nhg1phm1s1bg0jdkh546dam-python3.12-matplotlib-3.10.0.drv",
+      "description": "Python plotting library, making publication quality plots",
+      "install_id": "matplotlib",
+      "license": "[ Python-2.0, 0BSD ]",
       "locked_url": "https://github.com/flox/nixpkgs?rev=a84ebe20c6bc2ecbcfb000a50776219f48d134cc",
-      "name": "python3.12-numpy-2.2.3",
-      "pname": "numpy",
+      "name": "python3.12-matplotlib-3.10.0",
+      "pname": "matplotlib",
       "rev": "a84ebe20c6bc2ecbcfb000a50776219f48d134cc",
       "rev_count": 770807,
       "rev_date": "2025-03-19T22:12:44Z",
-      "scrape_date": "2025-03-22T01:59:41.124873Z",
+      "scrape_date": "2025-03-22T01:59:39.905968Z",
       "stabilities": [
         "unstable"
       ],
       "unfree": false,
-      "version": "2.2.3",
+      "version": "3.10.0",
       "outputs_to_install": [
         "out"
       ],
       "outputs": {
-        "dist": "/nix/store/nf3g0p5k2byj6whzmdgs83kihlsl5zay-python3.12-numpy-2.2.3-dist",
-        "out": "/nix/store/wzl76fphspdcnayr0j9c9h8hjrfh208m-python3.12-numpy-2.2.3"
+        "dist": "/nix/store/sk2bi7yyk90fvymg66d91ndrk53psfya-python3.12-matplotlib-3.10.0-dist",
+        "out": "/nix/store/hzq7hzz3ngmgdp13hnycrg0h512wwcr0-python3.12-matplotlib-3.10.0"
       },
       "system": "x86_64-linux",
       "group": "toplevel",
@@ -1272,19 +1119,19 @@
       "priority": 5
     },
     {
-      "attr_path": "python312Packages.pandas",
+      "attr_path": "python312Packages.numpy",
       "broken": false,
-      "derivation": "/nix/store/idbl69zf6zq4rny4rkgl2kjqb7pian66-python3.12-pandas-2.2.3.drv",
-      "description": "Powerful data structures for data analysis, time series, and statistics",
-      "install_id": "pandas",
+      "derivation": "/nix/store/1psn87v7db7b5pcpw7zmfywp9vb8v9mm-python3.12-numpy-2.2.3.drv",
+      "description": "Scientific tools for Python",
+      "install_id": "numpy",
       "license": "BSD-3-Clause",
       "locked_url": "https://github.com/flox/nixpkgs?rev=a84ebe20c6bc2ecbcfb000a50776219f48d134cc",
-      "name": "python3.12-pandas-2.2.3",
-      "pname": "pandas",
+      "name": "python3.12-numpy-2.2.3",
+      "pname": "numpy",
       "rev": "a84ebe20c6bc2ecbcfb000a50776219f48d134cc",
       "rev_count": 770807,
       "rev_date": "2025-03-19T22:12:44Z",
-      "scrape_date": "2025-03-22T01:59:41.486920Z",
+      "scrape_date": "2025-03-22T01:59:41.124873Z",
       "stabilities": [
         "unstable"
       ],
@@ -1294,8 +1141,8 @@
         "out"
       ],
       "outputs": {
-        "dist": "/nix/store/sbyn3f60azgcy48qindrm7rmpaqysrq9-python3.12-pandas-2.2.3-dist",
-        "out": "/nix/store/jhcg17ccpzwmhyb90q9i8gd0im0pwjr8-python3.12-pandas-2.2.3"
+        "dist": "/nix/store/nf3g0p5k2byj6whzmdgs83kihlsl5zay-python3.12-numpy-2.2.3-dist",
+        "out": "/nix/store/wzl76fphspdcnayr0j9c9h8hjrfh208m-python3.12-numpy-2.2.3"
       },
       "system": "x86_64-linux",
       "group": "toplevel",
@@ -1392,30 +1239,30 @@
       "priority": 5
     },
     {
-      "attr_path": "python312Packages.plotly",
+      "attr_path": "python312Packages.pandas",
       "broken": false,
-      "derivation": "/nix/store/7ypinm7d1ym9m9zbpbzgrld473kkc7bx-python3.12-plotly-5.24.1.drv",
-      "description": "Python plotting library for collaborative, interactive, publication-quality graphs",
-      "install_id": "plotly",
-      "license": "MIT",
+      "derivation": "/nix/store/idbl69zf6zq4rny4rkgl2kjqb7pian66-python3.12-pandas-2.2.3.drv",
+      "description": "Powerful data structures for data analysis, time series, and statistics",
+      "install_id": "pandas",
+      "license": "BSD-3-Clause",
       "locked_url": "https://github.com/flox/nixpkgs?rev=a84ebe20c6bc2ecbcfb000a50776219f48d134cc",
-      "name": "python3.12-plotly-5.24.1",
-      "pname": "plotly",
+      "name": "python3.12-pandas-2.2.3",
+      "pname": "pandas",
       "rev": "a84ebe20c6bc2ecbcfb000a50776219f48d134cc",
       "rev_count": 770807,
       "rev_date": "2025-03-19T22:12:44Z",
-      "scrape_date": "2025-03-22T01:59:41.829263Z",
+      "scrape_date": "2025-03-22T01:59:41.486920Z",
       "stabilities": [
         "unstable"
       ],
       "unfree": false,
-      "version": "5.24.1",
+      "version": "2.2.3",
       "outputs_to_install": [
         "out"
       ],
       "outputs": {
-        "dist": "/nix/store/5z9ckxb17a08p5d7pnxz7m0w869amkjp-python3.12-plotly-5.24.1-dist",
-        "out": "/nix/store/372xj2jxhph0jkhclif4gczwbsns2kbf-python3.12-plotly-5.24.1"
+        "dist": "/nix/store/sbyn3f60azgcy48qindrm7rmpaqysrq9-python3.12-pandas-2.2.3-dist",
+        "out": "/nix/store/jhcg17ccpzwmhyb90q9i8gd0im0pwjr8-python3.12-pandas-2.2.3"
       },
       "system": "x86_64-linux",
       "group": "toplevel",
@@ -1512,30 +1359,30 @@
       "priority": 5
     },
     {
-      "attr_path": "python312Packages.pyarrow",
+      "attr_path": "python312Packages.plotly",
       "broken": false,
-      "derivation": "/nix/store/glkn8xx4zqx4zrh5hrqjkyh3az7nyfp2-python3.12-pyarrow-19.0.1.drv",
-      "description": "Cross-language development platform for in-memory data",
-      "install_id": "pyarrow",
-      "license": "Apache-2.0",
+      "derivation": "/nix/store/7ypinm7d1ym9m9zbpbzgrld473kkc7bx-python3.12-plotly-5.24.1.drv",
+      "description": "Python plotting library for collaborative, interactive, publication-quality graphs",
+      "install_id": "plotly",
+      "license": "MIT",
       "locked_url": "https://github.com/flox/nixpkgs?rev=a84ebe20c6bc2ecbcfb000a50776219f48d134cc",
-      "name": "python3.12-pyarrow-19.0.1",
-      "pname": "pyarrow",
+      "name": "python3.12-plotly-5.24.1",
+      "pname": "plotly",
       "rev": "a84ebe20c6bc2ecbcfb000a50776219f48d134cc",
       "rev_count": 770807,
       "rev_date": "2025-03-19T22:12:44Z",
-      "scrape_date": "2025-03-22T01:59:42.242829Z",
+      "scrape_date": "2025-03-22T01:59:41.829263Z",
       "stabilities": [
         "unstable"
       ],
       "unfree": false,
-      "version": "19.0.1",
+      "version": "5.24.1",
       "outputs_to_install": [
         "out"
       ],
       "outputs": {
-        "dist": "/nix/store/9bf7lbjwkch7mh15q84b9968hm4ngi6m-python3.12-pyarrow-19.0.1-dist",
-        "out": "/nix/store/53f20yjhshx8i62y6sw0cqyc0hc4xyq1-python3.12-pyarrow-19.0.1"
+        "dist": "/nix/store/5z9ckxb17a08p5d7pnxz7m0w869amkjp-python3.12-plotly-5.24.1-dist",
+        "out": "/nix/store/372xj2jxhph0jkhclif4gczwbsns2kbf-python3.12-plotly-5.24.1"
       },
       "system": "x86_64-linux",
       "group": "toplevel",
@@ -1632,30 +1479,30 @@
       "priority": 5
     },
     {
-      "attr_path": "python312Packages.pydot",
+      "attr_path": "python312Packages.pyarrow",
       "broken": false,
-      "derivation": "/nix/store/4ch234b44s966yfvdcz6j8fzhrf15lwh-python3.12-pydot-3.0.4.drv",
-      "description": "Allows to create both directed and non directed graphs from Python",
-      "install_id": "pydot",
-      "license": "MIT",
+      "derivation": "/nix/store/glkn8xx4zqx4zrh5hrqjkyh3az7nyfp2-python3.12-pyarrow-19.0.1.drv",
+      "description": "Cross-language development platform for in-memory data",
+      "install_id": "pyarrow",
+      "license": "Apache-2.0",
       "locked_url": "https://github.com/flox/nixpkgs?rev=a84ebe20c6bc2ecbcfb000a50776219f48d134cc",
-      "name": "python3.12-pydot-3.0.4",
-      "pname": "pydot",
+      "name": "python3.12-pyarrow-19.0.1",
+      "pname": "pyarrow",
       "rev": "a84ebe20c6bc2ecbcfb000a50776219f48d134cc",
       "rev_count": 770807,
       "rev_date": "2025-03-19T22:12:44Z",
-      "scrape_date": "2025-03-22T01:59:42.437585Z",
+      "scrape_date": "2025-03-22T01:59:42.242829Z",
       "stabilities": [
         "unstable"
       ],
       "unfree": false,
-      "version": "3.0.4",
+      "version": "19.0.1",
       "outputs_to_install": [
         "out"
       ],
       "outputs": {
-        "dist": "/nix/store/vacyrjmki4yfq0pk2hpid3wvq8hi18mp-python3.12-pydot-3.0.4-dist",
-        "out": "/nix/store/ik2cayjl2lyhhfp5n04cdcnn38wpwm2n-python3.12-pydot-3.0.4"
+        "dist": "/nix/store/9bf7lbjwkch7mh15q84b9968hm4ngi6m-python3.12-pyarrow-19.0.1-dist",
+        "out": "/nix/store/53f20yjhshx8i62y6sw0cqyc0hc4xyq1-python3.12-pyarrow-19.0.1"
       },
       "system": "x86_64-linux",
       "group": "toplevel",
@@ -1752,30 +1599,30 @@
       "priority": 5
     },
     {
-      "attr_path": "python312Packages.sympy",
+      "attr_path": "python312Packages.pydot",
       "broken": false,
-      "derivation": "/nix/store/24y0lx3k6jp11r7z1p7mjqzp5ynwwcay-python3.12-sympy-1.13.3.drv",
-      "description": "Python library for symbolic mathematics",
-      "install_id": "sympy",
-      "license": "BSD-3-Clause",
+      "derivation": "/nix/store/4ch234b44s966yfvdcz6j8fzhrf15lwh-python3.12-pydot-3.0.4.drv",
+      "description": "Allows to create both directed and non directed graphs from Python",
+      "install_id": "pydot",
+      "license": "MIT",
       "locked_url": "https://github.com/flox/nixpkgs?rev=a84ebe20c6bc2ecbcfb000a50776219f48d134cc",
-      "name": "python3.12-sympy-1.13.3",
-      "pname": "sympy",
+      "name": "python3.12-pydot-3.0.4",
+      "pname": "pydot",
       "rev": "a84ebe20c6bc2ecbcfb000a50776219f48d134cc",
       "rev_count": 770807,
       "rev_date": "2025-03-19T22:12:44Z",
-      "scrape_date": "2025-03-22T01:59:45.595008Z",
+      "scrape_date": "2025-03-22T01:59:42.437585Z",
       "stabilities": [
         "unstable"
       ],
       "unfree": false,
-      "version": "1.13.3",
+      "version": "3.0.4",
       "outputs_to_install": [
         "out"
       ],
       "outputs": {
-        "dist": "/nix/store/75lvrn2ymk1b3h6wr3nbrq1k0ls0x7ds-python3.12-sympy-1.13.3-dist",
-        "out": "/nix/store/by24xz83vr70q6ja3k1qg7q13pbnwyhf-python3.12-sympy-1.13.3"
+        "dist": "/nix/store/vacyrjmki4yfq0pk2hpid3wvq8hi18mp-python3.12-pydot-3.0.4-dist",
+        "out": "/nix/store/ik2cayjl2lyhhfp5n04cdcnn38wpwm2n-python3.12-pydot-3.0.4"
       },
       "system": "x86_64-linux",
       "group": "toplevel",
@@ -1868,6 +1715,36 @@
         "out": "/nix/store/20vpw4dqidrc8zg0hqy5jninvhljspy7-python3.12-sympy-1.13.3"
       },
       "system": "x86_64-darwin",
+      "group": "toplevel",
+      "priority": 5
+    },
+    {
+      "attr_path": "python312Packages.sympy",
+      "broken": false,
+      "derivation": "/nix/store/24y0lx3k6jp11r7z1p7mjqzp5ynwwcay-python3.12-sympy-1.13.3.drv",
+      "description": "Python library for symbolic mathematics",
+      "install_id": "sympy",
+      "license": "BSD-3-Clause",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=a84ebe20c6bc2ecbcfb000a50776219f48d134cc",
+      "name": "python3.12-sympy-1.13.3",
+      "pname": "sympy",
+      "rev": "a84ebe20c6bc2ecbcfb000a50776219f48d134cc",
+      "rev_count": 770807,
+      "rev_date": "2025-03-19T22:12:44Z",
+      "scrape_date": "2025-03-22T01:59:45.595008Z",
+      "stabilities": [
+        "unstable"
+      ],
+      "unfree": false,
+      "version": "1.13.3",
+      "outputs_to_install": [
+        "out"
+      ],
+      "outputs": {
+        "dist": "/nix/store/75lvrn2ymk1b3h6wr3nbrq1k0ls0x7ds-python3.12-sympy-1.13.3-dist",
+        "out": "/nix/store/by24xz83vr70q6ja3k1qg7q13pbnwyhf-python3.12-sympy-1.13.3"
+      },
+      "system": "x86_64-linux",
       "group": "toplevel",
       "priority": 5
     }
