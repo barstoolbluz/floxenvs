@@ -1,37 +1,14 @@
-## Flox Environment Manifest -----------------------------------------
-##
-##   _Everything_ you need to know about the _manifest_ is here:
-##
-##               https://flox.dev/docs/concepts/manifest
-##
-## -------------------------------------------------------------------
-# Flox manifest version managed by Flox CLI
 version = 1
 
 
-## Install Packages --------------------------------------------------
-##  $ flox install gum  <- puts a package in [install] section below
-##  $ flox search gum   <- search for a package
-##  $ flox show gum     <- show all versions of a package
-## -------------------------------------------------------------------
 [install]
 neo4j.pkg-path = "neo4j"
 gum.pkg-path = "gum"
-firefox.pkg-path = "firefox"
-firefox.systems = ["aarch64-linux", "x86_64-linux"]
-# gum.pkg-path = "gum"
-# gum.version = "^0.14.5"
 
 
-## Environment Variables ---------------------------------------------
-##  ... available for use in the activated environment
-##      as well as [hook], [profile] scripts and [services] below.
-## -------------------------------------------------------------------
 [vars]
 
-## Activation Hook ---------------------------------------------------
-##  ... run by _bash_ shell when you run 'flox activate'.
-## -------------------------------------------------------------------
+
 [hook]
 on-activate = '''
 # Set up initial defaults
@@ -327,6 +304,7 @@ main() {
 main
 '''
 
+
 [profile]
 bash = '''
 source "${FLOX_ENV_CACHE}/neo4j.config" 2>/dev/null || true
@@ -342,39 +320,62 @@ neo4jconfigure() {
 export -f neo4jstart neo4jstop neo4jrestart neo4jconfigure
 unset -f debug_log check_first_run load_config save_config prompt_for_config
 unset -f update_dependent_vars initialize_neo4j create_config_file
-unset -f start_neo4j stop_neo4j create_database display_neo4j_config_ui
+unset -f start_neo4j stop_neo4j display_neo4j_config_ui
 unset -f first_run_setup neo4j_setup show_neo4j_help main
 '''
 
 zsh = '''
 source "${FLOX_ENV_CACHE}/neo4j.config" 2>/dev/null || true
-"neo4jstart() { flox services start neo4j; }"
-"neo4jstop() { flox services stop neo4j; }"
-"neo4jrestart() { flox services restart neo4j; }"
-"neo4jconfigure() {
+neo4jstart() { flox services start neo4j; }
+neo4jstop() { flox services stop neo4j; }
+neo4jrestart() { flox services restart neo4j; }
+neo4jconfigure() {
   flox services stop neo4j
   source "${FLOX_ENV_CACHE}/neo4j.config" 2>/dev/null || true
   reconfigure_neo4j
   flox services start neo4j
-}"
+}
 export neo4jstart neo4jstop neo4jrestart neo4jconfigure
-unset "debug_log" "check_first_run" "load_config" "save_config" "prompt_for_config"
-unset "update_dependent_vars" "initialize_neo4j" "create_config_file"
-unset "start_neo4j" "stop_neo4j" "create_database" "display_neo4j_config_ui"
-unset "first_run_setup" "neo4j_setup" "show_neo4j_help" "main"
+unset -f debug_log check_first_run load_config save_config prompt_for_config
+unset -f update_dependent_vars initialize_neo4j create_config_file
+unset -f start_neo4j stop_neo4j display_neo4j_config_ui
+unset -f first_run_setup neo4j_setup show_neo4j_help main
 '''
 
-## Services ----------------------------------------------------------
-##  $ flox services start             <- Starts all services
-##  $ flox services status            <- Status of running services
-##  $ flox activate --start-services  <- Activates & starts all
-## -------------------------------------------------------------------
+fish = '''
+source "$FLOX_ENV_CACHE/neo4j.config" 2>/dev/null || true
+
+function neo4jstart
+    flox services start neo4j
+end
+
+function neo4jstop
+    flox services stop neo4j
+end
+
+function neo4jrestart
+    flox services restart neo4j
+end
+
+function neo4jconfigure
+    flox services stop neo4j
+    source "$FLOX_ENV_CACHE/neo4j.config" 2>/dev/null || true
+    reconfigure_neo4j
+    flox services start neo4j
+end
+
+functions -e debug_log check_first_run load_config save_config prompt_for_config
+functions -e update_dependent_vars initialize_neo4j create_config_file
+functions -e start_neo4j stop_neo4j display_neo4j_config_ui first_run_setup
+functions -e neo4j_setup show_neo4j_help main
+'''
+
+
 [services]
 neo4j.command = "NEO4J_HOME=$NEO4J_DIR neo4j console"
 
-## Other Environment Options -----------------------------------------
+
 [options]
-# Systems that environment is compatible with
 systems = [
   "aarch64-darwin",
   "aarch64-linux",

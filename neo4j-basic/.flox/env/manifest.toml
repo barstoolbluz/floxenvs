@@ -1,0 +1,140 @@
+## Flox Environment Manifest -----------------------------------------
+##
+##   _Everything_ you need to know about the _manifest_ is here:
+##
+##               https://flox.dev/docs/concepts/manifest
+##
+## -------------------------------------------------------------------
+# Flox manifest version managed by Flox CLI
+version = 1
+
+
+## Install Packages --------------------------------------------------
+[install]
+neo4j.pkg-path = "neo4j"
+
+## Environment Variables ---------------------------------------------
+[vars]
+# Base configuration paths
+NEO4J_CONFIG_DIR = "$FLOX_ENV_CACHE/neo4j-config"
+NEO4J_LOG_DIR = "$FLOX_ENV_CACHE/neo4j-logs"
+NEO4J_DATA_DIR = "$FLOX_ENV_CACHE/neo4j-data"
+
+## Activation Hook ---------------------------------------------------
+[hook]
+on-activate = '''
+# Create required directories
+mkdir -p "$FLOX_ENV_CACHE/neo4j-config"
+mkdir -p "$FLOX_ENV_CACHE/neo4j-logs"
+mkdir -p "$FLOX_ENV_CACHE/neo4j-data"
+mkdir -p "$FLOX_ENV_CACHE/neo4j-run"
+
+# Runtime-configurable variables with defaults
+export NEO4J_HOST="${NEO4J_HOST:-localhost}"
+export NEO4J_PORT="${NEO4J_PORT:-7687}"
+export NEO4J_HTTP_PORT="${NEO4J_HTTP_PORT:-7474}"
+export NEO4J_USER="${NEO4J_USER:-neo4j}"
+export NEO4J_PASSWORD="${NEO4J_PASSWORD:-neo4jpass}"
+export NEO4J_DIR="${NEO4J_DIR:-$FLOX_ENV_CACHE/neo4j-data}"
+
+# Set derived paths
+export NEO4J_DATA="$NEO4J_DIR/data"
+export NEO4J_LOGS="$NEO4J_DIR/logs"
+export NEO4J_CONF="$NEO4J_DIR/conf"
+export NEO4J_RUN="$NEO4J_DIR/run"
+export NEO4J_AUTH="${NEO4J_USER}/${NEO4J_PASSWORD}"
+
+# Initialize Neo4j directories
+mkdir -p "$NEO4J_DATA" "$NEO4J_LOGS" "$NEO4J_CONF" "$NEO4J_RUN"
+chmod 700 "$NEO4J_DATA" "$NEO4J_LOGS" "$NEO4J_CONF" "$NEO4J_RUN"
+
+# Create Neo4j config file
+cat > "$NEO4J_CONF/neo4j.conf" << EOF
+dbms.default_listen_address=0.0.0.0
+dbms.connector.bolt.listen_address=:${NEO4J_PORT}
+dbms.connector.http.listen_address=:${NEO4J_HTTP_PORT}
+dbms.directories.data=$NEO4J_DATA
+dbms.directories.logs=$NEO4J_LOGS
+dbms.security.auth_enabled=true
+EOF
+
+# Display minimal info
+echo ""
+echo "✅ Neo4j environment ready (headless mode)"
+echo ""
+echo "Access URL: http://${NEO4J_HOST}:${NEO4J_HTTP_PORT}"
+echo "Bolt URL: bolt://${NEO4J_HOST}:${NEO4J_PORT}"
+echo "Username: ${NEO4J_USER}"
+echo "Password: ${NEO4J_PASSWORD}"
+echo ""
+echo "Start service: flox activate -s"
+echo "Check status: flox services status"
+echo "View logs: flox services logs neo4j"
+echo ""
+'''
+
+## Services ----------------------------------------------------------
+[services]
+neo4j.command = "NEO4J_HOME=$NEO4J_DIR neo4j console"
+
+## Profile script ----------------------------------------------------
+[profile]
+bash = '''
+neo4j-info() {
+    echo "Neo4j (Headless Mode)"
+    echo ""
+    echo "Access URL: http://${NEO4J_HOST}:${NEO4J_HTTP_PORT}"
+    echo "Bolt URL: bolt://${NEO4J_HOST}:${NEO4J_PORT}"
+    echo "Username: ${NEO4J_USER}"
+    echo "Password: ${NEO4J_PASSWORD}"
+    echo ""
+    echo "Commands:"
+    echo "  flox activate -s        Start Neo4j service"
+    echo "  flox services status    Check service status"
+    echo "  flox services logs neo4j View service logs"
+}
+export -f neo4j-info
+'''
+
+zsh = '''
+neo4j-info() {
+    echo "Neo4j (Headless Mode)"
+    echo ""
+    echo "Access URL: http://${NEO4J_HOST}:${NEO4J_HTTP_PORT}"
+    echo "Bolt URL: bolt://${NEO4J_HOST}:${NEO4J_PORT}"
+    echo "Username: ${NEO4J_USER}"
+    echo "Password: ${NEO4J_PASSWORD}"
+    echo ""
+    echo "Commands:"
+    echo "  flox activate -s        Start Neo4j service"
+    echo "  flox services status    Check service status"
+    echo "  flox services logs neo4j View service logs"
+}
+export neo4j-info
+'''
+
+fish = '''
+function neo4j-info
+    echo "Neo4j (Headless Mode)"
+    echo ""
+    echo "Access URL: http://$NEO4J_HOST:$NEO4J_HTTP_PORT"
+    echo "Bolt URL: bolt://$NEO4J_HOST:$NEO4J_PORT"
+    echo "Username: $NEO4J_USER"
+    echo "Password: $NEO4J_PASSWORD"
+    echo ""
+    echo "Commands:"
+    echo "  flox activate -s        Start Neo4j service"
+    echo "  flox services status    Check service status"
+    echo "  flox services logs neo4j View service logs"
+end
+'''
+
+## Other Environment Options -----------------------------------------
+[options]
+# Systems that environment is compatible with
+systems = [
+  "aarch64-darwin",
+  "aarch64-linux",
+  "x86_64-darwin",
+  "x86_64-linux",
+]
