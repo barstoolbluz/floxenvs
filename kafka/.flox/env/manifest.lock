@@ -58,12 +58,12 @@
       "KAFKA_LOG_DIR": "$FLOX_ENV_CACHE/kafka-logs"
     },
     "hook": {
-      "on-activate": "bootstrap_kafka() {\n    clear\n    \n    gum style \\\n        --border rounded \\\n        --border-foreground 240 \\\n        --padding \"1 2\" \\\n        --margin \"1 0\" \\\n        --width 70 \\\n        \"$(gum style --foreground 27 --bold 'Apache Kafka config')\n        \n$(gum style --foreground 240 'First-time setup for your Apache Kafka KRaft environment')\"\n    \n    # detects non-loopback ip address\n    detect_ip() {\n        local ip=\"\"\n        # for macos/darwin\n        if [[ \"$(uname)\" == \"Darwin\" ]]; then\n            ip=$(ifconfig | grep \"inet \" | grep -v 127.0.0.1 | awk '{print $2}' | head -n 1)\n        # for linux and wsl\n        else\n            # try eth0 first (common in wsl2 and linux)\n            ip=$(ip -4 addr show eth0 2>/dev/null | grep inet | awk '{print $2}' | cut -d/ -f1 | head -n 1)\n            \n            # if eth0 didn't work, try other interfaces\n            if [[ -z \"$ip\" ]]; then\n                # try global scope addresses\n                ip=$(ip -4 addr show scope global 2>/dev/null | grep inet | awk '{print $2}' | cut -d/ -f1 | head -n 1)\n                \n                # try any non-loopback as last resort\n                if [[ -z \"$ip\" ]]; then\n                    ip=$(ip -4 addr | grep -v \"127.0.0.1\" | grep -v \"10.255.255\" | grep inet | awk '{print $2}' | cut -d/ -f1 | head -n 1)\n                fi\n            fi\n        fi\n        \n        # default to localhost if no external ip found\n        if [[ -z \"$ip\" ]]; then\n            ip=\"localhost\"\n        fi\n        \n        echo \"$ip\"\n    }\n    \n    # set defaults\n    DEFAULT_KAFKA_MODE=\"kraft-combined\"\n    DEFAULT_KAFKA_NODE_ID=\"1\"\n    DEFAULT_KAFKA_PORT=\"9092\"\n    DEFAULT_KAFKA_HOST=$(detect_ip)\n    DEFAULT_KAFKA_DATA_DIR=\"${FLOX_ENV_CACHE}/data/kafka\"\n    DEFAULT_KAFKA_LOG_DIR=\"${FLOX_ENV_CACHE}/kafka-logs\"\n    DEFAULT_KAFKA_REPLICATION_FACTOR=\"1\"\n    DEFAULT_KAFKA_NUM_PARTITIONS=\"1\"\n    DEFAULT_KRAFT_CONTROLLER_PORT=\"9093\"\n    \n    # create directories\n    mkdir -p \"$KAFKA_CONFIG_DIR\" \"$KAFKA_LOG_DIR\"\n    \n    echo \"\"\n    KAFKA_MODE=$(gum choose --header \"Select Kafka node type:\" \"kraft-combined\" \"kraft-controller\" \"kraft-broker\" \"client\")\n    \n    if [[ \"$KAFKA_MODE\" == \"kraft-\"* ]]; then\n        echo \"$(gum style --foreground 240 'Configure Kafka KRaft Mode')\"\n        echo \"$(gum style --foreground 240 'Press Enter to accept the default values shown in [brackets]')\"\n        echo \"\"\n        \n        # Set JOINING_EXISTING_CLUSTER flag\n        JOINING_EXISTING_CLUSTER=false\n        \n        # set node id based on mode\n        if [ \"$KAFKA_MODE\" = \"kraft-controller\" ]; then\n            # Ask if joining existing cluster or creating new one\n            CLUSTER_ACTION=$(gum choose --header \"Are you:\" \"Creating a new Kafka cluster\" \"Adding a controller to an existing cluster\")\n            \n            # Set flag for joining existing cluster\n            if [ \"$CLUSTER_ACTION\" = \"Adding a controller to an existing cluster\" ]; then\n                JOINING_EXISTING_CLUSTER=true\n            fi\n            \n            if [ \"$JOINING_EXISTING_CLUSTER\" = \"true\" ]; then\n                echo \"$(gum style --foreground 240 'Enter a unique node ID for this controller (must be different from existing controllers)')\"\n                DEFAULT_KAFKA_NODE_ID=\"\"  # No default - user must choose\n            else\n                DEFAULT_KAFKA_NODE_ID=\"1\"\n            fi\n        elif [ \"$KAFKA_MODE\" = \"kraft-broker\" ]; then\n            DEFAULT_KAFKA_NODE_ID=\"2\"\n        fi\n        \n        # When joining existing cluster, prompt for cluster ID first\n        if [ \"$JOINING_EXISTING_CLUSTER\" = \"true\" ]; then\n            echo \"$(gum style --foreground 240 'When joining an existing cluster, you need the exact cluster ID from another controller')\"\n            echo \"$(gum style --foreground 240 'You can find it in $KAFKA_CONFIG_DIR/cluster_id on an existing controller node')\"\n            \n            KAFKA_CLUSTER_ID=$(gum input --prompt \"Enter existing cluster ID: \")\n            \n            # Validate cluster ID is provided\n            if [ -z \"$KAFKA_CLUSTER_ID\" ]; then\n                echo \"❌ No cluster ID provided. This will cause connectivity issues.\"\n                echo \"   Cannot continue without a valid cluster ID for joining an existing cluster.\"\n                return 1\n            fi\n            \n            # Save cluster ID immediately\n            echo \"$KAFKA_CLUSTER_ID\" > \"$KAFKA_CONFIG_DIR/cluster_id\"\n            echo \"✅ Existing cluster ID saved successfully\"\n            \n            # Prompt for at least one existing controller\n            echo \"$(gum style --foreground 240 'Now enter details for at least one existing controller in the cluster')\"\n            \n            EXISTING_CONTROLLER_ID=$(gum input --prompt \"Existing Controller Node ID: \" --placeholder \"1\")\n            EXISTING_CONTROLLER_HOST=$(gum input --prompt \"Existing Controller Host: \" --placeholder \"192.168.0.88\")\n            EXISTING_CONTROLLER_PORT=$(gum input --prompt \"Existing Controller Port: \" --placeholder \"9093\")\n            \n            # Initialize controller quorum with existing controller\n            CONTROLLER_QUORUM=\"${EXISTING_CONTROLLER_ID}@${EXISTING_CONTROLLER_HOST}:${EXISTING_CONTROLLER_PORT}\"\n        fi\n\n        # Only show the controller node message when in controller mode and joining an existing cluster\n        if [ \"$KAFKA_MODE\" = \"kraft-controller\" ] && [ \"$JOINING_EXISTING_CLUSTER\" = \"true\" ]; then\n            echo \"\"\n            echo \"$(gum style --foreground 27 --bold '🔄 Now configuring your new controller node')\"\n            echo \"$(gum style --foreground 240 'Please provide details for the controller you are adding to the cluster')\"\n            echo \"\"\n        fi\n\t\n        # Handle empty DEFAULT_KAFKA_NODE_ID (for joining existing cluster)\n        if [ -z \"$DEFAULT_KAFKA_NODE_ID\" ]; then\n            KAFKA_NODE_ID=$(gum input --prompt \"New Controller's Node ID: \")\n            # Ensure a value is provided\n            if [ -z \"$KAFKA_NODE_ID\" ]; then\n                echo \"❌ A unique node ID is required. Cannot continue.\"\n                return 1\n            fi\n        else\n            KAFKA_NODE_ID=$(gum input --placeholder \"[${DEFAULT_KAFKA_NODE_ID}]\" --value \"$DEFAULT_KAFKA_NODE_ID\" --prompt \"Node ID: \")\n        fi\n        \n        # Use appropriate prompt based on mode for hostname/IP\n        if [ \"$KAFKA_MODE\" = \"kraft-controller\" ]; then\n            HOST_PROMPT=\"Controller's Hostname/IP: \"\n        elif [ \"$KAFKA_MODE\" = \"kraft-broker\" ]; then\n            HOST_PROMPT=\"Broker's Hostname/IP: \"\n        else # kraft-combined\n            HOST_PROMPT=\"Node's Hostname/IP: \"\n        fi\n        KAFKA_HOST=$(gum input --placeholder \"[${DEFAULT_KAFKA_HOST}]\" --value \"$DEFAULT_KAFKA_HOST\" --prompt \"$HOST_PROMPT\")\n        \n        # configure ports based on mode\n        if [ \"$KAFKA_MODE\" = \"kraft-controller\" ]; then\n            KRAFT_CONTROLLER_PORT=$(gum input --placeholder \"[${DEFAULT_KRAFT_CONTROLLER_PORT}]\" --value \"$DEFAULT_KRAFT_CONTROLLER_PORT\" --prompt \"Controller Port: \")\n            KAFKA_PORT=\"\"\n        else\n            if [ \"$KAFKA_MODE\" = \"kraft-broker\" ]; then\n                DEFAULT_KAFKA_PORT=\"9092\"\n            fi\n            KAFKA_PORT=$(gum input --placeholder \"[${DEFAULT_KAFKA_PORT}]\" --value \"$DEFAULT_KAFKA_PORT\" --prompt \"Port: \")\n            KRAFT_CONTROLLER_PORT=\"$DEFAULT_KRAFT_CONTROLLER_PORT\"\n        fi\n        \n        # Set data directory with appropriate prompt\n        if [ \"$KAFKA_MODE\" = \"kraft-controller\" ]; then\n            DIR_PROMPT=\"Controller's Data Directory: \"\n        elif [ \"$KAFKA_MODE\" = \"kraft-broker\" ]; then\n            DIR_PROMPT=\"Broker's Data Directory: \"\n        else # kraft-combined\n            DIR_PROMPT=\"Data Directory: \"\n        fi\n        KAFKA_DATA_DIR=\"${FLOX_ENV_CACHE}/data/kafka/${KAFKA_MODE}-${KAFKA_NODE_ID}\"\n        KAFKA_DATA_DIR=$(gum input --placeholder \"[${KAFKA_DATA_DIR}]\" --value \"$KAFKA_DATA_DIR\" --prompt \"$DIR_PROMPT\")\n        \n        # check for existing data\n        if [ -d \"$KAFKA_DATA_DIR\" ] && [ \"$(ls -A \"$KAFKA_DATA_DIR\" 2>/dev/null)\" ]; then\n            echo \"Found existing Kafka data in $KAFKA_DATA_DIR\"\n            if gum confirm \"Clean existing data directory? (Recommended if changing configs)\" --default=true; then\n                rm -rf \"$KAFKA_DATA_DIR\"/*\n                echo \"Data directory cleaned.\"\n            else\n                echo \"Using existing data directory. Format may fail if cluster IDs don't match.\"\n            fi\n        fi\n        \n        # ensure data directory exists\n        mkdir -p \"$KAFKA_DATA_DIR\"\n        \n        # configure replication for controller mode\n        if [ \"$KAFKA_MODE\" = \"kraft-controller\" ]; then\n            KAFKA_REPLICATION_FACTOR=$(gum input --placeholder \"[${DEFAULT_KAFKA_REPLICATION_FACTOR}]\" --value \"$DEFAULT_KAFKA_REPLICATION_FACTOR\" --prompt \"Default Replication Factor: \")\n            KAFKA_NUM_PARTITIONS=$(gum input --placeholder \"[${DEFAULT_KAFKA_NUM_PARTITIONS}]\" --value \"$DEFAULT_KAFKA_NUM_PARTITIONS\" --prompt \"Default Number of Partitions: \")\n            \n            # set up controller quorum\n            if [ \"$JOINING_EXISTING_CLUSTER\" != \"true\" ]; then\n                CONTROLLER_QUORUM=\"${KAFKA_NODE_ID}@${KAFKA_HOST}:${KRAFT_CONTROLLER_PORT}\"\n                if gum confirm \"Do you want to define additional controllers?\" --default=false; then\n                    echo \"$(gum style --foreground 240 'Configure additional controllers for high availability')\"\n                    \n                    # track used ports to check for conflicts\n                    declare -A used_ports\n                    used_ports[\"$KRAFT_CONTROLLER_PORT\"]=1\n                    \n                    # track highest node id\n                    HIGHEST_NODE_ID=$KAFKA_NODE_ID\n                    \n                    while true; do\n                        # suggest next node id\n                        SUGGESTED_NODE_ID=$((HIGHEST_NODE_ID + 1))\n                        \n                        ADDITIONAL_CONTROLLER_ID=$(gum input --prompt \"Additional Controller Node ID: \" --value \"$SUGGESTED_NODE_ID\")\n                        ADDITIONAL_CONTROLLER_HOST=$(gum input --prompt \"Additional Controller Host: \" --value \"$KAFKA_HOST\" --placeholder \"192.168.0.89\")\n                        \n                        # handle port suggestion\n                        if [ \"$ADDITIONAL_CONTROLLER_HOST\" = \"$KAFKA_HOST\" ]; then\n                            # find next available port\n                            SUGGESTED_PORT=$((KRAFT_CONTROLLER_PORT))\n                            while [ -n \"${used_ports[$SUGGESTED_PORT]}\" ]; do\n                                SUGGESTED_PORT=$((SUGGESTED_PORT + 1))\n                            done\n                        else\n                            SUGGESTED_PORT=\"9093\"\n                        fi\n                        \n                        ADDITIONAL_CONTROLLER_PORT=$(gum input --prompt \"Additional Controller Port: \" --value \"$SUGGESTED_PORT\")\n                        \n                        # handle empty values\n                        if [ -z \"$ADDITIONAL_CONTROLLER_ID\" ]; then\n                            ADDITIONAL_CONTROLLER_ID=\"$SUGGESTED_NODE_ID\"\n                        fi\n                        if [ -z \"$ADDITIONAL_CONTROLLER_PORT\" ]; then\n                            ADDITIONAL_CONTROLLER_PORT=\"$SUGGESTED_PORT\"\n                        fi\n                        \n                        # update highest node id\n                        if [ \"$ADDITIONAL_CONTROLLER_ID\" -gt \"$HIGHEST_NODE_ID\" ]; then\n                            HIGHEST_NODE_ID=\"$ADDITIONAL_CONTROLLER_ID\"\n                        fi\n                        \n                        # check for port conflicts\n                        if [ \"$ADDITIONAL_CONTROLLER_HOST\" = \"$KAFKA_HOST\" ] && [ -n \"${used_ports[$ADDITIONAL_CONTROLLER_PORT]}\" ]; then\n                            echo \"❌ Port conflict: $ADDITIONAL_CONTROLLER_PORT is already in use on this host\"\n                            continue\n                        fi\n                        \n                        # add to quorum\n                        CONTROLLER_QUORUM=\"${CONTROLLER_QUORUM},${ADDITIONAL_CONTROLLER_ID}@${ADDITIONAL_CONTROLLER_HOST}:${ADDITIONAL_CONTROLLER_PORT}\"\n                        \n                        # track used port\n                        if [ \"$ADDITIONAL_CONTROLLER_HOST\" = \"$KAFKA_HOST\" ]; then\n                            used_ports[\"$ADDITIONAL_CONTROLLER_PORT\"]=1\n                        fi\n                        \n                        if ! gum confirm \"Add another controller?\" --default=false; then\n                            break\n                        fi\n                    done\n                    \n                    echo \"Controller quorum configured: $CONTROLLER_QUORUM\"\n                fi\n            else\n                # For joining existing cluster, add this controller to the quorum\n                CONTROLLER_QUORUM=\"${CONTROLLER_QUORUM},${KAFKA_NODE_ID}@${KAFKA_HOST}:${KRAFT_CONTROLLER_PORT}\"\n                echo \"Adding this controller to quorum: $CONTROLLER_QUORUM\"\n            fi\n        else\n            # handle settings for combined and broker modes\n            if [ \"$KAFKA_MODE\" = \"kraft-combined\" ]; then\n                if gum confirm \"Configure advanced KRaft settings?\" --default=false; then\n                    KRAFT_CONTROLLER_PORT=$(gum input --placeholder \"[${DEFAULT_KRAFT_CONTROLLER_PORT}]\" --value \"$DEFAULT_KRAFT_CONTROLLER_PORT\" --prompt \"Controller Port: \")\n                    KAFKA_REPLICATION_FACTOR=$(gum input --placeholder \"[${DEFAULT_KAFKA_REPLICATION_FACTOR}]\" --value \"$DEFAULT_KAFKA_REPLICATION_FACTOR\" --prompt \"Default Replication Factor: \")\n                    KAFKA_NUM_PARTITIONS=$(gum input --placeholder \"[${DEFAULT_KAFKA_NUM_PARTITIONS}]\" --value \"$DEFAULT_KAFKA_NUM_PARTITIONS\" --prompt \"Default Number of Partitions: \")\n                else\n                    KAFKA_REPLICATION_FACTOR=\"$DEFAULT_KAFKA_REPLICATION_FACTOR\"\n                    KAFKA_NUM_PARTITIONS=\"$DEFAULT_KAFKA_NUM_PARTITIONS\"\n                fi\n            else\n                # broker mode defaults\n                KAFKA_REPLICATION_FACTOR=\"$DEFAULT_KAFKA_REPLICATION_FACTOR\"\n                KAFKA_NUM_PARTITIONS=\"$DEFAULT_KAFKA_NUM_PARTITIONS\"\n            fi\n        fi\n        \n        # determine process roles\n        if [ \"$KAFKA_MODE\" = \"kraft-combined\" ]; then\n            PROCESS_ROLES=\"broker,controller\"\n        elif [ \"$KAFKA_MODE\" = \"kraft-controller\" ]; then\n            PROCESS_ROLES=\"controller\"\n        elif [ \"$KAFKA_MODE\" = \"kraft-broker\" ]; then\n            PROCESS_ROLES=\"broker\"\n            \n            # for broker mode, get controller info\n            echo \"$(gum style --foreground 240 'For broker mode, we need the controller information')\"\n            \n            CONTROLLER_HOST=$(gum input --placeholder \"192.168.0.88\" --prompt \"Controller Host IP/Hostname: \")\n            CONTROLLER_PORT=$(gum input --placeholder \"9093\" --prompt \"Controller Port: \")\n            CONTROLLER_NODE_ID=$(gum input --placeholder \"1\" --prompt \"Controller Node ID: \")\n            \n            # create controller quorum\n            CONTROLLER_QUORUM=\"${CONTROLLER_NODE_ID}@${CONTROLLER_HOST}:${CONTROLLER_PORT}\"\n            echo \"Using controller quorum: $CONTROLLER_QUORUM\"\n            \n            # get cluster id from controller\n            echo \"$(gum style --foreground 240 'We need the cluster ID from the controller node')\"\n            echo \"$(gum style --foreground 240 'You can find it in $KAFKA_CONFIG_DIR/cluster_id on the controller')\"\n            \n            KAFKA_CLUSTER_ID=$(gum input --prompt \"Enter cluster ID from controller: \")\n            if [ -z \"$KAFKA_CLUSTER_ID\" ]; then\n                echo \"❌ No cluster ID provided. This will cause connectivity issues.\"\n                echo \"   You can edit $KAFKA_CONFIG_DIR/cluster_id later and run 'flox services restart'\"\n            else\n                echo \"$KAFKA_CLUSTER_ID\" > \"$KAFKA_CONFIG_DIR/cluster_id\"\n                echo \"✅ Cluster ID saved successfully\"\n            fi\n            \n            # check controller connectivity\n            echo \"Checking if controller is reachable...\"\n            if nc -z -w 5 \"$CONTROLLER_HOST\" \"$CONTROLLER_PORT\" 2>/dev/null; then\n                echo \"✅ Controller node is reachable at ${CONTROLLER_HOST}:${CONTROLLER_PORT}\"\n            else\n                echo \"❌ Warning: Cannot reach controller at ${CONTROLLER_HOST}:${CONTROLLER_PORT}\"\n                echo \"   Make sure the controller is running before starting the broker.\"\n            fi\n        fi\n        \n        # generate base kraft properties\n        cat > \"$KAFKA_CONFIG_DIR/kraft.properties.base\" << EOF\n# KRaft config generated by Flox\nnode.id=$KAFKA_NODE_ID\nprocess.roles=$PROCESS_ROLES\nEOF\n\n        # add listeners based on role\n        if [ \"$PROCESS_ROLES\" = \"broker,controller\" ]; then\n            cat >> \"$KAFKA_CONFIG_DIR/kraft.properties.base\" << EOF\nlisteners=PLAINTEXT://$KAFKA_HOST:$KAFKA_PORT,CONTROLLER://$KAFKA_HOST:$KRAFT_CONTROLLER_PORT\nadvertised.listeners=PLAINTEXT://$KAFKA_HOST:$KAFKA_PORT\nEOF\n        elif [ \"$PROCESS_ROLES\" = \"broker\" ]; then\n            cat >> \"$KAFKA_CONFIG_DIR/kraft.properties.base\" << EOF\nlisteners=PLAINTEXT://$KAFKA_HOST:$KAFKA_PORT\nadvertised.listeners=PLAINTEXT://$KAFKA_HOST:$KAFKA_PORT\nEOF\n        else\n            # controller-only\n            cat >> \"$KAFKA_CONFIG_DIR/kraft.properties.base\" << EOF\nlisteners=CONTROLLER://$KAFKA_HOST:$KRAFT_CONTROLLER_PORT\nEOF\n        fi\n        \n        # add security protocols\n        cat >> \"$KAFKA_CONFIG_DIR/kraft.properties.base\" << EOF\nlistener.security.protocol.map=CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT\ncontroller.listener.names=CONTROLLER\nEOF\n        \n        # set controller quorum voters\n        if [ \"$KAFKA_MODE\" = \"kraft-broker\" ]; then\n            cat >> \"$KAFKA_CONFIG_DIR/kraft.properties.base\" << EOF\ncontroller.quorum.voters=$CONTROLLER_QUORUM\nEOF\n        elif [ \"$KAFKA_MODE\" = \"kraft-controller\" ] && [ -n \"$CONTROLLER_QUORUM\" ]; then\n            cat >> \"$KAFKA_CONFIG_DIR/kraft.properties.base\" << EOF\ncontroller.quorum.voters=$CONTROLLER_QUORUM\nEOF\n        else\n            cat >> \"$KAFKA_CONFIG_DIR/kraft.properties.base\" << EOF\ncontroller.quorum.voters=${KAFKA_NODE_ID}@$KAFKA_HOST:$KRAFT_CONTROLLER_PORT\nEOF\n        fi\n        \n        # add common config\n        cat >> \"$KAFKA_CONFIG_DIR/kraft.properties.base\" << EOF\nlog.dirs=$KAFKA_DATA_DIR\ndefault.replication.factor=$KAFKA_REPLICATION_FACTOR\nnum.partitions=$KAFKA_NUM_PARTITIONS\nlog.retention.hours=168\nlog.segment.bytes=1073741824\nlog.retention.check.interval.ms=300000\noffsets.topic.replication.factor=1\ntransaction.state.log.replication.factor=1\ntransaction.state.log.min.isr=1\nEOF\n\n        # generate cluster id for controller node\n        if [ \"$KAFKA_MODE\" = \"kraft-controller\" ] || [ \"$KAFKA_MODE\" = \"kraft-combined\" ]; then\n            if [ \"$JOINING_EXISTING_CLUSTER\" != \"true\" ] && [ ! -f \"$KAFKA_CONFIG_DIR/cluster_id\" ]; then\n                # Only generate new ID for new clusters\n                KAFKA_CLUSTER_ID=$(kafka-storage.sh random-uuid)\n                echo \"Generated new cluster ID: $KAFKA_CLUSTER_ID\"\n                echo \"IMPORTANT: Save this cluster ID for use on the broker node!\"\n                echo \"$KAFKA_CLUSTER_ID\" > \"$KAFKA_CONFIG_DIR/cluster_id\"\n            elif [ -f \"$KAFKA_CONFIG_DIR/cluster_id\" ]; then\n                KAFKA_CLUSTER_ID=$(cat \"$KAFKA_CONFIG_DIR/cluster_id\")\n                echo \"Using existing cluster ID: $KAFKA_CLUSTER_ID\"\n            fi\n        fi\n        \n        # save config\n        cat > \"$FLOX_ENV_CACHE/kafka_config.sh\" << EOF\n# Kafka config generated by Flox environment\nKAFKA_MODE=\"$KAFKA_MODE\"\nKAFKA_CONFIG_DIR=\"$KAFKA_CONFIG_DIR\"\nKAFKA_LOG_DIR=\"$KAFKA_LOG_DIR\"\nKAFKA_DATA_DIR=\"$KAFKA_DATA_DIR\"\nKAFKA_NODE_ID=\"$KAFKA_NODE_ID\"\nKAFKA_HOST=\"$KAFKA_HOST\"\nKAFKA_PORT=\"$KAFKA_PORT\"\nKRAFT_CONTROLLER_PORT=\"$KRAFT_CONTROLLER_PORT\"\nPROCESS_ROLES=\"$PROCESS_ROLES\"\nEOF\n\n        # add mode-specific config\n        if [ \"$KAFKA_MODE\" = \"kraft-controller\" ] && [ -n \"$CONTROLLER_QUORUM\" ]; then\n            cat >> \"$FLOX_ENV_CACHE/kafka_config.sh\" << EOF\nCONTROLLER_QUORUM=\"$CONTROLLER_QUORUM\"\nEOF\n        fi\n\n        # add broker-specific config\n        if [ \"$KAFKA_MODE\" = \"kraft-broker\" ]; then\n            cat >> \"$FLOX_ENV_CACHE/kafka_config.sh\" << EOF\nCONTROLLER_QUORUM=\"$CONTROLLER_QUORUM\"\nCONTROLLER_HOST=\"$CONTROLLER_HOST\"\nCONTROLLER_PORT=\"$CONTROLLER_PORT\"\nCONTROLLER_NODE_ID=\"$CONTROLLER_NODE_ID\"\nEOF\n        fi\n        \n        # add cluster id if available\n        if [ -f \"$KAFKA_CONFIG_DIR/cluster_id\" ]; then\n            cat >> \"$FLOX_ENV_CACHE/kafka_config.sh\" << EOF\nKAFKA_CLUSTER_ID=\"$(cat \"$KAFKA_CONFIG_DIR/cluster_id\")\"\nEOF\n        fi\n    \n    elif [ \"$KAFKA_MODE\" = \"client\" ]; then\n        echo \"$(gum style --foreground 240 'Configure Kafka Client')\"\n        echo \"$(gum style --foreground 240 'Press Enter to accept the default values shown in [brackets]')\"\n        echo \"\"\n\n        # set initial bootstrap server\n        BOOTSTRAP_SERVERS=\"${DEFAULT_KAFKA_HOST}:${DEFAULT_KAFKA_PORT}\"\n        BOOTSTRAP_SERVERS=$(gum input --placeholder \"[${BOOTSTRAP_SERVERS}]\" --value \"${BOOTSTRAP_SERVERS}\" --prompt \"Initial Bootstrap Server: \")\n\n        # add additional servers\n        while gum confirm \"Add additional bootstrap server?\" --default=false; do\n            ADDITIONAL_SERVER=$(gum input --placeholder \"hostname:port\" --prompt \"Additional Bootstrap Server: \")\n\n            # validate format\n            if [[ \"$ADDITIONAL_SERVER\" =~ ^[^:]+:[0-9]+$ ]]; then\n                BOOTSTRAP_SERVERS=\"${BOOTSTRAP_SERVERS},${ADDITIONAL_SERVER}\"\n                echo \"Added: $ADDITIONAL_SERVER\"\n            else\n                echo \"❌ Invalid format. Please use hostname:port\"\n            fi\n        done\n\n        # display final config\n        echo \"Final bootstrap servers: $BOOTSTRAP_SERVERS\"\n\n        # select client type\n        CLIENT_TYPE=$(gum choose --header \"Select client type:\" \"producer\" \"consumer\" \"both\")\n\n        # configure topics\n        DEFAULT_TOPIC=\"flox-is-great\"\n        KAFKA_TOPICS=$(gum input --placeholder \"[${DEFAULT_TOPIC}]\" --value \"${DEFAULT_TOPIC}\" --prompt \"Topic(s) to produce to/consume from: \")\n\n        # select processing mode\n        KAFKA_MESSAGE_PROCESSING_MODE=$(gum choose --header \"Select message processing mode:\" \"echo\" \"file\" \"script\")\n\n        # configure scripts if needed\n        if [ \"$KAFKA_MESSAGE_PROCESSING_MODE\" = \"script\" ]; then\n            mkdir -p \"$FLOX_ENV_CACHE/kafka-scripts\"\n            \n            if [ \"$CLIENT_TYPE\" = \"producer\" ] || [ \"$CLIENT_TYPE\" = \"both\" ]; then\n                SCRIPT_NAME=$(gum input --placeholder \"generate_messages.sh\" --value \"generate_messages.sh\" --prompt \"Producer script name: \")\n                \n                if [ ! -f \"$FLOX_ENV_CACHE/kafka-scripts/$SCRIPT_NAME\" ]; then\n                    cat > \"$FLOX_ENV_CACHE/kafka-scripts/$SCRIPT_NAME\" << 'EOF'\n#!/bin/bash\n# Example message generation script\nwhile true; do\n    echo \"Message at $(date)\"\n    sleep 1\ndone\nEOF\n                    chmod +x \"$FLOX_ENV_CACHE/kafka-scripts/$SCRIPT_NAME\"\n                    echo \"Created example script: $FLOX_ENV_CACHE/kafka-scripts/$SCRIPT_NAME\"\n                fi\n            fi\n            \n            if [ \"$CLIENT_TYPE\" = \"consumer\" ] || [ \"$CLIENT_TYPE\" = \"both\" ]; then\n                SCRIPT_NAME=$(gum input --placeholder \"process_messages.sh\" --value \"process_messages.sh\" --prompt \"Consumer script name: \")\n                \n                if [ ! -f \"$FLOX_ENV_CACHE/kafka-scripts/$SCRIPT_NAME\" ]; then\n                    cat > \"$FLOX_ENV_CACHE/kafka-scripts/$SCRIPT_NAME\" << 'EOF'\n#!/bin/bash\n# Example message processing script\nwhile read -r message; do\n    echo \"Processed: $message\"\ndone\nEOF\n                    chmod +x \"$FLOX_ENV_CACHE/kafka-scripts/$SCRIPT_NAME\"\n                    echo \"Created example script: $FLOX_ENV_CACHE/kafka-scripts/$SCRIPT_NAME\"\n                fi\n            fi\n        fi\n\n        # configure advanced settings\n        if gum confirm \"Configure advanced client settings?\" --default=false; then\n            KAFKA_CLIENT_COUNT=$(gum input --placeholder \"[1]\" --value \"1\" --prompt \"Number of client instances: \")\n            KAFKA_CLIENT_PARALLEL_CHOICE=$(gum choose --header \"Run clients in parallel?\" \"true\" \"false\")\n            \n            if [ \"$KAFKA_MESSAGE_PROCESSING_MODE\" = \"file\" ]; then\n                KAFKA_FILE_APPEND_CHOICE=$(gum choose --header \"Append to output file?\" \"true\" \"false\")\n            else\n                KAFKA_FILE_APPEND_CHOICE=\"true\"\n            fi\n            \n            # set directories\n            DEFAULT_OUTPUT_DIR=\"$FLOX_ENV_CACHE/kafka-message-output\"\n            KAFKA_MESSAGE_OUTPUT_DIR=$(gum input --placeholder \"[${DEFAULT_OUTPUT_DIR}]\" --value \"${DEFAULT_OUTPUT_DIR}\" --prompt \"Message output directory: \")\n            \n            DEFAULT_SCRIPTS_DIR=\"$FLOX_ENV_CACHE/kafka-scripts\"\n            KAFKA_SCRIPTS_DIR=$(gum input --placeholder \"[${DEFAULT_SCRIPTS_DIR}]\" --value \"${DEFAULT_SCRIPTS_DIR}\" --prompt \"Scripts directory: \")\n        else\n            # set defaults\n            KAFKA_CLIENT_COUNT=\"1\"\n            KAFKA_CLIENT_PARALLEL_CHOICE=\"false\"\n            KAFKA_FILE_APPEND_CHOICE=\"true\"\n            KAFKA_MESSAGE_OUTPUT_DIR=\"$FLOX_ENV_CACHE/kafka-message-output\"\n            KAFKA_SCRIPTS_DIR=\"$FLOX_ENV_CACHE/kafka-scripts\"\n        fi\n\n        # create directories\n        mkdir -p \"$KAFKA_MESSAGE_OUTPUT_DIR\" \"$KAFKA_SCRIPTS_DIR\"\n        \n        # save client config\n        cat > \"$FLOX_ENV_CACHE/kafka_config.sh\" << EOF\n# Kafka config generated by Flox environment\nKAFKA_MODE=\"$KAFKA_MODE\"\nKAFKA_CONFIG_DIR=\"$KAFKA_CONFIG_DIR\"\nKAFKA_LOG_DIR=\"$KAFKA_LOG_DIR\"\nKAFKA_DATA_DIR=\"$KAFKA_DATA_DIR\"\nBOOTSTRAP_SERVERS=\"$BOOTSTRAP_SERVERS\"\nCLIENT_TYPE=\"$CLIENT_TYPE\"\nKAFKA_TOPICS=\"$KAFKA_TOPICS\"\nKAFKA_CLIENT_COUNT=\"$KAFKA_CLIENT_COUNT\"\nKAFKA_CLIENT_PARALLEL=\"$KAFKA_CLIENT_PARALLEL_CHOICE\"\nKAFKA_MESSAGE_PROCESSING_MODE=\"$KAFKA_MESSAGE_PROCESSING_MODE\"\nKAFKA_MESSAGE_OUTPUT_DIR=\"$KAFKA_MESSAGE_OUTPUT_DIR\"\nKAFKA_SCRIPTS_DIR=\"$KAFKA_SCRIPTS_DIR\"\nKAFKA_FILE_APPEND=\"$KAFKA_FILE_APPEND_CHOICE\"\nEOF\n    fi\n\n    # apply config and export variables\n    source \"$FLOX_ENV_CACHE/kafka_config.sh\"\n    \n    # export critical variables\n    export KAFKA_MODE\n    export KAFKA_CONFIG_DIR\n    export KAFKA_LOG_DIR\n    export KAFKA_DATA_DIR\n    \n    if [ \"$KAFKA_MODE\" = \"client\" ]; then\n        export BOOTSTRAP_SERVERS\n        export CLIENT_TYPE\n        export KAFKA_TOPICS\n        export KAFKA_CLIENT_COUNT\n        export KAFKA_CLIENT_PARALLEL\n        export KAFKA_MESSAGE_PROCESSING_MODE\n        export KAFKA_MESSAGE_OUTPUT_DIR\n        export KAFKA_SCRIPTS_DIR\n        export KAFKA_FILE_APPEND\n    else\n        export KAFKA_NODE_ID\n        export KAFKA_HOST\n        export KAFKA_PORT\n        export KRAFT_CONTROLLER_PORT\n        export PROCESS_ROLES\n        [ -n \"$KAFKA_CLUSTER_ID\" ] && export KAFKA_CLUSTER_ID\n    fi\n    \n    export KAFKA_HOME=\"$(dirname $(which kafka-server-start.sh))/..\"\n    \n    # display exported variables\n    echo \"\"\n    echo \"$(gum style --foreground 240 'Exported env vars:')\"\n    echo \"  KAFKA_MODE=$KAFKA_MODE\"\n    echo \"  KAFKA_CONFIG_DIR=$KAFKA_CONFIG_DIR\"\n    echo \"  KAFKA_LOG_DIR=$KAFKA_LOG_DIR\"\n    echo \"  KAFKA_DATA_DIR=$KAFKA_DATA_DIR\"\n    \n    if [ \"$KAFKA_MODE\" = \"client\" ]; then\n        echo \"  BOOTSTRAP_SERVERS=$BOOTSTRAP_SERVERS\"\n        echo \"  CLIENT_TYPE=$CLIENT_TYPE\"\n        echo \"  KAFKA_TOPICS=$KAFKA_TOPICS\"\n        echo \"  KAFKA_CLIENT_COUNT=$KAFKA_CLIENT_COUNT\"\n        echo \"  KAFKA_CLIENT_PARALLEL=$KAFKA_CLIENT_PARALLEL\"\n        echo \"  KAFKA_MESSAGE_PROCESSING_MODE=$KAFKA_MESSAGE_PROCESSING_MODE\"\n        echo \"  KAFKA_MESSAGE_OUTPUT_DIR=$KAFKA_MESSAGE_OUTPUT_DIR\"\n        echo \"  KAFKA_SCRIPTS_DIR=$KAFKA_SCRIPTS_DIR\"\n        echo \"  KAFKA_FILE_APPEND=$KAFKA_FILE_APPEND\"\n    else\n        echo \"  KAFKA_NODE_ID=$KAFKA_NODE_ID\"\n        echo \"  KAFKA_HOST=$KAFKA_HOST\"\n        echo \"  KAFKA_PORT=$KAFKA_PORT\"\n        echo \"  KRAFT_CONTROLLER_PORT=$KRAFT_CONTROLLER_PORT\"\n        echo \"  PROCESS_ROLES=$PROCESS_ROLES\"\n        [ -n \"$KAFKA_CLUSTER_ID\" ] && echo \"  KAFKA_CLUSTER_ID=$KAFKA_CLUSTER_ID\"\n    fi\n    \n    echo \"  KAFKA_HOME=$KAFKA_HOME\"\n    \n    echo \"\"\n    echo \"$(gum style --foreground 34 --bold \"✓ Kafka config saved!\")\"\n}\n\n# Setup environment variables from config file\nsetup_kafka_env() {\n    if [ -f \"$FLOX_ENV_CACHE/kafka_config.sh\" ]; then\n        # Source the config file\n        source \"$FLOX_ENV_CACHE/kafka_config.sh\"\n        \n        # Explicitly export all variables\n        export KAFKA_MODE\n        export KAFKA_CONFIG_DIR\n        export KAFKA_LOG_DIR\n        export KAFKA_DATA_DIR\n        export KAFKA_NODE_ID\n        export KAFKA_HOST\n        export KAFKA_PORT\n        export KRAFT_CONTROLLER_PORT\n        export PROCESS_ROLES\n        [ -n \"$KAFKA_CLUSTER_ID\" ] && export KAFKA_CLUSTER_ID\n        export KAFKA_HOME=\"$(dirname $(which kafka-server-start.sh))/..\"\n        \n        # Try to find JAVA_HOME if not already set\n        if [ -z \"$JAVA_HOME\" ]; then\n            export JAVA_HOME=\"$(dirname $(dirname $(which java)))\"\n        fi\n        \n        # Debug: Show loaded variables\n#        echo \"Loaded Kafka environment variables:\" >&2\n#        echo \"  KAFKA_MODE=$KAFKA_MODE\" >&2\n#        echo \"  KAFKA_CONFIG_DIR=$KAFKA_CONFIG_DIR\" >&2\n#        echo \"  KAFKA_LOG_DIR=$KAFKA_LOG_DIR\" >&2\n#        echo \"  KAFKA_DATA_DIR=$KAFKA_DATA_DIR\" >&2\n#        echo \"  KAFKA_NODE_ID=$KAFKA_NODE_ID\" >&2\n#        echo \"  KAFKA_HOST=$KAFKA_HOST\" >&2\n#        echo \"  KAFKA_PORT=$KAFKA_PORT\" >&2\n#        echo \"  KRAFT_CONTROLLER_PORT=$KRAFT_CONTROLLER_PORT\" >&2\n#        echo \"  PROCESS_ROLES=$PROCESS_ROLES\" >&2\n#        [ -n \"$KAFKA_CLUSTER_ID\" ] && echo \"  KAFKA_CLUSTER_ID=$KAFKA_CLUSTER_ID\" >&2\n#        echo \"  KAFKA_HOME=$KAFKA_HOME\" >&2\n#    else\n#        echo \"WARNING: kafka_config.sh not found at $FLOX_ENV_CACHE/kafka_config.sh\" >&2\n    fi\n}\n\n# Modified show_kafka_help function with fixed formatting\ninfo() {\n    # Build the header content with consistent spacing\n    local header_content=$(cat << EOF\n$(gum style --foreground 141 --bold 'This is a  F l o x  Apache Kafka Environment (KRaft Mode)')\n\n👉  Manage Kafka Cluster(s):\n    $(gum style --foreground 212 'bootstrap')                              Runs interactive Kafka bootstrapping wizard\n    $(gum style --foreground 212 'topos')                                  Shows information about Kafka cluster topology\n\n👉  Use Kafka:\n    $(gum style --foreground 212 'kreate <topic> [partitions] [rf]')       Creates a new Kafka topic\n    $(gum style --foreground 212 'list')                                   Lists all available Kafka topics\n    $(gum style --foreground 212 'describe <topic>')                       Shows details for a specific topic\n    $(gum style --foreground 212 'status')                                 Checks Kafka broker status\nEOF\n)\n\n    # Add service start command based on mode\n    if [ \"$KAFKA_MODE\" = \"client\" ]; then\n        header_content+=$(cat << EOF\n\n    $(gum style --foreground 212 'flox services start')                    Start ${CLIENT_TYPE} client(s)\nEOF\n)\n    fi\n\n    header_content+=$(cat << EOF\n\n\n👉  Start / Stop / Monitor Kafka Service(s):\n    $(gum style --foreground 212 'flox services <start|stop|restart>')     Starts/stops/restarts Kafka services\n    $(gum style --foreground 212 'flox services status')                   Shows Kafka services status\n    $(gum style --foreground 212 'flox services logs kafka')               Shows Kafka logs\n                                           (\\`--follow\\` updates log events in console)\n\n👉  Get Help:\n    $(gum style --foreground 212 'readme')                                 View README.md using \\`bat\\`\n    $(gum style --foreground 212 'info')                                   Shows this help message\n\n\n👉  F l o x  Kafka Environment Details:\n      Kafka Mode:         $(gum style --foreground 212 \"${KAFKA_MODE:-Not configured}\")\nEOF\n)\n\n    # Add node-specific information based on the mode\n    if [ \"$KAFKA_MODE\" = \"kraft-controller\" ]; then\n        header_content+=$(cat << EOF\n\n      Controller Port:    $(gum style --foreground 212 \"${KRAFT_CONTROLLER_PORT}\")\n      Quorum Voters:      $(gum style --foreground 212 \"${CONTROLLER_QUORUM}\")\nEOF\n)\n        if [ -f \"$KAFKA_CONFIG_DIR/cluster_id\" ]; then\n            header_content+=$(cat << EOF\n\n      Cluster ID:         $(gum style --foreground 212 \"$(cat \"$KAFKA_CONFIG_DIR/cluster_id\")\")\n      ⚠️  IMPORTANT: Use this cluster ID when setting up broker nodes\nEOF\n)\n        fi\n    elif [ \"$KAFKA_MODE\" = \"kraft-broker\" ]; then\n        header_content+=$(cat << EOF\n\n      Controller Quorum:  $(gum style --foreground 212 \"${CONTROLLER_QUORUM}\")\n      Listening on:       $(gum style --foreground 212 \"${KAFKA_HOST}:${KAFKA_PORT}\")\nEOF\n)\n    elif [ \"$KAFKA_MODE\" = \"kraft-combined\" ]; then\n        header_content+=$(cat << EOF\n\n      Broker Port:        $(gum style --foreground 212 \"${KAFKA_PORT}\")\n      Controller Port:    $(gum style --foreground 212 \"${KRAFT_CONTROLLER_PORT}\")\nEOF\n)\n        if [ \"$ADVANCED_MODE\" = \"true\" ] && [ -n \"$CONTROLLER_QUORUM\" ]; then\n            header_content+=$(cat << EOF\n\n      Quorum Voters:      $(gum style --foreground 212 \"${CONTROLLER_QUORUM}\")\nEOF\n)\n        fi\n        if [ -f \"$KAFKA_CONFIG_DIR/cluster_id\" ]; then\n            header_content+=$(cat << EOF\n\n      Cluster ID:         $(gum style --foreground 212 \"$(cat \"$KAFKA_CONFIG_DIR/cluster_id\")\")\nEOF\n)\n        fi\n    elif [ \"$KAFKA_MODE\" = \"client\" ]; then\n        header_content+=$(cat << EOF\n\n      Connected to:       $(gum style --foreground 212 \"${BOOTSTRAP_SERVERS}\")\n      Client Type:        $(gum style --foreground 212 \"${CLIENT_TYPE}\")\n      Topics:             $(gum style --foreground 212 \"${KAFKA_TOPICS}\")\n      Processing Mode:    $(gum style --foreground 212 \"${KAFKA_MESSAGE_PROCESSING_MODE}\")\nEOF\n)\n        # Add mode-specific information\n        if [ \"$KAFKA_MESSAGE_PROCESSING_MODE\" = \"script\" ]; then\n            header_content+=$(cat << EOF\n\n      Scripts Dir:        $(gum style --foreground 212 \"${KAFKA_SCRIPTS_DIR}\")\nEOF\n)\n        elif [ \"$KAFKA_MESSAGE_PROCESSING_MODE\" = \"file\" ]; then\n            header_content+=$(cat << EOF\n\n      Output Dir:         $(gum style --foreground 212 \"${KAFKA_MESSAGE_OUTPUT_DIR}\")\n      Append Mode:        $(gum style --foreground 212 \"${KAFKA_FILE_APPEND}\")\nEOF\n)\n        fi\n        \n        # Add advanced settings info if configured\n        if [ \"$KAFKA_CLIENT_COUNT\" != \"1\" ] || [ \"$KAFKA_CLIENT_PARALLEL\" = \"true\" ]; then\n            header_content+=$(cat << EOF\n\n      Client Instances:   $(gum style --foreground 212 \"${KAFKA_CLIENT_COUNT}\")\n      Parallel Execution: $(gum style --foreground 212 \"${KAFKA_CLIENT_PARALLEL}\")\nEOF\n)\n        fi\n    fi\n    \n    # Create the help message with Gum styling\n    gum style \\\n        --border rounded \\\n        --border-foreground 240 \\\n        --padding \"1 2\" \\\n        --margin \"1 0\" \\\n        --width 96 \\\n        \"$header_content\"\n}\n\n# Make bootstrap function available\nbootstrap() {\n    bootstrap_kafka\n}\n\n# Check if Kafka config exists, if not, prompt to run bootstrap\nif [ ! -f \"$FLOX_ENV_CACHE/kafka_config.sh\" ]; then\n    gum style --foreground 212 --bold \"No Kafka configuration detected. Let's set one up!\"\n    bootstrap_kafka\nelse\n    # Source the config and set up environment\n    setup_kafka_env\nfi\n\n# checks does/does not readme exist, downloads if not exist\ndownload_readme() {\n  local readme_path=\"$FLOX_ENV_PROJECT/README.md\"\n  \n  if [ ! -f \"$readme_path\" ] || [ ! -s \"$readme_path\" ]; then\n    curl -sL \"https://raw.githubusercontent.com/barstoolbluz/floxenvs/main/kafka/README.md\" > \"$readme_path\" 2>/dev/null\n  fi\n}\n\n# Show help message after configuration\ninfo\ndownload_readme\n"
+      "on-activate": "bootstrap_kafka() {\n    clear\n    \n    gum style \\\n        --border rounded \\\n        --border-foreground 240 \\\n        --padding \"1 2\" \\\n        --margin \"1 0\" \\\n        --width 70 \\\n        \"$(gum style --foreground 27 --bold 'Apache Kafka config')\n        \n$(gum style --foreground 240 'First-time setup for your Apache Kafka KRaft environment')\"\n    \n    # detects non-loopback ip address\n    detect_ip() {\n        local ip=\"\"\n        # for macos/darwin\n        if [[ \"$(uname)\" == \"Darwin\" ]]; then\n            ip=$(ifconfig | grep \"inet \" | grep -v 127.0.0.1 | awk '{print $2}' | head -n 1)\n        # for linux and wsl\n        else\n            # try eth0 first (common in wsl2 and linux)\n            ip=$(ip -4 addr show eth0 2>/dev/null | grep inet | awk '{print $2}' | cut -d/ -f1 | head -n 1)\n            \n            # if eth0 didn't work, try other interfaces\n            if [[ -z \"$ip\" ]]; then\n                # try global scope addresses\n                ip=$(ip -4 addr show scope global 2>/dev/null | grep inet | awk '{print $2}' | cut -d/ -f1 | head -n 1)\n                \n                # try any non-loopback as last resort\n                if [[ -z \"$ip\" ]]; then\n                    ip=$(ip -4 addr | grep -v \"127.0.0.1\" | grep -v \"10.255.255\" | grep inet | awk '{print $2}' | cut -d/ -f1 | head -n 1)\n                fi\n            fi\n        fi\n        \n        # default to localhost if no external ip found\n        if [[ -z \"$ip\" ]]; then\n            ip=\"localhost\"\n        fi\n        \n        echo \"$ip\"\n    }\n    \n    # set defaults\n    DEFAULT_KAFKA_MODE=\"kraft-combined\"\n    DEFAULT_KAFKA_NODE_ID=\"1\"\n    DEFAULT_KAFKA_PORT=\"9092\"\n    DEFAULT_KAFKA_HOST=$(detect_ip)\n    DEFAULT_KAFKA_DATA_DIR=\"${FLOX_ENV_CACHE}/data/kafka\"\n    DEFAULT_KAFKA_LOG_DIR=\"${FLOX_ENV_CACHE}/kafka-logs\"\n    DEFAULT_KAFKA_REPLICATION_FACTOR=\"1\"\n    DEFAULT_KAFKA_NUM_PARTITIONS=\"1\"\n    DEFAULT_KRAFT_CONTROLLER_PORT=\"9093\"\n    \n    # create directories\n    mkdir -p \"$KAFKA_CONFIG_DIR\" \"$KAFKA_LOG_DIR\"\n    \n    echo \"\"\n    KAFKA_MODE=$(gum choose --header \"Select Kafka node type:\" \"kraft-combined\" \"kraft-controller\" \"kraft-broker\" \"client\")\n    \n    if [[ \"$KAFKA_MODE\" == \"kraft-\"* ]]; then\n        echo \"$(gum style --foreground 240 'Configure Kafka KRaft Mode')\"\n        echo \"$(gum style --foreground 240 'Press Enter to accept the default values shown in [brackets]')\"\n        echo \"\"\n        \n        # Set JOINING_EXISTING_CLUSTER flag\n        JOINING_EXISTING_CLUSTER=false\n        \n        # set node id based on mode\n        if [ \"$KAFKA_MODE\" = \"kraft-controller\" ]; then\n            # Ask if joining existing cluster or creating new one\n            CLUSTER_ACTION=$(gum choose --header \"Are you:\" \"Creating a new Kafka cluster\" \"Adding a controller to an existing cluster\")\n            \n            # Set flag for joining existing cluster\n            if [ \"$CLUSTER_ACTION\" = \"Adding a controller to an existing cluster\" ]; then\n                JOINING_EXISTING_CLUSTER=true\n            fi\n            \n            if [ \"$JOINING_EXISTING_CLUSTER\" = \"true\" ]; then\n                echo \"$(gum style --foreground 240 'Enter a unique node ID for this controller (must be different from existing controllers)')\"\n                DEFAULT_KAFKA_NODE_ID=\"\"  # No default - user must choose\n            else\n                DEFAULT_KAFKA_NODE_ID=\"1\"\n            fi\n        elif [ \"$KAFKA_MODE\" = \"kraft-broker\" ]; then\n            DEFAULT_KAFKA_NODE_ID=\"2\"\n        fi\n        \n        # When joining existing cluster, prompt for cluster ID first\n        if [ \"$JOINING_EXISTING_CLUSTER\" = \"true\" ]; then\n            echo \"$(gum style --foreground 240 'When joining an existing cluster, you need the exact cluster ID from another controller')\"\n            echo \"$(gum style --foreground 240 'You can find it in $KAFKA_CONFIG_DIR/cluster_id on an existing controller node')\"\n            \n            KAFKA_CLUSTER_ID=$(gum input --prompt \"Enter existing cluster ID: \")\n            \n            # Validate cluster ID is provided\n            if [ -z \"$KAFKA_CLUSTER_ID\" ]; then\n                echo \"❌ No cluster ID provided. This will cause connectivity issues.\"\n                echo \"   Cannot continue without a valid cluster ID for joining an existing cluster.\"\n                return 1\n            fi\n            \n            # Save cluster ID immediately\n            echo \"$KAFKA_CLUSTER_ID\" > \"$KAFKA_CONFIG_DIR/cluster_id\"\n            echo \"✅ Existing cluster ID saved successfully\"\n            \n            # Prompt for at least one existing controller\n            echo \"$(gum style --foreground 240 'Now enter details for at least one existing controller in the cluster')\"\n            \n            EXISTING_CONTROLLER_ID=$(gum input --prompt \"Existing Controller Node ID: \" --placeholder \"1\")\n            EXISTING_CONTROLLER_HOST=$(gum input --prompt \"Existing Controller Host: \" --placeholder \"192.168.0.88\")\n            EXISTING_CONTROLLER_PORT=$(gum input --prompt \"Existing Controller Port: \" --placeholder \"9093\")\n            \n            # Initialize controller quorum with existing controller\n            CONTROLLER_QUORUM=\"${EXISTING_CONTROLLER_ID}@${EXISTING_CONTROLLER_HOST}:${EXISTING_CONTROLLER_PORT}\"\n        fi\n\n        # Only show the controller node message when in controller mode and joining an existing cluster\n        if [ \"$KAFKA_MODE\" = \"kraft-controller\" ] && [ \"$JOINING_EXISTING_CLUSTER\" = \"true\" ]; then\n            echo \"\"\n            echo \"$(gum style --foreground 27 --bold '🔄 Now configuring your new controller node')\"\n            echo \"$(gum style --foreground 240 'Please provide details for the controller you are adding to the cluster')\"\n            echo \"\"\n        fi\n\t\n        # Handle empty DEFAULT_KAFKA_NODE_ID (for joining existing cluster)\n        if [ -z \"$DEFAULT_KAFKA_NODE_ID\" ]; then\n            KAFKA_NODE_ID=$(gum input --prompt \"New Controller's Node ID: \")\n            # Ensure a value is provided\n            if [ -z \"$KAFKA_NODE_ID\" ]; then\n                echo \"❌ A unique node ID is required. Cannot continue.\"\n                return 1\n            fi\n        else\n            KAFKA_NODE_ID=$(gum input --placeholder \"[${DEFAULT_KAFKA_NODE_ID}]\" --value \"$DEFAULT_KAFKA_NODE_ID\" --prompt \"Node ID: \")\n        fi\n        \n        # Use appropriate prompt based on mode for hostname/IP\n        if [ \"$KAFKA_MODE\" = \"kraft-controller\" ]; then\n            HOST_PROMPT=\"Controller's Hostname/IP: \"\n        elif [ \"$KAFKA_MODE\" = \"kraft-broker\" ]; then\n            HOST_PROMPT=\"Broker's Hostname/IP: \"\n        else # kraft-combined\n            HOST_PROMPT=\"Node's Hostname/IP: \"\n        fi\n        KAFKA_HOST=$(gum input --placeholder \"[${DEFAULT_KAFKA_HOST}]\" --value \"$DEFAULT_KAFKA_HOST\" --prompt \"$HOST_PROMPT\")\n        \n        # configure ports based on mode\n        if [ \"$KAFKA_MODE\" = \"kraft-controller\" ]; then\n            KRAFT_CONTROLLER_PORT=$(gum input --placeholder \"[${DEFAULT_KRAFT_CONTROLLER_PORT}]\" --value \"$DEFAULT_KRAFT_CONTROLLER_PORT\" --prompt \"Controller Port: \")\n            KAFKA_PORT=\"\"\n        else\n            if [ \"$KAFKA_MODE\" = \"kraft-broker\" ]; then\n                DEFAULT_KAFKA_PORT=\"9092\"\n            fi\n            KAFKA_PORT=$(gum input --placeholder \"[${DEFAULT_KAFKA_PORT}]\" --value \"$DEFAULT_KAFKA_PORT\" --prompt \"Port: \")\n            KRAFT_CONTROLLER_PORT=\"$DEFAULT_KRAFT_CONTROLLER_PORT\"\n        fi\n        \n        # Set data directory with appropriate prompt\n        if [ \"$KAFKA_MODE\" = \"kraft-controller\" ]; then\n            DIR_PROMPT=\"Controller's Data Directory: \"\n        elif [ \"$KAFKA_MODE\" = \"kraft-broker\" ]; then\n            DIR_PROMPT=\"Broker's Data Directory: \"\n        else # kraft-combined\n            DIR_PROMPT=\"Data Directory: \"\n        fi\n        KAFKA_DATA_DIR=\"${FLOX_ENV_CACHE}/data/kafka/${KAFKA_MODE}-${KAFKA_NODE_ID}\"\n        KAFKA_DATA_DIR=$(gum input --placeholder \"[${KAFKA_DATA_DIR}]\" --value \"$KAFKA_DATA_DIR\" --prompt \"$DIR_PROMPT\")\n        \n        # check for existing data\n        if [ -d \"$KAFKA_DATA_DIR\" ] && [ \"$(ls -A \"$KAFKA_DATA_DIR\" 2>/dev/null)\" ]; then\n            echo \"Found existing Kafka data in $KAFKA_DATA_DIR\"\n            if gum confirm \"Clean existing data directory? (Recommended if changing configs)\" --default=true; then\n                rm -rf \"$KAFKA_DATA_DIR\"/*\n                echo \"Data directory cleaned.\"\n            else\n                echo \"Using existing data directory. Format may fail if cluster IDs don't match.\"\n            fi\n        fi\n        \n        # ensure data directory exists\n        mkdir -p \"$KAFKA_DATA_DIR\"\n        \n        # configure replication for controller mode\n        if [ \"$KAFKA_MODE\" = \"kraft-controller\" ]; then\n            KAFKA_REPLICATION_FACTOR=$(gum input --placeholder \"[${DEFAULT_KAFKA_REPLICATION_FACTOR}]\" --value \"$DEFAULT_KAFKA_REPLICATION_FACTOR\" --prompt \"Default Replication Factor: \")\n            KAFKA_NUM_PARTITIONS=$(gum input --placeholder \"[${DEFAULT_KAFKA_NUM_PARTITIONS}]\" --value \"$DEFAULT_KAFKA_NUM_PARTITIONS\" --prompt \"Default Number of Partitions: \")\n            \n            # set up controller quorum\n            if [ \"$JOINING_EXISTING_CLUSTER\" != \"true\" ]; then\n                CONTROLLER_QUORUM=\"${KAFKA_NODE_ID}@${KAFKA_HOST}:${KRAFT_CONTROLLER_PORT}\"\n                if gum confirm \"Do you want to define additional controllers?\" --default=false; then\n                    echo \"$(gum style --foreground 240 'Configure additional controllers for high availability')\"\n                    \n                    # track used ports to check for conflicts\n                    declare -A used_ports\n                    used_ports[\"$KRAFT_CONTROLLER_PORT\"]=1\n                    \n                    # track highest node id\n                    HIGHEST_NODE_ID=$KAFKA_NODE_ID\n                    \n                    while true; do\n                        # suggest next node id\n                        SUGGESTED_NODE_ID=$((HIGHEST_NODE_ID + 1))\n                        \n                        ADDITIONAL_CONTROLLER_ID=$(gum input --prompt \"Additional Controller Node ID: \" --value \"$SUGGESTED_NODE_ID\")\n                        ADDITIONAL_CONTROLLER_HOST=$(gum input --prompt \"Additional Controller Host: \" --value \"$KAFKA_HOST\" --placeholder \"192.168.0.89\")\n                        \n                        # handle port suggestion\n                        if [ \"$ADDITIONAL_CONTROLLER_HOST\" = \"$KAFKA_HOST\" ]; then\n                            # find next available port\n                            SUGGESTED_PORT=$((KRAFT_CONTROLLER_PORT))\n                            while [ -n \"${used_ports[$SUGGESTED_PORT]}\" ]; do\n                                SUGGESTED_PORT=$((SUGGESTED_PORT + 1))\n                            done\n                        else\n                            SUGGESTED_PORT=\"9093\"\n                        fi\n                        \n                        ADDITIONAL_CONTROLLER_PORT=$(gum input --prompt \"Additional Controller Port: \" --value \"$SUGGESTED_PORT\")\n                        \n                        # handle empty values\n                        if [ -z \"$ADDITIONAL_CONTROLLER_ID\" ]; then\n                            ADDITIONAL_CONTROLLER_ID=\"$SUGGESTED_NODE_ID\"\n                        fi\n                        if [ -z \"$ADDITIONAL_CONTROLLER_PORT\" ]; then\n                            ADDITIONAL_CONTROLLER_PORT=\"$SUGGESTED_PORT\"\n                        fi\n                        \n                        # update highest node id\n                        if [ \"$ADDITIONAL_CONTROLLER_ID\" -gt \"$HIGHEST_NODE_ID\" ]; then\n                            HIGHEST_NODE_ID=\"$ADDITIONAL_CONTROLLER_ID\"\n                        fi\n                        \n                        # check for port conflicts\n                        if [ \"$ADDITIONAL_CONTROLLER_HOST\" = \"$KAFKA_HOST\" ] && [ -n \"${used_ports[$ADDITIONAL_CONTROLLER_PORT]}\" ]; then\n                            echo \"❌ Port conflict: $ADDITIONAL_CONTROLLER_PORT is already in use on this host\"\n                            continue\n                        fi\n                        \n                        # add to quorum\n                        CONTROLLER_QUORUM=\"${CONTROLLER_QUORUM},${ADDITIONAL_CONTROLLER_ID}@${ADDITIONAL_CONTROLLER_HOST}:${ADDITIONAL_CONTROLLER_PORT}\"\n                        \n                        # track used port\n                        if [ \"$ADDITIONAL_CONTROLLER_HOST\" = \"$KAFKA_HOST\" ]; then\n                            used_ports[\"$ADDITIONAL_CONTROLLER_PORT\"]=1\n                        fi\n                        \n                        if ! gum confirm \"Add another controller?\" --default=false; then\n                            break\n                        fi\n                    done\n                    \n                    echo \"Controller quorum configured: $CONTROLLER_QUORUM\"\n                fi\n            else\n                # For joining existing cluster, add this controller to the quorum\n                CONTROLLER_QUORUM=\"${CONTROLLER_QUORUM},${KAFKA_NODE_ID}@${KAFKA_HOST}:${KRAFT_CONTROLLER_PORT}\"\n                echo \"Adding this controller to quorum: $CONTROLLER_QUORUM\"\n            fi\n        else\n            # handle settings for combined and broker modes\n            if [ \"$KAFKA_MODE\" = \"kraft-combined\" ]; then\n                if gum confirm \"Configure advanced KRaft settings?\" --default=false; then\n                    KRAFT_CONTROLLER_PORT=$(gum input --placeholder \"[${DEFAULT_KRAFT_CONTROLLER_PORT}]\" --value \"$DEFAULT_KRAFT_CONTROLLER_PORT\" --prompt \"Controller Port: \")\n                    KAFKA_REPLICATION_FACTOR=$(gum input --placeholder \"[${DEFAULT_KAFKA_REPLICATION_FACTOR}]\" --value \"$DEFAULT_KAFKA_REPLICATION_FACTOR\" --prompt \"Default Replication Factor: \")\n                    KAFKA_NUM_PARTITIONS=$(gum input --placeholder \"[${DEFAULT_KAFKA_NUM_PARTITIONS}]\" --value \"$DEFAULT_KAFKA_NUM_PARTITIONS\" --prompt \"Default Number of Partitions: \")\n                else\n                    KAFKA_REPLICATION_FACTOR=\"$DEFAULT_KAFKA_REPLICATION_FACTOR\"\n                    KAFKA_NUM_PARTITIONS=\"$DEFAULT_KAFKA_NUM_PARTITIONS\"\n                fi\n            else\n                # broker mode defaults\n                KAFKA_REPLICATION_FACTOR=\"$DEFAULT_KAFKA_REPLICATION_FACTOR\"\n                KAFKA_NUM_PARTITIONS=\"$DEFAULT_KAFKA_NUM_PARTITIONS\"\n            fi\n        fi\n        \n        # determine process roles\n        if [ \"$KAFKA_MODE\" = \"kraft-combined\" ]; then\n            PROCESS_ROLES=\"broker,controller\"\n        elif [ \"$KAFKA_MODE\" = \"kraft-controller\" ]; then\n            PROCESS_ROLES=\"controller\"\n        elif [ \"$KAFKA_MODE\" = \"kraft-broker\" ]; then\n            PROCESS_ROLES=\"broker\"\n            \n            # for broker mode, get controller info\n            echo \"$(gum style --foreground 240 'For broker mode, we need the controller information')\"\n            \n            CONTROLLER_HOST=$(gum input --placeholder \"192.168.0.88\" --prompt \"Controller Host IP/Hostname: \")\n            CONTROLLER_PORT=$(gum input --placeholder \"9093\" --prompt \"Controller Port: \")\n            CONTROLLER_NODE_ID=$(gum input --placeholder \"1\" --prompt \"Controller Node ID: \")\n            \n            # create controller quorum\n            CONTROLLER_QUORUM=\"${CONTROLLER_NODE_ID}@${CONTROLLER_HOST}:${CONTROLLER_PORT}\"\n            echo \"Using controller quorum: $CONTROLLER_QUORUM\"\n            \n            # get cluster id from controller\n            echo \"$(gum style --foreground 240 'We need the cluster ID from the controller node')\"\n            echo \"$(gum style --foreground 240 'You can find it in $KAFKA_CONFIG_DIR/cluster_id on the controller')\"\n            \n            KAFKA_CLUSTER_ID=$(gum input --prompt \"Enter cluster ID from controller: \")\n            if [ -z \"$KAFKA_CLUSTER_ID\" ]; then\n                echo \"❌ No cluster ID provided. This will cause connectivity issues.\"\n                echo \"   You can edit $KAFKA_CONFIG_DIR/cluster_id later and run 'flox services restart'\"\n            else\n                echo \"$KAFKA_CLUSTER_ID\" > \"$KAFKA_CONFIG_DIR/cluster_id\"\n                echo \"✅ Cluster ID saved successfully\"\n            fi\n            \n            # check controller connectivity\n            echo \"Checking if controller is reachable...\"\n            if nc -z -w 5 \"$CONTROLLER_HOST\" \"$CONTROLLER_PORT\" 2>/dev/null; then\n                echo \"✅ Controller node is reachable at ${CONTROLLER_HOST}:${CONTROLLER_PORT}\"\n            else\n                echo \"❌ Warning: Cannot reach controller at ${CONTROLLER_HOST}:${CONTROLLER_PORT}\"\n                echo \"   Make sure the controller is running before starting the broker.\"\n            fi\n        fi\n        \n        # generate base kraft properties\n        cat > \"$KAFKA_CONFIG_DIR/kraft.properties.base\" << EOF\n# KRaft config generated by Flox\nnode.id=$KAFKA_NODE_ID\nprocess.roles=$PROCESS_ROLES\nEOF\n\n        # add listeners based on role\n        if [ \"$PROCESS_ROLES\" = \"broker,controller\" ]; then\n            cat >> \"$KAFKA_CONFIG_DIR/kraft.properties.base\" << EOF\nlisteners=PLAINTEXT://$KAFKA_HOST:$KAFKA_PORT,CONTROLLER://$KAFKA_HOST:$KRAFT_CONTROLLER_PORT\nadvertised.listeners=PLAINTEXT://$KAFKA_HOST:$KAFKA_PORT\nEOF\n        elif [ \"$PROCESS_ROLES\" = \"broker\" ]; then\n            cat >> \"$KAFKA_CONFIG_DIR/kraft.properties.base\" << EOF\nlisteners=PLAINTEXT://$KAFKA_HOST:$KAFKA_PORT\nadvertised.listeners=PLAINTEXT://$KAFKA_HOST:$KAFKA_PORT\nEOF\n        else\n            # controller-only\n            cat >> \"$KAFKA_CONFIG_DIR/kraft.properties.base\" << EOF\nlisteners=CONTROLLER://$KAFKA_HOST:$KRAFT_CONTROLLER_PORT\nEOF\n        fi\n        \n        # add security protocols\n        cat >> \"$KAFKA_CONFIG_DIR/kraft.properties.base\" << EOF\nlistener.security.protocol.map=CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT\ncontroller.listener.names=CONTROLLER\nEOF\n        \n        # set controller quorum voters\n        if [ \"$KAFKA_MODE\" = \"kraft-broker\" ]; then\n            cat >> \"$KAFKA_CONFIG_DIR/kraft.properties.base\" << EOF\ncontroller.quorum.voters=$CONTROLLER_QUORUM\nEOF\n        elif [ \"$KAFKA_MODE\" = \"kraft-controller\" ] && [ -n \"$CONTROLLER_QUORUM\" ]; then\n            cat >> \"$KAFKA_CONFIG_DIR/kraft.properties.base\" << EOF\ncontroller.quorum.voters=$CONTROLLER_QUORUM\nEOF\n        else\n            cat >> \"$KAFKA_CONFIG_DIR/kraft.properties.base\" << EOF\ncontroller.quorum.voters=${KAFKA_NODE_ID}@$KAFKA_HOST:$KRAFT_CONTROLLER_PORT\nEOF\n        fi\n        \n        # add common config\n        cat >> \"$KAFKA_CONFIG_DIR/kraft.properties.base\" << EOF\nlog.dirs=$KAFKA_DATA_DIR\ndefault.replication.factor=$KAFKA_REPLICATION_FACTOR\nnum.partitions=$KAFKA_NUM_PARTITIONS\nlog.retention.hours=168\nlog.segment.bytes=1073741824\nlog.retention.check.interval.ms=300000\noffsets.topic.replication.factor=1\ntransaction.state.log.replication.factor=1\ntransaction.state.log.min.isr=1\nEOF\n\n        # generate cluster id for controller node\n        if [ \"$KAFKA_MODE\" = \"kraft-controller\" ] || [ \"$KAFKA_MODE\" = \"kraft-combined\" ]; then\n            if [ \"$JOINING_EXISTING_CLUSTER\" != \"true\" ] && [ ! -f \"$KAFKA_CONFIG_DIR/cluster_id\" ]; then\n                # Only generate new ID for new clusters\n                KAFKA_CLUSTER_ID=$(kafka-storage.sh random-uuid)\n                echo \"Generated new cluster ID: $KAFKA_CLUSTER_ID\"\n                echo \"IMPORTANT: Save this cluster ID for use on the broker node!\"\n                echo \"$KAFKA_CLUSTER_ID\" > \"$KAFKA_CONFIG_DIR/cluster_id\"\n            elif [ -f \"$KAFKA_CONFIG_DIR/cluster_id\" ]; then\n                KAFKA_CLUSTER_ID=$(cat \"$KAFKA_CONFIG_DIR/cluster_id\")\n                echo \"Using existing cluster ID: $KAFKA_CLUSTER_ID\"\n            fi\n        fi\n        \n        # save config\n        cat > \"$FLOX_ENV_CACHE/kafka_config.sh\" << EOF\n# Kafka config generated by Flox environment\nKAFKA_MODE=\"$KAFKA_MODE\"\nKAFKA_CONFIG_DIR=\"$KAFKA_CONFIG_DIR\"\nKAFKA_LOG_DIR=\"$KAFKA_LOG_DIR\"\nKAFKA_DATA_DIR=\"$KAFKA_DATA_DIR\"\nKAFKA_NODE_ID=\"$KAFKA_NODE_ID\"\nKAFKA_HOST=\"$KAFKA_HOST\"\nKAFKA_PORT=\"$KAFKA_PORT\"\nKRAFT_CONTROLLER_PORT=\"$KRAFT_CONTROLLER_PORT\"\nPROCESS_ROLES=\"$PROCESS_ROLES\"\nEOF\n\n        # add mode-specific config\n        if [ \"$KAFKA_MODE\" = \"kraft-controller\" ] && [ -n \"$CONTROLLER_QUORUM\" ]; then\n            cat >> \"$FLOX_ENV_CACHE/kafka_config.sh\" << EOF\nCONTROLLER_QUORUM=\"$CONTROLLER_QUORUM\"\nEOF\n        fi\n\n        # add broker-specific config\n        if [ \"$KAFKA_MODE\" = \"kraft-broker\" ]; then\n            cat >> \"$FLOX_ENV_CACHE/kafka_config.sh\" << EOF\nCONTROLLER_QUORUM=\"$CONTROLLER_QUORUM\"\nCONTROLLER_HOST=\"$CONTROLLER_HOST\"\nCONTROLLER_PORT=\"$CONTROLLER_PORT\"\nCONTROLLER_NODE_ID=\"$CONTROLLER_NODE_ID\"\nEOF\n        fi\n        \n        # add cluster id if available\n        if [ -f \"$KAFKA_CONFIG_DIR/cluster_id\" ]; then\n            cat >> \"$FLOX_ENV_CACHE/kafka_config.sh\" << EOF\nKAFKA_CLUSTER_ID=\"$(cat \"$KAFKA_CONFIG_DIR/cluster_id\")\"\nEOF\n        fi\n    \n    elif [ \"$KAFKA_MODE\" = \"client\" ]; then\n        echo \"$(gum style --foreground 240 'Configure Kafka Client')\"\n        echo \"$(gum style --foreground 240 'Press Enter to accept the default values shown in [brackets]')\"\n        echo \"\"\n\n        # set initial bootstrap server\n        BOOTSTRAP_SERVERS=\"${DEFAULT_KAFKA_HOST}:${DEFAULT_KAFKA_PORT}\"\n        BOOTSTRAP_SERVERS=$(gum input --placeholder \"[${BOOTSTRAP_SERVERS}]\" --value \"${BOOTSTRAP_SERVERS}\" --prompt \"Initial Bootstrap Server: \")\n\n        # add additional servers\n        while gum confirm \"Add additional bootstrap server?\" --default=false; do\n            ADDITIONAL_SERVER=$(gum input --placeholder \"hostname:port\" --prompt \"Additional Bootstrap Server: \")\n\n            # validate format\n            if [[ \"$ADDITIONAL_SERVER\" =~ ^[^:]+:[0-9]+$ ]]; then\n                BOOTSTRAP_SERVERS=\"${BOOTSTRAP_SERVERS},${ADDITIONAL_SERVER}\"\n                echo \"Added: $ADDITIONAL_SERVER\"\n            else\n                echo \"❌ Invalid format. Please use hostname:port\"\n            fi\n        done\n\n        # display final config\n        echo \"Final bootstrap servers: $BOOTSTRAP_SERVERS\"\n\n        # select client type\n        CLIENT_TYPE=$(gum choose --header \"Select client type:\" \"producer\" \"consumer\" \"both\")\n\n        # configure topics\n        DEFAULT_TOPIC=\"flox-is-great\"\n        KAFKA_TOPICS=$(gum input --placeholder \"[${DEFAULT_TOPIC}]\" --value \"${DEFAULT_TOPIC}\" --prompt \"Topic(s) to produce to/consume from: \")\n\n        # select processing mode\n        KAFKA_MESSAGE_PROCESSING_MODE=$(gum choose --header \"Select message processing mode:\" \"echo\" \"file\" \"script\")\n\n        # configure scripts if needed\n        if [ \"$KAFKA_MESSAGE_PROCESSING_MODE\" = \"script\" ]; then\n            mkdir -p \"$FLOX_ENV_CACHE/kafka-scripts\"\n            \n            if [ \"$CLIENT_TYPE\" = \"producer\" ] || [ \"$CLIENT_TYPE\" = \"both\" ]; then\n                SCRIPT_NAME=$(gum input --placeholder \"generate_messages.sh\" --value \"generate_messages.sh\" --prompt \"Producer script name: \")\n                \n                if [ ! -f \"$FLOX_ENV_CACHE/kafka-scripts/$SCRIPT_NAME\" ]; then\n                    cat > \"$FLOX_ENV_CACHE/kafka-scripts/$SCRIPT_NAME\" << 'EOF'\n#!/bin/bash\n# Example message generation script\nwhile true; do\n    echo \"Message at $(date)\"\n    sleep 1\ndone\nEOF\n                    chmod +x \"$FLOX_ENV_CACHE/kafka-scripts/$SCRIPT_NAME\"\n                    echo \"Created example script: $FLOX_ENV_CACHE/kafka-scripts/$SCRIPT_NAME\"\n                fi\n            fi\n            \n            if [ \"$CLIENT_TYPE\" = \"consumer\" ] || [ \"$CLIENT_TYPE\" = \"both\" ]; then\n                SCRIPT_NAME=$(gum input --placeholder \"process_messages.sh\" --value \"process_messages.sh\" --prompt \"Consumer script name: \")\n                \n                if [ ! -f \"$FLOX_ENV_CACHE/kafka-scripts/$SCRIPT_NAME\" ]; then\n                    cat > \"$FLOX_ENV_CACHE/kafka-scripts/$SCRIPT_NAME\" << 'EOF'\n#!/bin/bash\n# Example message processing script\nwhile read -r message; do\n    echo \"Processed: $message\"\ndone\nEOF\n                    chmod +x \"$FLOX_ENV_CACHE/kafka-scripts/$SCRIPT_NAME\"\n                    echo \"Created example script: $FLOX_ENV_CACHE/kafka-scripts/$SCRIPT_NAME\"\n                fi\n            fi\n        fi\n\n        # configure advanced settings\n        if gum confirm \"Configure advanced client settings?\" --default=false; then\n            KAFKA_CLIENT_COUNT=$(gum input --placeholder \"[1]\" --value \"1\" --prompt \"Number of client instances: \")\n            KAFKA_CLIENT_PARALLEL_CHOICE=$(gum choose --header \"Run clients in parallel?\" \"true\" \"false\")\n            \n            if [ \"$KAFKA_MESSAGE_PROCESSING_MODE\" = \"file\" ]; then\n                KAFKA_FILE_APPEND_CHOICE=$(gum choose --header \"Append to output file?\" \"true\" \"false\")\n            else\n                KAFKA_FILE_APPEND_CHOICE=\"true\"\n            fi\n            \n            # set directories\n            DEFAULT_OUTPUT_DIR=\"$FLOX_ENV_CACHE/kafka-message-output\"\n            KAFKA_MESSAGE_OUTPUT_DIR=$(gum input --placeholder \"[${DEFAULT_OUTPUT_DIR}]\" --value \"${DEFAULT_OUTPUT_DIR}\" --prompt \"Message output directory: \")\n            \n            DEFAULT_SCRIPTS_DIR=\"$FLOX_ENV_CACHE/kafka-scripts\"\n            KAFKA_SCRIPTS_DIR=$(gum input --placeholder \"[${DEFAULT_SCRIPTS_DIR}]\" --value \"${DEFAULT_SCRIPTS_DIR}\" --prompt \"Scripts directory: \")\n        else\n            # set defaults\n            KAFKA_CLIENT_COUNT=\"1\"\n            KAFKA_CLIENT_PARALLEL_CHOICE=\"false\"\n            KAFKA_FILE_APPEND_CHOICE=\"true\"\n            KAFKA_MESSAGE_OUTPUT_DIR=\"$FLOX_ENV_CACHE/kafka-message-output\"\n            KAFKA_SCRIPTS_DIR=\"$FLOX_ENV_CACHE/kafka-scripts\"\n        fi\n\n        # create directories\n        mkdir -p \"$KAFKA_MESSAGE_OUTPUT_DIR\" \"$KAFKA_SCRIPTS_DIR\"\n        \n        # save client config\n        cat > \"$FLOX_ENV_CACHE/kafka_config.sh\" << EOF\n# Kafka config generated by Flox environment\nKAFKA_MODE=\"$KAFKA_MODE\"\nKAFKA_CONFIG_DIR=\"$KAFKA_CONFIG_DIR\"\nKAFKA_LOG_DIR=\"$KAFKA_LOG_DIR\"\nKAFKA_DATA_DIR=\"$KAFKA_DATA_DIR\"\nBOOTSTRAP_SERVERS=\"$BOOTSTRAP_SERVERS\"\nCLIENT_TYPE=\"$CLIENT_TYPE\"\nKAFKA_TOPICS=\"$KAFKA_TOPICS\"\nKAFKA_CLIENT_COUNT=\"$KAFKA_CLIENT_COUNT\"\nKAFKA_CLIENT_PARALLEL=\"$KAFKA_CLIENT_PARALLEL_CHOICE\"\nKAFKA_MESSAGE_PROCESSING_MODE=\"$KAFKA_MESSAGE_PROCESSING_MODE\"\nKAFKA_MESSAGE_OUTPUT_DIR=\"$KAFKA_MESSAGE_OUTPUT_DIR\"\nKAFKA_SCRIPTS_DIR=\"$KAFKA_SCRIPTS_DIR\"\nKAFKA_FILE_APPEND=\"$KAFKA_FILE_APPEND_CHOICE\"\nEOF\n    fi\n\n    # apply config and export variables\n    source \"$FLOX_ENV_CACHE/kafka_config.sh\"\n    \n    # export critical variables\n    export KAFKA_MODE\n    export KAFKA_CONFIG_DIR\n    export KAFKA_LOG_DIR\n    export KAFKA_DATA_DIR\n    \n    if [ \"$KAFKA_MODE\" = \"client\" ]; then\n        export BOOTSTRAP_SERVERS\n        export CLIENT_TYPE\n        export KAFKA_TOPICS\n        export KAFKA_CLIENT_COUNT\n        export KAFKA_CLIENT_PARALLEL\n        export KAFKA_MESSAGE_PROCESSING_MODE\n        export KAFKA_MESSAGE_OUTPUT_DIR\n        export KAFKA_SCRIPTS_DIR\n        export KAFKA_FILE_APPEND\n    else\n        export KAFKA_NODE_ID\n        export KAFKA_HOST\n        export KAFKA_PORT\n        export KRAFT_CONTROLLER_PORT\n        export PROCESS_ROLES\n        [ -n \"$KAFKA_CLUSTER_ID\" ] && export KAFKA_CLUSTER_ID\n    fi\n    \n    export KAFKA_HOME=\"$(dirname $(which kafka-server-start.sh))/..\"\n    \n    # display exported variables\n    echo \"\"\n    echo \"$(gum style --foreground 240 'Exported env vars:')\"\n    echo \"  KAFKA_MODE=$KAFKA_MODE\"\n    echo \"  KAFKA_CONFIG_DIR=$KAFKA_CONFIG_DIR\"\n    echo \"  KAFKA_LOG_DIR=$KAFKA_LOG_DIR\"\n    echo \"  KAFKA_DATA_DIR=$KAFKA_DATA_DIR\"\n    \n    if [ \"$KAFKA_MODE\" = \"client\" ]; then\n        echo \"  BOOTSTRAP_SERVERS=$BOOTSTRAP_SERVERS\"\n        echo \"  CLIENT_TYPE=$CLIENT_TYPE\"\n        echo \"  KAFKA_TOPICS=$KAFKA_TOPICS\"\n        echo \"  KAFKA_CLIENT_COUNT=$KAFKA_CLIENT_COUNT\"\n        echo \"  KAFKA_CLIENT_PARALLEL=$KAFKA_CLIENT_PARALLEL\"\n        echo \"  KAFKA_MESSAGE_PROCESSING_MODE=$KAFKA_MESSAGE_PROCESSING_MODE\"\n        echo \"  KAFKA_MESSAGE_OUTPUT_DIR=$KAFKA_MESSAGE_OUTPUT_DIR\"\n        echo \"  KAFKA_SCRIPTS_DIR=$KAFKA_SCRIPTS_DIR\"\n        echo \"  KAFKA_FILE_APPEND=$KAFKA_FILE_APPEND\"\n    else\n        echo \"  KAFKA_NODE_ID=$KAFKA_NODE_ID\"\n        echo \"  KAFKA_HOST=$KAFKA_HOST\"\n        echo \"  KAFKA_PORT=$KAFKA_PORT\"\n        echo \"  KRAFT_CONTROLLER_PORT=$KRAFT_CONTROLLER_PORT\"\n        echo \"  PROCESS_ROLES=$PROCESS_ROLES\"\n        [ -n \"$KAFKA_CLUSTER_ID\" ] && echo \"  KAFKA_CLUSTER_ID=$KAFKA_CLUSTER_ID\"\n    fi\n    \n    echo \"  KAFKA_HOME=$KAFKA_HOME\"\n    \n    echo \"\"\n    echo \"$(gum style --foreground 34 --bold \"✓ Kafka config saved!\")\"\n}\n\n# Setup environment variables from config file\nsetup_kafka_env() {\n    if [ -f \"$FLOX_ENV_CACHE/kafka_config.sh\" ]; then\n        # Source the config file\n        source \"$FLOX_ENV_CACHE/kafka_config.sh\"\n        \n        # Explicitly export all variables\n        export KAFKA_MODE\n        export KAFKA_CONFIG_DIR\n        export KAFKA_LOG_DIR\n        export KAFKA_DATA_DIR\n        export KAFKA_NODE_ID\n        export KAFKA_HOST\n        export KAFKA_PORT\n        export KRAFT_CONTROLLER_PORT\n        export PROCESS_ROLES\n        [ -n \"$KAFKA_CLUSTER_ID\" ] && export KAFKA_CLUSTER_ID\n        export KAFKA_HOME=\"$(dirname $(which kafka-server-start.sh))/..\"\n        \n        # Try to find JAVA_HOME if not already set\n        if [ -z \"$JAVA_HOME\" ]; then\n            export JAVA_HOME=\"$(dirname $(dirname $(which java)))\"\n        fi\n        \n        # Debug: Show loaded variables\n        echo \"Loaded Kafka environment variables:\" >&2\n        echo \"  KAFKA_MODE=$KAFKA_MODE\" >&2\n        echo \"  KAFKA_CONFIG_DIR=$KAFKA_CONFIG_DIR\" >&2\n        echo \"  KAFKA_LOG_DIR=$KAFKA_LOG_DIR\" >&2\n        echo \"  KAFKA_DATA_DIR=$KAFKA_DATA_DIR\" >&2\n        echo \"  KAFKA_NODE_ID=$KAFKA_NODE_ID\" >&2\n        echo \"  KAFKA_HOST=$KAFKA_HOST\" >&2\n        echo \"  KAFKA_PORT=$KAFKA_PORT\" >&2\n        echo \"  KRAFT_CONTROLLER_PORT=$KRAFT_CONTROLLER_PORT\" >&2\n        echo \"  PROCESS_ROLES=$PROCESS_ROLES\" >&2\n        [ -n \"$KAFKA_CLUSTER_ID\" ] && echo \"  KAFKA_CLUSTER_ID=$KAFKA_CLUSTER_ID\" >&2\n        echo \"  KAFKA_HOME=$KAFKA_HOME\" >&2\n    else\n        echo \"WARNING: kafka_config.sh not found at $FLOX_ENV_CACHE/kafka_config.sh\" >&2\n    fi\n}\n\n# Modified show_kafka_help function with fixed formatting\nshow_kafka_help() {\n    # Build the header content with consistent spacing\n    local header_content=$(cat << EOF\n$(gum style --foreground 141 --bold 'This is a  F l o x  Apache Kafka Environment (KRaft Mode)')\n\n👉  Manage Kafka Cluster(s):\n    $(gum style --foreground 212 'bootstrap')                              Runs interactive Kafka bootstrapping wizard\n    $(gum style --foreground 212 'topos')                                  Shows information about Kafka cluster topology\n\n👉  Use Kafka:\n    $(gum style --foreground 212 'kreate <topic> [partitions] [rf]')       Creates a new Kafka topic\n    $(gum style --foreground 212 'list')                                   Lists all available Kafka topics\n    $(gum style --foreground 212 'describe <topic>')                       Shows details for a specific topic\n    $(gum style --foreground 212 'status')                                 Checks Kafka broker status\nEOF\n)\n\n    # Add service start command based on mode\n    if [ \"$KAFKA_MODE\" = \"client\" ]; then\n        header_content+=$(cat << EOF\n\n    $(gum style --foreground 212 'flox services start')                    Start ${CLIENT_TYPE} client(s)\nEOF\n)\n    fi\n\n    header_content+=$(cat << EOF\n\n\n👉  Start / Stop / Monitor Kafka Service(s):\n    $(gum style --foreground 212 'flox services <start|stop|restart>')     Starts/stops/restarts Kafka services\n    $(gum style --foreground 212 'flox services status')                   Shows Kafka services status\n    $(gum style --foreground 212 'flox services logs kafka')               Shows Kafka logs\n                                           (\\`--follow\\` updates log events in console)\n\n👉  Get Help:\n    $(gum style --foreground 212 'readme')                                 View README.md using \\`bat\\`\n    $(gum style --foreground 212 'info')                                   Shows this help message\n\n\n👉  F l o x  Kafka Environment Details:\n      Kafka Mode:         $(gum style --foreground 212 \"${KAFKA_MODE:-Not configured}\")\nEOF\n)\n\n    # Add node-specific information based on the mode\n    if [ \"$KAFKA_MODE\" = \"kraft-controller\" ]; then\n        header_content+=$(cat << EOF\n\n      Controller Port:    $(gum style --foreground 212 \"${KRAFT_CONTROLLER_PORT}\")\n      Quorum Voters:      $(gum style --foreground 212 \"${CONTROLLER_QUORUM}\")\nEOF\n)\n        if [ -f \"$KAFKA_CONFIG_DIR/cluster_id\" ]; then\n            header_content+=$(cat << EOF\n\n      Cluster ID:         $(gum style --foreground 212 \"$(cat \"$KAFKA_CONFIG_DIR/cluster_id\")\")\n      ⚠️  IMPORTANT: Use this cluster ID when setting up broker nodes\nEOF\n)\n        fi\n    elif [ \"$KAFKA_MODE\" = \"kraft-broker\" ]; then\n        header_content+=$(cat << EOF\n\n      Controller Quorum:  $(gum style --foreground 212 \"${CONTROLLER_QUORUM}\")\n      Listening on:       $(gum style --foreground 212 \"${KAFKA_HOST}:${KAFKA_PORT}\")\nEOF\n)\n    elif [ \"$KAFKA_MODE\" = \"kraft-combined\" ]; then\n        header_content+=$(cat << EOF\n\n      Broker Port:        $(gum style --foreground 212 \"${KAFKA_PORT}\")\n      Controller Port:    $(gum style --foreground 212 \"${KRAFT_CONTROLLER_PORT}\")\nEOF\n)\n        if [ \"$ADVANCED_MODE\" = \"true\" ] && [ -n \"$CONTROLLER_QUORUM\" ]; then\n            header_content+=$(cat << EOF\n\n      Quorum Voters:      $(gum style --foreground 212 \"${CONTROLLER_QUORUM}\")\nEOF\n)\n        fi\n        if [ -f \"$KAFKA_CONFIG_DIR/cluster_id\" ]; then\n            header_content+=$(cat << EOF\n\n      Cluster ID:         $(gum style --foreground 212 \"$(cat \"$KAFKA_CONFIG_DIR/cluster_id\")\")\nEOF\n)\n        fi\n    elif [ \"$KAFKA_MODE\" = \"client\" ]; then\n        header_content+=$(cat << EOF\n\n      Connected to:       $(gum style --foreground 212 \"${BOOTSTRAP_SERVERS}\")\n      Client Type:        $(gum style --foreground 212 \"${CLIENT_TYPE}\")\n      Topics:             $(gum style --foreground 212 \"${KAFKA_TOPICS}\")\n      Processing Mode:    $(gum style --foreground 212 \"${KAFKA_MESSAGE_PROCESSING_MODE}\")\nEOF\n)\n        # Add mode-specific information\n        if [ \"$KAFKA_MESSAGE_PROCESSING_MODE\" = \"script\" ]; then\n            header_content+=$(cat << EOF\n\n      Scripts Dir:        $(gum style --foreground 212 \"${KAFKA_SCRIPTS_DIR}\")\nEOF\n)\n        elif [ \"$KAFKA_MESSAGE_PROCESSING_MODE\" = \"file\" ]; then\n            header_content+=$(cat << EOF\n\n      Output Dir:         $(gum style --foreground 212 \"${KAFKA_MESSAGE_OUTPUT_DIR}\")\n      Append Mode:        $(gum style --foreground 212 \"${KAFKA_FILE_APPEND}\")\nEOF\n)\n        fi\n        \n        # Add advanced settings info if configured\n        if [ \"$KAFKA_CLIENT_COUNT\" != \"1\" ] || [ \"$KAFKA_CLIENT_PARALLEL\" = \"true\" ]; then\n            header_content+=$(cat << EOF\n\n      Client Instances:   $(gum style --foreground 212 \"${KAFKA_CLIENT_COUNT}\")\n      Parallel Execution: $(gum style --foreground 212 \"${KAFKA_CLIENT_PARALLEL}\")\nEOF\n)\n        fi\n    fi\n    \n    # Create the help message with Gum styling\n    gum style \\\n        --border rounded \\\n        --border-foreground 240 \\\n        --padding \"1 2\" \\\n        --margin \"1 0\" \\\n        --width 96 \\\n        \"$header_content\"\n}\n\n# Make bootstrap function available\nbootstrap() {\n    bootstrap_kafka\n}\n\n# Check if Kafka config exists, if not, prompt to run bootstrap\nif [ ! -f \"$FLOX_ENV_CACHE/kafka_config.sh\" ]; then\n    gum style --foreground 212 --bold \"No Kafka configuration detected. Let's set one up!\"\n    bootstrap_kafka\nelse\n    # Source the config and set up environment\n    setup_kafka_env\nfi\n\n# checks does/does not readme exist, downloads if not exist\ndownload_readme() {\n  local readme_path=\"$FLOX_ENV_PROJECT/README.md\"\n  \n  if [ ! -f \"$readme_path\" ] || [ ! -s \"$readme_path\" ]; then\n    curl -sL \"https://raw.githubusercontent.com/barstoolbluz/floxenvs/main/kafka/README.md\" > \"$readme_path\" 2>/dev/null\n  fi\n}\n\n# Show help message after configuration\nshow_kafka_help\ndownload_readme\n"
     },
     "profile": {
-      "bash": "# sources helper functions\nsource \"$FLOX_ENV_CACHE/helper-functions/helper-functions.sh\"\n\nreadme() {\n  if [[ \"$1\" == \"--refresh\" ]] || [ ! -s \"$FLOX_ENV_PROJECT/README.md\" ]; then\n    curl -sL \"https://raw.githubusercontent.com/barstoolbluz/floxenvs/main/kafka/README.md\" > \"$FLOX_ENV_PROJECT/README.md\" 2>/dev/null\n  fi\n  bat --language markdown \"$FLOX_ENV_PROJECT/README.md\" 2>/dev/null\n}\n",
-      "zsh": "# wraps helper-functions.sh to run using bash -c\n_kh() { bash -c \"source \\\"$FLOX_ENV_CACHE/helper-functions/helper-functions.sh\\\" && main $1 ${@:2}\"; }\n\nkreate() { _kh kreate \"$@\"; }\nlist() { _kh list \"$@\"; }\ndescribe() { _kh describe \"$@\"; }\nproduce() { _kh produce \"$@\"; }\nkonsume() { _kh konsume \"$@\"; }\nstatus() { _kh status \"$@\"; }\ntopos() { _kh topos \"$@\"; }\ninfo() { _kh info \"$@\"; }\ntopos() { _kh topology \"$@\"; }\n\nreadme() {\n  if [[ \"$1\" == \"--refresh\" ]] || [ ! -s \"$FLOX_ENV_PROJECT/README.md\" ]; then\n    curl -sL \"https://raw.githubusercontent.com/barstoolbluz/floxenvs/main/kafka/README.md\" > \"$FLOX_ENV_PROJECT/README.md\" 2>/dev/null\n  fi\n  bat --language markdown \"$FLOX_ENV_PROJECT/README.md\" 2>/dev/null\n}\n",
-      "fish": "# wraps helper-function.sh to run using bash -c\nfunction _kh\n  set cmd $argv[1]\n  set -e argv[1]\n  bash -c \"source \\\"$FLOX_ENV_CACHE/helper-functions.sh\\\" && main $cmd $argv\"\nend\n\nfunction kreate; _kh kreate $argv; end\nfunction list; _kh list $argv; end\nfunction describe; _kh describe $argv; end\nfunction produce; _kh produce $argv; end\nfunction konsume; _kh konsume $argv; end\nfunction status; _kh status $argv; end\nfunction topos; _kh topos $argv; end\nfunction info; _kh info $argv; end\nfunction topos; _kh topology $argv; end\n\nfunction readme\n  if test \"$argv[1]\" = \"--refresh\"; or test ! -s \"$FLOX_ENV_PROJECT/README.md\"\n    curl -sL \"https://raw.githubusercontent.com/barstoolbluz/floxenvs/main/kafka/README.md\" > \"$FLOX_ENV_PROJECT/README.md\" 2>/dev/null\n  fi\n  bat --language markdown \"$FLOX_ENV_PROJECT/README.md\" 2>/dev/null\nend\n"
+      "bash": "readme() {\n  if [[ \"$1\" == \"--refresh\" ]] || [ ! -s \"$FLOX_ENV_PROJECT/README.md\" ]; then\n    curl -sL \"https://raw.githubusercontent.com/barstoolbluz/floxenvs/main/kafka/README.md\" > \"$FLOX_ENV_PROJECT/README.md\" 2>/dev/null\n  fi\n  bat --language markdown \"$FLOX_ENV_PROJECT/README.md\" 2>/dev/null\n}\n",
+      "zsh": "readme() {\n  if [[ \"$1\" == \"--refresh\" ]] || [ ! -s \"$FLOX_ENV_PROJECT/README.md\" ]; then\n    curl -sL \"https://raw.githubusercontent.com/barstoolbluz/floxenvs/main/kafka/README.md\" > \"$FLOX_ENV_PROJECT/README.md\" 2>/dev/null\n  fi\n  bat --language markdown \"$FLOX_ENV_PROJECT/README.md\" 2>/dev/null\n}\n",
+      "fish": "function readme\n  if test \"$argv[1]\" = \"--refresh\"; or test ! -s \"$FLOX_ENV_PROJECT/README.md\"\n    curl -sL \"https://raw.githubusercontent.com/barstoolbluz/floxenvs/main/kafka/README.md\" > \"$FLOX_ENV_PROJECT/README.md\" 2>/dev/null\n  fi\n  bat --language markdown \"$FLOX_ENV_PROJECT/README.md\" 2>/dev/null\nend\n"
     },
     "options": {
       "systems": [
@@ -83,90 +83,28 @@
     {
       "attr_path": "coreutils",
       "broken": false,
-      "derivation": "/nix/store/1nwy6zrysrzrxzlnjsvlbqj063wvzj6g-coreutils-9.6.drv",
+      "derivation": "/nix/store/8v93k1i80z2y93mj93rsbdhslnhcb2g1-coreutils-9.8.drv",
       "description": "GNU Core Utilities",
       "install_id": "coreutils",
       "license": "GPL-3.0-or-later",
-      "locked_url": "https://github.com/flox/nixpkgs?rev=f771eb401a46846c1aebd20552521b233dd7e18b",
-      "name": "coreutils-9.6",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=6a08e6bb4e46ff7fcbb53d409b253f6bad8a28ce",
+      "name": "coreutils-9.8",
       "pname": "coreutils",
-      "rev": "f771eb401a46846c1aebd20552521b233dd7e18b",
-      "rev_count": 789333,
-      "rev_date": "2025-04-24T20:20:57Z",
-      "scrape_date": "2025-04-27T04:36:22.225687Z",
+      "rev": "6a08e6bb4e46ff7fcbb53d409b253f6bad8a28ce",
+      "rev_count": 883951,
+      "rev_date": "2025-10-25T06:24:58Z",
+      "scrape_date": "2025-10-27T02:08:15.048857Z",
       "stabilities": [
         "unstable"
       ],
       "unfree": false,
-      "version": "9.6",
+      "version": "9.8",
       "outputs_to_install": [
         "out"
       ],
       "outputs": {
-        "debug": "/nix/store/0bw9z4w1ji3p4s3fkiazsyjg2l44m37v-coreutils-9.6-debug",
-        "info": "/nix/store/4fsz8fn9m2v325zwbbn8w6dkjxrgnssz-coreutils-9.6-info",
-        "out": "/nix/store/zfwaliz66856jv0dm10b2miy1krnx5p7-coreutils-9.6"
-      },
-      "system": "aarch64-linux",
-      "group": "darwin-tools",
-      "priority": 5
-    },
-    {
-      "attr_path": "coreutils",
-      "broken": false,
-      "derivation": "/nix/store/d9qg08k6sqm81863f9j897dac9wbq7c6-coreutils-9.6.drv",
-      "description": "GNU Core Utilities",
-      "install_id": "coreutils",
-      "license": "GPL-3.0-or-later",
-      "locked_url": "https://github.com/flox/nixpkgs?rev=f771eb401a46846c1aebd20552521b233dd7e18b",
-      "name": "coreutils-9.6",
-      "pname": "coreutils",
-      "rev": "f771eb401a46846c1aebd20552521b233dd7e18b",
-      "rev_count": 789333,
-      "rev_date": "2025-04-24T20:20:57Z",
-      "scrape_date": "2025-04-27T05:14:16.837255Z",
-      "stabilities": [
-        "unstable"
-      ],
-      "unfree": false,
-      "version": "9.6",
-      "outputs_to_install": [
-        "out"
-      ],
-      "outputs": {
-        "debug": "/nix/store/pq5ffz4lgybwy1g4apkrxgjazh0xpy0g-coreutils-9.6-debug",
-        "info": "/nix/store/i60bl9mvpn32ch312p0bll6455swb1aa-coreutils-9.6-info",
-        "out": "/nix/store/h5rn37dd6vfvr9xb0jq85sq8hf6xchry-coreutils-9.6"
-      },
-      "system": "x86_64-linux",
-      "group": "darwin-tools",
-      "priority": 5
-    },
-    {
-      "attr_path": "coreutils",
-      "broken": false,
-      "derivation": "/nix/store/kh1np1jqnb1bzz8yl4jax6h5ydz0f2ws-coreutils-9.6.drv",
-      "description": "GNU Core Utilities",
-      "install_id": "coreutils",
-      "license": "GPL-3.0-or-later",
-      "locked_url": "https://github.com/flox/nixpkgs?rev=f771eb401a46846c1aebd20552521b233dd7e18b",
-      "name": "coreutils-9.6",
-      "pname": "coreutils",
-      "rev": "f771eb401a46846c1aebd20552521b233dd7e18b",
-      "rev_count": 789333,
-      "rev_date": "2025-04-24T20:20:57Z",
-      "scrape_date": "2025-04-27T04:18:42.190731Z",
-      "stabilities": [
-        "unstable"
-      ],
-      "unfree": false,
-      "version": "9.6",
-      "outputs_to_install": [
-        "out"
-      ],
-      "outputs": {
-        "info": "/nix/store/h1jw31m6jii5kndx3sxqn79wlppa3gqn-coreutils-9.6-info",
-        "out": "/nix/store/r9y8p97lcpm3kn03jsp157qr3kjhbxyh-coreutils-9.6"
+        "info": "/nix/store/hwhpjxflkbf3r1z836ipapcfz6n7h6wi-coreutils-9.8-info",
+        "out": "/nix/store/xpxisjpwldh5f8y8xniizja9fxvbsqln-coreutils-9.8"
       },
       "system": "aarch64-darwin",
       "group": "darwin-tools",
@@ -175,92 +113,90 @@
     {
       "attr_path": "coreutils",
       "broken": false,
-      "derivation": "/nix/store/yl58iny131vn566j3w2jjc0rwircyaqi-coreutils-9.6.drv",
+      "derivation": "/nix/store/9ca92mpckwfgmah2nzbi0pdwapx74ys9-coreutils-9.8.drv",
       "description": "GNU Core Utilities",
       "install_id": "coreutils",
       "license": "GPL-3.0-or-later",
-      "locked_url": "https://github.com/flox/nixpkgs?rev=f771eb401a46846c1aebd20552521b233dd7e18b",
-      "name": "coreutils-9.6",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=6a08e6bb4e46ff7fcbb53d409b253f6bad8a28ce",
+      "name": "coreutils-9.8",
       "pname": "coreutils",
-      "rev": "f771eb401a46846c1aebd20552521b233dd7e18b",
-      "rev_count": 789333,
-      "rev_date": "2025-04-24T20:20:57Z",
-      "scrape_date": "2025-04-27T04:53:39.342895Z",
+      "rev": "6a08e6bb4e46ff7fcbb53d409b253f6bad8a28ce",
+      "rev_count": 883951,
+      "rev_date": "2025-10-25T06:24:58Z",
+      "scrape_date": "2025-10-27T02:18:26.274826Z",
       "stabilities": [
         "unstable"
       ],
       "unfree": false,
-      "version": "9.6",
+      "version": "9.8",
       "outputs_to_install": [
         "out"
       ],
       "outputs": {
-        "info": "/nix/store/pxnmw7x46594xkwx8x75sjk6wn5p37p4-coreutils-9.6-info",
-        "out": "/nix/store/4zj8zn4r000ydbm1nv3lyr6dfqkgcbmw-coreutils-9.6"
-      },
-      "system": "x86_64-darwin",
-      "group": "darwin-tools",
-      "priority": 5
-    },
-    {
-      "attr_path": "gawk",
-      "broken": false,
-      "derivation": "/nix/store/5y5hiji7rmbdawyc55dhx2nl2imj6q9j-gawk-5.3.1.drv",
-      "description": "GNU implementation of the Awk programming language",
-      "install_id": "gawk",
-      "license": "GPL-3.0-or-later",
-      "locked_url": "https://github.com/flox/nixpkgs?rev=f771eb401a46846c1aebd20552521b233dd7e18b",
-      "name": "gawk-5.3.1",
-      "pname": "gawk",
-      "rev": "f771eb401a46846c1aebd20552521b233dd7e18b",
-      "rev_count": 789333,
-      "rev_date": "2025-04-24T20:20:57Z",
-      "scrape_date": "2025-04-27T04:36:22.981097Z",
-      "stabilities": [
-        "unstable"
-      ],
-      "unfree": false,
-      "version": "5.3.1",
-      "outputs_to_install": [
-        "man",
-        "out"
-      ],
-      "outputs": {
-        "info": "/nix/store/b85wijgg7hkc5pp4m20jqdwzhs1z35n4-gawk-5.3.1-info",
-        "man": "/nix/store/8gl2g82iy368gmwl915valgdayvh05cj-gawk-5.3.1-man",
-        "out": "/nix/store/2bqdjg0cd39065pyra02c55xcq6mns95-gawk-5.3.1"
+        "debug": "/nix/store/8mxdv3zkfd2bfhljny13rsxhn5j6psy5-coreutils-9.8-debug",
+        "info": "/nix/store/24hcz4v2685kj2yfvd5mwnxd7f5iy3n7-coreutils-9.8-info",
+        "out": "/nix/store/kmssz33v44ms58zc9v2gv2x019rh4s6h-coreutils-9.8"
       },
       "system": "aarch64-linux",
       "group": "darwin-tools",
       "priority": 5
     },
     {
-      "attr_path": "gawk",
+      "attr_path": "coreutils",
       "broken": false,
-      "derivation": "/nix/store/3q19lx413z1lcsimbjyby00lx6rd7bfs-gawk-5.3.1.drv",
-      "description": "GNU implementation of the Awk programming language",
-      "install_id": "gawk",
+      "derivation": "/nix/store/f0c37w0qlfdra5cfg0b6sj8my49f7a1j-coreutils-9.8.drv",
+      "description": "GNU Core Utilities",
+      "install_id": "coreutils",
       "license": "GPL-3.0-or-later",
-      "locked_url": "https://github.com/flox/nixpkgs?rev=f771eb401a46846c1aebd20552521b233dd7e18b",
-      "name": "gawk-5.3.1",
-      "pname": "gawk",
-      "rev": "f771eb401a46846c1aebd20552521b233dd7e18b",
-      "rev_count": 789333,
-      "rev_date": "2025-04-24T20:20:57Z",
-      "scrape_date": "2025-04-27T05:14:17.681221Z",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=6a08e6bb4e46ff7fcbb53d409b253f6bad8a28ce",
+      "name": "coreutils-9.8",
+      "pname": "coreutils",
+      "rev": "6a08e6bb4e46ff7fcbb53d409b253f6bad8a28ce",
+      "rev_count": 883951,
+      "rev_date": "2025-10-25T06:24:58Z",
+      "scrape_date": "2025-10-27T02:29:21.635256Z",
       "stabilities": [
         "unstable"
       ],
       "unfree": false,
-      "version": "5.3.1",
+      "version": "9.8",
       "outputs_to_install": [
-        "man",
         "out"
       ],
       "outputs": {
-        "info": "/nix/store/4n2af8zgwp8ldkrxjarhii8zqznbqyb4-gawk-5.3.1-info",
-        "man": "/nix/store/iv3c03ygjfh4f7x0d61b7x8m71zlqghl-gawk-5.3.1-man",
-        "out": "/nix/store/qi25cvn9j1xyvl9p7lp8nw9wqk5k648r-gawk-5.3.1"
+        "info": "/nix/store/ad47w3v8846x80kz9sbva6z24z48sx1g-coreutils-9.8-info",
+        "out": "/nix/store/js4wzwhm6wv09mxv7lb2zrb25x4ai89g-coreutils-9.8"
+      },
+      "system": "x86_64-darwin",
+      "group": "darwin-tools",
+      "priority": 5
+    },
+    {
+      "attr_path": "coreutils",
+      "broken": false,
+      "derivation": "/nix/store/qabf8kc1wl566y6vqgys523359nshnv3-coreutils-9.8.drv",
+      "description": "GNU Core Utilities",
+      "install_id": "coreutils",
+      "license": "GPL-3.0-or-later",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=6a08e6bb4e46ff7fcbb53d409b253f6bad8a28ce",
+      "name": "coreutils-9.8",
+      "pname": "coreutils",
+      "rev": "6a08e6bb4e46ff7fcbb53d409b253f6bad8a28ce",
+      "rev_count": 883951,
+      "rev_date": "2025-10-25T06:24:58Z",
+      "scrape_date": "2025-10-27T03:00:54.459715Z",
+      "stabilities": [
+        "unstable"
+      ],
+      "unfree": false,
+      "version": "9.8",
+      "outputs_to_install": [
+        "out"
+      ],
+      "outputs": {
+        "debug": "/nix/store/ypxgf9nwy3494f25isg2hpgwf506iy7p-coreutils-9.8-debug",
+        "info": "/nix/store/skcdvhfcdq8wghkiw44j4jalzqi6y56g-coreutils-9.8-info",
+        "out": "/nix/store/xs8scz9w9jp4hpqycx3n3bah5y07ymgj-coreutils-9.8"
       },
       "system": "x86_64-linux",
       "group": "darwin-tools",
@@ -269,30 +205,30 @@
     {
       "attr_path": "gawk",
       "broken": false,
-      "derivation": "/nix/store/0swii45nakd7jgq5q6nsn14c6vivxk32-gawk-5.3.1.drv",
+      "derivation": "/nix/store/hc0jjhw408fiv3mk13lwz46b9wvzi8ka-gawk-5.3.2.drv",
       "description": "GNU implementation of the Awk programming language",
       "install_id": "gawk",
       "license": "GPL-3.0-or-later",
-      "locked_url": "https://github.com/flox/nixpkgs?rev=f771eb401a46846c1aebd20552521b233dd7e18b",
-      "name": "gawk-5.3.1",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=6a08e6bb4e46ff7fcbb53d409b253f6bad8a28ce",
+      "name": "gawk-5.3.2",
       "pname": "gawk",
-      "rev": "f771eb401a46846c1aebd20552521b233dd7e18b",
-      "rev_count": 789333,
-      "rev_date": "2025-04-24T20:20:57Z",
-      "scrape_date": "2025-04-27T04:18:42.581298Z",
+      "rev": "6a08e6bb4e46ff7fcbb53d409b253f6bad8a28ce",
+      "rev_count": 883951,
+      "rev_date": "2025-10-25T06:24:58Z",
+      "scrape_date": "2025-10-27T02:08:16.360132Z",
       "stabilities": [
         "unstable"
       ],
       "unfree": false,
-      "version": "5.3.1",
+      "version": "5.3.2",
       "outputs_to_install": [
         "man",
         "out"
       ],
       "outputs": {
-        "info": "/nix/store/9c17rg59qkvg8qrgsv8c2l3fpvrqlg8r-gawk-5.3.1-info",
-        "man": "/nix/store/r6my8drvarl15wcbpxr0zl36sj9c92di-gawk-5.3.1-man",
-        "out": "/nix/store/w7m7ys9nqgwqf0h2rwcw50vhgyysqhv0-gawk-5.3.1"
+        "info": "/nix/store/qdgjdd6yzq4qjkwx5g8k1n9k7b9sn706-gawk-5.3.2-info",
+        "man": "/nix/store/114dp75zkx9983rq0nh5yhkq8mjcnwdk-gawk-5.3.2-man",
+        "out": "/nix/store/mviy3qxkibvfpjn4pm160jvghfghfcgx-gawk-5.3.2"
       },
       "system": "aarch64-darwin",
       "group": "darwin-tools",
@@ -301,90 +237,94 @@
     {
       "attr_path": "gawk",
       "broken": false,
-      "derivation": "/nix/store/5r8rscndakqpwpgi9gqk0vqbgqgbrb5w-gawk-5.3.1.drv",
+      "derivation": "/nix/store/5yqh7rafkwd9ywzfnqvdhdz08smqygvw-gawk-5.3.2.drv",
       "description": "GNU implementation of the Awk programming language",
       "install_id": "gawk",
       "license": "GPL-3.0-or-later",
-      "locked_url": "https://github.com/flox/nixpkgs?rev=f771eb401a46846c1aebd20552521b233dd7e18b",
-      "name": "gawk-5.3.1",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=6a08e6bb4e46ff7fcbb53d409b253f6bad8a28ce",
+      "name": "gawk-5.3.2",
       "pname": "gawk",
-      "rev": "f771eb401a46846c1aebd20552521b233dd7e18b",
-      "rev_count": 789333,
-      "rev_date": "2025-04-24T20:20:57Z",
-      "scrape_date": "2025-04-27T04:53:39.736009Z",
+      "rev": "6a08e6bb4e46ff7fcbb53d409b253f6bad8a28ce",
+      "rev_count": 883951,
+      "rev_date": "2025-10-25T06:24:58Z",
+      "scrape_date": "2025-10-27T02:18:27.247809Z",
       "stabilities": [
         "unstable"
       ],
       "unfree": false,
-      "version": "5.3.1",
+      "version": "5.3.2",
       "outputs_to_install": [
         "man",
         "out"
       ],
       "outputs": {
-        "info": "/nix/store/zjfkgmq5zrfr313h7vza8w73kj1lpmcr-gawk-5.3.1-info",
-        "man": "/nix/store/ydwn41jgqj9cr8f3ywkfd8v0dmyvrr2a-gawk-5.3.1-man",
-        "out": "/nix/store/a57qq11ahngvyn4wdy2c21b4yrli177f-gawk-5.3.1"
-      },
-      "system": "x86_64-darwin",
-      "group": "darwin-tools",
-      "priority": 5
-    },
-    {
-      "attr_path": "gnused",
-      "broken": false,
-      "derivation": "/nix/store/bvfc94q7iaqdk53p2i87krzf96fiblvk-gnused-4.9.drv",
-      "description": "GNU sed, a batch stream editor",
-      "install_id": "gnused",
-      "license": "GPL-3.0-or-later",
-      "locked_url": "https://github.com/flox/nixpkgs?rev=f771eb401a46846c1aebd20552521b233dd7e18b",
-      "name": "gnused-4.9",
-      "pname": "gnused",
-      "rev": "f771eb401a46846c1aebd20552521b233dd7e18b",
-      "rev_count": 789333,
-      "rev_date": "2025-04-24T20:20:57Z",
-      "scrape_date": "2025-04-27T04:36:23.469903Z",
-      "stabilities": [
-        "unstable"
-      ],
-      "unfree": false,
-      "version": "4.9",
-      "outputs_to_install": [
-        "out"
-      ],
-      "outputs": {
-        "info": "/nix/store/s1jx0n2b73jjl3yzs94mhprk584yqlmb-gnused-4.9-info",
-        "out": "/nix/store/svfwjzik1zgd7rdwii95jkw6pzl91cgq-gnused-4.9"
+        "info": "/nix/store/j2rn94gbzabcaknajmgsvb1v632axpqq-gawk-5.3.2-info",
+        "man": "/nix/store/wsr3pp348fi6sn7pxa9amrhc6jg206k8-gawk-5.3.2-man",
+        "out": "/nix/store/4fnrm0rcwdm5ff0mnb8aswshfdd4m724-gawk-5.3.2"
       },
       "system": "aarch64-linux",
       "group": "darwin-tools",
       "priority": 5
     },
     {
-      "attr_path": "gnused",
+      "attr_path": "gawk",
       "broken": false,
-      "derivation": "/nix/store/f9hww3k6x8djmy8j95bpqpz8rg6qi0mp-gnused-4.9.drv",
-      "description": "GNU sed, a batch stream editor",
-      "install_id": "gnused",
+      "derivation": "/nix/store/8sxzgq7gbcq6id29clyi90ycd91cc3mm-gawk-5.3.2.drv",
+      "description": "GNU implementation of the Awk programming language",
+      "install_id": "gawk",
       "license": "GPL-3.0-or-later",
-      "locked_url": "https://github.com/flox/nixpkgs?rev=f771eb401a46846c1aebd20552521b233dd7e18b",
-      "name": "gnused-4.9",
-      "pname": "gnused",
-      "rev": "f771eb401a46846c1aebd20552521b233dd7e18b",
-      "rev_count": 789333,
-      "rev_date": "2025-04-24T20:20:57Z",
-      "scrape_date": "2025-04-27T05:14:18.254011Z",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=6a08e6bb4e46ff7fcbb53d409b253f6bad8a28ce",
+      "name": "gawk-5.3.2",
+      "pname": "gawk",
+      "rev": "6a08e6bb4e46ff7fcbb53d409b253f6bad8a28ce",
+      "rev_count": 883951,
+      "rev_date": "2025-10-25T06:24:58Z",
+      "scrape_date": "2025-10-27T02:29:22.212797Z",
       "stabilities": [
         "unstable"
       ],
       "unfree": false,
-      "version": "4.9",
+      "version": "5.3.2",
       "outputs_to_install": [
+        "man",
         "out"
       ],
       "outputs": {
-        "info": "/nix/store/zvwfjxlkcv2pyj1dkqlm5shmx9059hzj-gnused-4.9-info",
-        "out": "/nix/store/bz6z6c26ajk870qxipxkkp8a6cympj3l-gnused-4.9"
+        "info": "/nix/store/wnpvj0i4ivkmymlyrfwd9dzx39891fph-gawk-5.3.2-info",
+        "man": "/nix/store/rqps3w3sa9jw2yxjx5rskzvjf9gkfwnw-gawk-5.3.2-man",
+        "out": "/nix/store/jkv9xcxjwhhhblgdpmjk7jxvh0kcy5jl-gawk-5.3.2"
+      },
+      "system": "x86_64-darwin",
+      "group": "darwin-tools",
+      "priority": 5
+    },
+    {
+      "attr_path": "gawk",
+      "broken": false,
+      "derivation": "/nix/store/xs0wpisf2hvkyync4lpx38xgqmjaqn5q-gawk-5.3.2.drv",
+      "description": "GNU implementation of the Awk programming language",
+      "install_id": "gawk",
+      "license": "GPL-3.0-or-later",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=6a08e6bb4e46ff7fcbb53d409b253f6bad8a28ce",
+      "name": "gawk-5.3.2",
+      "pname": "gawk",
+      "rev": "6a08e6bb4e46ff7fcbb53d409b253f6bad8a28ce",
+      "rev_count": 883951,
+      "rev_date": "2025-10-25T06:24:58Z",
+      "scrape_date": "2025-10-27T03:00:55.556339Z",
+      "stabilities": [
+        "unstable"
+      ],
+      "unfree": false,
+      "version": "5.3.2",
+      "outputs_to_install": [
+        "man",
+        "out"
+      ],
+      "outputs": {
+        "info": "/nix/store/p4psb948bknmkk2l03inwafnff8rgr93-gawk-5.3.2-info",
+        "man": "/nix/store/b9cabc2iraj09wlxy40sybbxphk4mqsv-gawk-5.3.2-man",
+        "out": "/nix/store/8c4l9cqqj7pixqlmljx5d495pfpw8pys-gawk-5.3.2"
       },
       "system": "x86_64-linux",
       "group": "darwin-tools",
@@ -393,17 +333,17 @@
     {
       "attr_path": "gnused",
       "broken": false,
-      "derivation": "/nix/store/khzaw8bx5zxyk7g5h7w2xrqq5czpgwk4-gnused-4.9.drv",
+      "derivation": "/nix/store/h5jmh9lx4k2mmgqbpcg9pjkz9nbjvfpg-gnused-4.9.drv",
       "description": "GNU sed, a batch stream editor",
       "install_id": "gnused",
       "license": "GPL-3.0-or-later",
-      "locked_url": "https://github.com/flox/nixpkgs?rev=f771eb401a46846c1aebd20552521b233dd7e18b",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=6a08e6bb4e46ff7fcbb53d409b253f6bad8a28ce",
       "name": "gnused-4.9",
       "pname": "gnused",
-      "rev": "f771eb401a46846c1aebd20552521b233dd7e18b",
-      "rev_count": 789333,
-      "rev_date": "2025-04-24T20:20:57Z",
-      "scrape_date": "2025-04-27T04:18:42.725301Z",
+      "rev": "6a08e6bb4e46ff7fcbb53d409b253f6bad8a28ce",
+      "rev_count": 883951,
+      "rev_date": "2025-10-25T06:24:58Z",
+      "scrape_date": "2025-10-27T02:08:16.557359Z",
       "stabilities": [
         "unstable"
       ],
@@ -413,8 +353,8 @@
         "out"
       ],
       "outputs": {
-        "info": "/nix/store/8gv6x7m1991sqdwvrhb01818lanx9nxz-gnused-4.9-info",
-        "out": "/nix/store/yfk1iriif0acn91as6qg96nwz6hs93si-gnused-4.9"
+        "info": "/nix/store/dh411hk44w7wqkin6xk7zn586bj2y4ci-gnused-4.9-info",
+        "out": "/nix/store/cs1whj2lnf6g1ppf8m43ipffi1xcfvi7-gnused-4.9"
       },
       "system": "aarch64-darwin",
       "group": "darwin-tools",
@@ -423,17 +363,17 @@
     {
       "attr_path": "gnused",
       "broken": false,
-      "derivation": "/nix/store/ww763gvc3sas8002cc3nk4cg00a99357-gnused-4.9.drv",
+      "derivation": "/nix/store/y73bx2wamzcan5dih8hrp2i2n1m7p5qy-gnused-4.9.drv",
       "description": "GNU sed, a batch stream editor",
       "install_id": "gnused",
       "license": "GPL-3.0-or-later",
-      "locked_url": "https://github.com/flox/nixpkgs?rev=f771eb401a46846c1aebd20552521b233dd7e18b",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=6a08e6bb4e46ff7fcbb53d409b253f6bad8a28ce",
       "name": "gnused-4.9",
       "pname": "gnused",
-      "rev": "f771eb401a46846c1aebd20552521b233dd7e18b",
-      "rev_count": 789333,
-      "rev_date": "2025-04-24T20:20:57Z",
-      "scrape_date": "2025-04-27T04:53:39.910598Z",
+      "rev": "6a08e6bb4e46ff7fcbb53d409b253f6bad8a28ce",
+      "rev_count": 883951,
+      "rev_date": "2025-10-25T06:24:58Z",
+      "scrape_date": "2025-10-27T02:18:27.884556Z",
       "stabilities": [
         "unstable"
       ],
@@ -443,110 +383,102 @@
         "out"
       ],
       "outputs": {
-        "info": "/nix/store/fr5ywbk03g9a4b3a8sfx2m9sw16vamdv-gnused-4.9-info",
-        "out": "/nix/store/i18y4ld5k1jk91vinswb9lk1cnkc7s30-gnused-4.9"
+        "info": "/nix/store/z7rbcpkg517d7ax5apibgc8vfy2w2f1v-gnused-4.9-info",
+        "out": "/nix/store/jxh4bxsn4fzqcd0gdn83aqgrjd4d6a9y-gnused-4.9"
+      },
+      "system": "aarch64-linux",
+      "group": "darwin-tools",
+      "priority": 5
+    },
+    {
+      "attr_path": "gnused",
+      "broken": false,
+      "derivation": "/nix/store/xp86blmcpy8qdqx4jhkjhc8ri2zff13p-gnused-4.9.drv",
+      "description": "GNU sed, a batch stream editor",
+      "install_id": "gnused",
+      "license": "GPL-3.0-or-later",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=6a08e6bb4e46ff7fcbb53d409b253f6bad8a28ce",
+      "name": "gnused-4.9",
+      "pname": "gnused",
+      "rev": "6a08e6bb4e46ff7fcbb53d409b253f6bad8a28ce",
+      "rev_count": 883951,
+      "rev_date": "2025-10-25T06:24:58Z",
+      "scrape_date": "2025-10-27T02:29:22.442425Z",
+      "stabilities": [
+        "unstable"
+      ],
+      "unfree": false,
+      "version": "4.9",
+      "outputs_to_install": [
+        "out"
+      ],
+      "outputs": {
+        "info": "/nix/store/nyhmdk32kfa2kignp0m21y95fc6f7zl6-gnused-4.9-info",
+        "out": "/nix/store/irsq6gchyk9vpn1kp81f3kq8pdlqnirb-gnused-4.9"
       },
       "system": "x86_64-darwin",
       "group": "darwin-tools",
       "priority": 5
     },
     {
-      "attr_path": "netcat",
+      "attr_path": "gnused",
       "broken": false,
-      "derivation": "/nix/store/r6ij1yc7dcbcmjr22k9d205ghy2kc19w-libressl-4.0.0.drv",
-      "description": "Utility which reads and writes data across network connections — LibreSSL implementation",
-      "install_id": "netcat",
-      "license": "[ Public Domain, BSD-4-Clause, 0BSD, BSD-3-Clause, GPL-3.0, ISC, OpenSSL ]",
-      "locked_url": "https://github.com/flox/nixpkgs?rev=f771eb401a46846c1aebd20552521b233dd7e18b",
-      "name": "libressl-4.0.0",
-      "pname": "netcat",
-      "rev": "f771eb401a46846c1aebd20552521b233dd7e18b",
-      "rev_count": 789333,
-      "rev_date": "2025-04-24T20:20:57Z",
-      "scrape_date": "2025-04-27T04:36:32.180671Z",
+      "derivation": "/nix/store/jjkl6bssfjrl6957aq490c4py1bp3r9c-gnused-4.9.drv",
+      "description": "GNU sed, a batch stream editor",
+      "install_id": "gnused",
+      "license": "GPL-3.0-or-later",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=6a08e6bb4e46ff7fcbb53d409b253f6bad8a28ce",
+      "name": "gnused-4.9",
+      "pname": "gnused",
+      "rev": "6a08e6bb4e46ff7fcbb53d409b253f6bad8a28ce",
+      "rev_count": 883951,
+      "rev_date": "2025-10-25T06:24:58Z",
+      "scrape_date": "2025-10-27T03:00:56.277452Z",
       "stabilities": [
         "unstable"
       ],
       "unfree": false,
-      "version": "4.0.0",
+      "version": "4.9",
       "outputs_to_install": [
-        "bin",
-        "man"
+        "out"
       ],
       "outputs": {
-        "bin": "/nix/store/d0pj5ps2c8x34j7s9lbk5qpwpjpk565w-libressl-4.0.0-bin",
-        "dev": "/nix/store/hwbkaxv60vc9a7fjq1q2h7dd9h9fvg0v-libressl-4.0.0-dev",
-        "man": "/nix/store/zq4rhh5x335pff66jy83a6xnn9gn79nz-libressl-4.0.0-man",
-        "nc": "/nix/store/1p9bsb5k0rmbcsrcsk393qxkb2cgq3rv-libressl-4.0.0-nc",
-        "out": "/nix/store/syivc4ik5bf9jfly2arcws9ag213b3js-libressl-4.0.0"
-      },
-      "system": "aarch64-linux",
-      "group": "env-tools",
-      "priority": 5
-    },
-    {
-      "attr_path": "netcat",
-      "broken": false,
-      "derivation": "/nix/store/151q7v6pdf9zf6039fp7c3dqbf0zf8zj-libressl-4.0.0.drv",
-      "description": "Utility which reads and writes data across network connections — LibreSSL implementation",
-      "install_id": "netcat",
-      "license": "[ Public Domain, BSD-4-Clause, 0BSD, BSD-3-Clause, GPL-3.0, ISC, OpenSSL ]",
-      "locked_url": "https://github.com/flox/nixpkgs?rev=f771eb401a46846c1aebd20552521b233dd7e18b",
-      "name": "libressl-4.0.0",
-      "pname": "netcat",
-      "rev": "f771eb401a46846c1aebd20552521b233dd7e18b",
-      "rev_count": 789333,
-      "rev_date": "2025-04-24T20:20:57Z",
-      "scrape_date": "2025-04-27T05:14:28.988383Z",
-      "stabilities": [
-        "unstable"
-      ],
-      "unfree": false,
-      "version": "4.0.0",
-      "outputs_to_install": [
-        "bin",
-        "man"
-      ],
-      "outputs": {
-        "bin": "/nix/store/1r8dranh7vx4p5875yfmpdwhfbq11f5c-libressl-4.0.0-bin",
-        "dev": "/nix/store/grjphbg37prg55f0nrxmpm4sm70fa3ma-libressl-4.0.0-dev",
-        "man": "/nix/store/mn3f2g2arb8g0q2lbbw0l2q7900xm5s2-libressl-4.0.0-man",
-        "nc": "/nix/store/2yr6cmqxj7lggia8lblfc2s274rjvvl4-libressl-4.0.0-nc",
-        "out": "/nix/store/jh9lb60fya9bhdc41r10zi7bxqrzmds6-libressl-4.0.0"
+        "info": "/nix/store/xbyvmff0ava8ps2q9sfnvi5w282s59d9-gnused-4.9-info",
+        "out": "/nix/store/zppkx0lkizglyqa9h26wf495qkllrjgy-gnused-4.9"
       },
       "system": "x86_64-linux",
-      "group": "env-tools",
+      "group": "darwin-tools",
       "priority": 5
     },
     {
       "attr_path": "netcat",
       "broken": false,
-      "derivation": "/nix/store/y3rk90mr4wwbqv503ipnw79j0r1hydqg-libressl-4.0.0.drv",
+      "derivation": "/nix/store/nr0h8jcna8vn9d6cxq3107kwzlggzrr1-libressl-4.2.0.drv",
       "description": "Utility which reads and writes data across network connections — LibreSSL implementation",
       "install_id": "netcat",
       "license": "[ Public Domain, BSD-4-Clause, 0BSD, BSD-3-Clause, GPL-3.0, ISC, OpenSSL ]",
-      "locked_url": "https://github.com/flox/nixpkgs?rev=f771eb401a46846c1aebd20552521b233dd7e18b",
-      "name": "libressl-4.0.0",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=6a08e6bb4e46ff7fcbb53d409b253f6bad8a28ce",
+      "name": "libressl-4.2.0",
       "pname": "netcat",
-      "rev": "f771eb401a46846c1aebd20552521b233dd7e18b",
-      "rev_count": 789333,
-      "rev_date": "2025-04-24T20:20:57Z",
-      "scrape_date": "2025-04-27T04:18:44.917090Z",
+      "rev": "6a08e6bb4e46ff7fcbb53d409b253f6bad8a28ce",
+      "rev_count": 883951,
+      "rev_date": "2025-10-25T06:24:58Z",
+      "scrape_date": "2025-10-27T02:08:36.511415Z",
       "stabilities": [
         "unstable"
       ],
       "unfree": false,
-      "version": "4.0.0",
+      "version": "4.2.0",
       "outputs_to_install": [
         "bin",
         "man"
       ],
       "outputs": {
-        "bin": "/nix/store/r91wvnl6wa645ph9kfwajs317czf3a3g-libressl-4.0.0-bin",
-        "dev": "/nix/store/737c41xy0s9va151l81nka0bf4ycw3lv-libressl-4.0.0-dev",
-        "man": "/nix/store/34vs6ddv8d2qx6hzwvm0iv5xf7qhj384-libressl-4.0.0-man",
-        "nc": "/nix/store/9b6dj2mkg3wp13ymsa5rgmj39zlrrl1j-libressl-4.0.0-nc",
-        "out": "/nix/store/59nsx7vrny043wpgwc81ap4yk2bbiyqj-libressl-4.0.0"
+        "bin": "/nix/store/jc7j902b83vpzj9k9403lhcracbb0fch-libressl-4.2.0-bin",
+        "dev": "/nix/store/vrwnaw37418m483a9kpi3xhyszr1b0xv-libressl-4.2.0-dev",
+        "man": "/nix/store/ql46ddl2bfl0wagw6dm4ps2vy6bpwzlb-libressl-4.2.0-man",
+        "nc": "/nix/store/ifv47f8qp6awh42dyqp4zf768mrx1y8i-libressl-4.2.0-nc",
+        "out": "/nix/store/0n9hqhhva7zdr441nk9aa0h10ngrg8d5-libressl-4.2.0"
       },
       "system": "aarch64-darwin",
       "group": "env-tools",
@@ -555,86 +487,100 @@
     {
       "attr_path": "netcat",
       "broken": false,
-      "derivation": "/nix/store/yhhnhlnnpkvhwni0pczrhgr0pr72a523-libressl-4.0.0.drv",
+      "derivation": "/nix/store/cmiha224lfis9ghk8ngqz0c5lmx14nqs-libressl-4.2.0.drv",
       "description": "Utility which reads and writes data across network connections — LibreSSL implementation",
       "install_id": "netcat",
       "license": "[ Public Domain, BSD-4-Clause, 0BSD, BSD-3-Clause, GPL-3.0, ISC, OpenSSL ]",
-      "locked_url": "https://github.com/flox/nixpkgs?rev=f771eb401a46846c1aebd20552521b233dd7e18b",
-      "name": "libressl-4.0.0",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=6a08e6bb4e46ff7fcbb53d409b253f6bad8a28ce",
+      "name": "libressl-4.2.0",
       "pname": "netcat",
-      "rev": "f771eb401a46846c1aebd20552521b233dd7e18b",
-      "rev_count": 789333,
-      "rev_date": "2025-04-24T20:20:57Z",
-      "scrape_date": "2025-04-27T04:53:42.140875Z",
+      "rev": "6a08e6bb4e46ff7fcbb53d409b253f6bad8a28ce",
+      "rev_count": 883951,
+      "rev_date": "2025-10-25T06:24:58Z",
+      "scrape_date": "2025-10-27T02:19:00.629299Z",
       "stabilities": [
         "unstable"
       ],
       "unfree": false,
-      "version": "4.0.0",
+      "version": "4.2.0",
       "outputs_to_install": [
         "bin",
         "man"
       ],
       "outputs": {
-        "bin": "/nix/store/irbi0adjg6pi52j9dmij6wsgk2pqw7ix-libressl-4.0.0-bin",
-        "dev": "/nix/store/hcd7zh45brk1p1g1hbj507d1zv5xa2q1-libressl-4.0.0-dev",
-        "man": "/nix/store/4hwy73zyaz93avi93pkn8qym777f116z-libressl-4.0.0-man",
-        "nc": "/nix/store/sr40fasa96b9rwr678xkcwzf2a42fajm-libressl-4.0.0-nc",
-        "out": "/nix/store/2scb2l5fqzgld083rs7jryh7kmvn16cl-libressl-4.0.0"
-      },
-      "system": "x86_64-darwin",
-      "group": "env-tools",
-      "priority": 5
-    },
-    {
-      "attr_path": "unixtools.netstat",
-      "broken": false,
-      "derivation": "/nix/store/xr3kv0zpnxwhdfqkg4xvcfya08n77x08-netstat-net-tools-2.10.drv",
-      "install_id": "netstat",
-      "locked_url": "https://github.com/flox/nixpkgs?rev=f771eb401a46846c1aebd20552521b233dd7e18b",
-      "name": "netstat-net-tools-2.10",
-      "pname": "netstat",
-      "rev": "f771eb401a46846c1aebd20552521b233dd7e18b",
-      "rev_count": 789333,
-      "rev_date": "2025-04-24T20:20:57Z",
-      "scrape_date": "2025-04-27T04:37:49.189097Z",
-      "stabilities": [
-        "unstable"
-      ],
-      "unfree": false,
-      "version": "2.10",
-      "outputs_to_install": [
-        "out"
-      ],
-      "outputs": {
-        "out": "/nix/store/09wd8nx0b94jcg9dbpv63icqrbpq9c9s-netstat-net-tools-2.10"
+        "bin": "/nix/store/za9iijgi3k9q7dbwkrvzwx2a5md0i09f-libressl-4.2.0-bin",
+        "dev": "/nix/store/19r2fki9is79lplffgkh6b2p42mx9bdr-libressl-4.2.0-dev",
+        "man": "/nix/store/kvmhvra9sjci2gl0zf4cjrj89bd4ljgs-libressl-4.2.0-man",
+        "nc": "/nix/store/pql5r9gbz2ph4zalhbfir9bfcl84hgxj-libressl-4.2.0-nc",
+        "out": "/nix/store/h5nm59vbks3jcvp5ddk7jr2b34pg0v9j-libressl-4.2.0"
       },
       "system": "aarch64-linux",
       "group": "env-tools",
       "priority": 5
     },
     {
-      "attr_path": "unixtools.netstat",
+      "attr_path": "netcat",
       "broken": false,
-      "derivation": "/nix/store/a14syc4si93iagwhxalwq8pr890xpzs2-netstat-net-tools-2.10.drv",
-      "install_id": "netstat",
-      "locked_url": "https://github.com/flox/nixpkgs?rev=f771eb401a46846c1aebd20552521b233dd7e18b",
-      "name": "netstat-net-tools-2.10",
-      "pname": "netstat",
-      "rev": "f771eb401a46846c1aebd20552521b233dd7e18b",
-      "rev_count": 789333,
-      "rev_date": "2025-04-24T20:20:57Z",
-      "scrape_date": "2025-04-27T05:15:54.422338Z",
+      "derivation": "/nix/store/lp8l6aw2fmqfsdha4ih4gpvairl8pb9y-libressl-4.2.0.drv",
+      "description": "Utility which reads and writes data across network connections — LibreSSL implementation",
+      "install_id": "netcat",
+      "license": "[ Public Domain, BSD-4-Clause, 0BSD, BSD-3-Clause, GPL-3.0, ISC, OpenSSL ]",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=6a08e6bb4e46ff7fcbb53d409b253f6bad8a28ce",
+      "name": "libressl-4.2.0",
+      "pname": "netcat",
+      "rev": "6a08e6bb4e46ff7fcbb53d409b253f6bad8a28ce",
+      "rev_count": 883951,
+      "rev_date": "2025-10-25T06:24:58Z",
+      "scrape_date": "2025-10-27T02:29:42.299412Z",
       "stabilities": [
         "unstable"
       ],
       "unfree": false,
-      "version": "2.10",
+      "version": "4.2.0",
       "outputs_to_install": [
-        "out"
+        "bin",
+        "man"
       ],
       "outputs": {
-        "out": "/nix/store/swdv61qppqpawr9dfz639swkg2d39ipc-netstat-net-tools-2.10"
+        "bin": "/nix/store/797cm8vb5wwj7lqjcfh15g981h5c142z-libressl-4.2.0-bin",
+        "dev": "/nix/store/hhf8l5z8rjm9wg1qskczyqq83kbpzq2j-libressl-4.2.0-dev",
+        "man": "/nix/store/8nx37qgc4qggb5p9c5jpxkyh7cm2zv5x-libressl-4.2.0-man",
+        "nc": "/nix/store/pb8g35f4b3nnb53q31331iqrj5glgim7-libressl-4.2.0-nc",
+        "out": "/nix/store/sgidx7zwq9l1rv4ipvgm6nd3338k5hjg-libressl-4.2.0"
+      },
+      "system": "x86_64-darwin",
+      "group": "env-tools",
+      "priority": 5
+    },
+    {
+      "attr_path": "netcat",
+      "broken": false,
+      "derivation": "/nix/store/d0f20lhwz43w0k7zpg5a4jk518j695mp-libressl-4.2.0.drv",
+      "description": "Utility which reads and writes data across network connections — LibreSSL implementation",
+      "install_id": "netcat",
+      "license": "[ Public Domain, BSD-4-Clause, 0BSD, BSD-3-Clause, GPL-3.0, ISC, OpenSSL ]",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=6a08e6bb4e46ff7fcbb53d409b253f6bad8a28ce",
+      "name": "libressl-4.2.0",
+      "pname": "netcat",
+      "rev": "6a08e6bb4e46ff7fcbb53d409b253f6bad8a28ce",
+      "rev_count": 883951,
+      "rev_date": "2025-10-25T06:24:58Z",
+      "scrape_date": "2025-10-27T03:01:32.794262Z",
+      "stabilities": [
+        "unstable"
+      ],
+      "unfree": false,
+      "version": "4.2.0",
+      "outputs_to_install": [
+        "bin",
+        "man"
+      ],
+      "outputs": {
+        "bin": "/nix/store/077rf7fhsjy0s486drnagz8bg9pwryw7-libressl-4.2.0-bin",
+        "dev": "/nix/store/26q10812fip299ijz91dpxwsa3x30i8j-libressl-4.2.0-dev",
+        "man": "/nix/store/d85807789szvs93v8m21byis0vaz61zr-libressl-4.2.0-man",
+        "nc": "/nix/store/9izny9fr91wxngcxyvz4fg817q92s7v0-libressl-4.2.0-nc",
+        "out": "/nix/store/87s9zzvjm2qb97ggsngf5wfrp6gvj28x-libressl-4.2.0"
       },
       "system": "x86_64-linux",
       "group": "env-tools",
@@ -643,15 +589,15 @@
     {
       "attr_path": "unixtools.netstat",
       "broken": false,
-      "derivation": "/nix/store/j5hhs7jp4ip7dh2pm82fzixa8jpa5fyn-netstat-network_cmds-698.60.4.drv",
+      "derivation": "/nix/store/4w855f4i6qhgfsh6sglqxfdg5hrfd8dq-netstat-network_cmds-698.60.4.drv",
       "install_id": "netstat",
-      "locked_url": "https://github.com/flox/nixpkgs?rev=f771eb401a46846c1aebd20552521b233dd7e18b",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=6a08e6bb4e46ff7fcbb53d409b253f6bad8a28ce",
       "name": "netstat-network_cmds-698.60.4",
       "pname": "netstat",
-      "rev": "f771eb401a46846c1aebd20552521b233dd7e18b",
-      "rev_count": 789333,
-      "rev_date": "2025-04-24T20:20:57Z",
-      "scrape_date": "2025-04-27T04:19:37.304777Z",
+      "rev": "6a08e6bb4e46ff7fcbb53d409b253f6bad8a28ce",
+      "rev_count": 883951,
+      "rev_date": "2025-10-25T06:24:58Z",
+      "scrape_date": "2025-10-27T02:10:35.132918Z",
       "stabilities": [
         "unstable"
       ],
@@ -661,7 +607,7 @@
         "out"
       ],
       "outputs": {
-        "out": "/nix/store/cx2y3rm6lc26nwrd2k1v4b70658mvjv8-netstat-network_cmds-698.60.4"
+        "out": "/nix/store/9gk9zvj9acj551h37k62yzzr2h14xsvy-netstat-network_cmds-698.60.4"
       },
       "system": "aarch64-darwin",
       "group": "env-tools",
@@ -670,15 +616,42 @@
     {
       "attr_path": "unixtools.netstat",
       "broken": false,
-      "derivation": "/nix/store/ppm6kha9bx50bzhvyn4vllcwxmvf1xqh-netstat-network_cmds-698.60.4.drv",
+      "derivation": "/nix/store/bbgz9dsha2rcprm25msa2d0pf7asg2f2-netstat-net-tools-2.10.drv",
       "install_id": "netstat",
-      "locked_url": "https://github.com/flox/nixpkgs?rev=f771eb401a46846c1aebd20552521b233dd7e18b",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=6a08e6bb4e46ff7fcbb53d409b253f6bad8a28ce",
+      "name": "netstat-net-tools-2.10",
+      "pname": "netstat",
+      "rev": "6a08e6bb4e46ff7fcbb53d409b253f6bad8a28ce",
+      "rev_count": 883951,
+      "rev_date": "2025-10-25T06:24:58Z",
+      "scrape_date": "2025-10-27T02:21:39.569828Z",
+      "stabilities": [
+        "unstable"
+      ],
+      "unfree": false,
+      "version": "2.10",
+      "outputs_to_install": [
+        "out"
+      ],
+      "outputs": {
+        "out": "/nix/store/83vsjf7rpv59x6g38hk8c98db8gxcgsx-netstat-net-tools-2.10"
+      },
+      "system": "aarch64-linux",
+      "group": "env-tools",
+      "priority": 5
+    },
+    {
+      "attr_path": "unixtools.netstat",
+      "broken": false,
+      "derivation": "/nix/store/gjdpirvnbyx0ksl77mzblq1n3w8ibw0v-netstat-network_cmds-698.60.4.drv",
+      "install_id": "netstat",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=6a08e6bb4e46ff7fcbb53d409b253f6bad8a28ce",
       "name": "netstat-network_cmds-698.60.4",
       "pname": "netstat",
-      "rev": "f771eb401a46846c1aebd20552521b233dd7e18b",
-      "rev_count": 789333,
-      "rev_date": "2025-04-24T20:20:57Z",
-      "scrape_date": "2025-04-27T04:54:34.553790Z",
+      "rev": "6a08e6bb4e46ff7fcbb53d409b253f6bad8a28ce",
+      "rev_count": 883951,
+      "rev_date": "2025-10-25T06:24:58Z",
+      "scrape_date": "2025-10-27T02:31:35.907348Z",
       "stabilities": [
         "unstable"
       ],
@@ -688,97 +661,64 @@
         "out"
       ],
       "outputs": {
-        "out": "/nix/store/2ldr1xxpy6c86pwmk9jkaas02fvwfxx8-netstat-network_cmds-698.60.4"
+        "out": "/nix/store/57n06wxy0v599mvhywki5v725ixwry6n-netstat-network_cmds-698.60.4"
       },
       "system": "x86_64-darwin",
       "group": "env-tools",
       "priority": 5
     },
     {
-      "attr_path": "gnugrep",
+      "attr_path": "unixtools.netstat",
       "broken": false,
-      "derivation": "/nix/store/hhj7q7s8g2bfczvlbrfi3abkhbnw0d4l-gnugrep-3.11.drv",
-      "description": "GNU implementation of the Unix grep command",
-      "install_id": "gnugrep",
-      "license": "GPL-3.0-or-later",
-      "locked_url": "https://github.com/flox/nixpkgs?rev=f771eb401a46846c1aebd20552521b233dd7e18b",
-      "name": "gnugrep-3.11",
-      "pname": "gnugrep",
-      "rev": "f771eb401a46846c1aebd20552521b233dd7e18b",
-      "rev_count": 789333,
-      "rev_date": "2025-04-24T20:20:57Z",
-      "scrape_date": "2025-04-27T04:36:23.461538Z",
+      "derivation": "/nix/store/i98l85jhdq78g2lvlzmd1rfi38ac5zm1-netstat-net-tools-2.10.drv",
+      "install_id": "netstat",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=6a08e6bb4e46ff7fcbb53d409b253f6bad8a28ce",
+      "name": "netstat-net-tools-2.10",
+      "pname": "netstat",
+      "rev": "6a08e6bb4e46ff7fcbb53d409b253f6bad8a28ce",
+      "rev_count": 883951,
+      "rev_date": "2025-10-25T06:24:58Z",
+      "scrape_date": "2025-10-27T03:04:13.744285Z",
       "stabilities": [
         "unstable"
       ],
       "unfree": false,
-      "version": "3.11",
+      "version": "2.10",
       "outputs_to_install": [
         "out"
       ],
       "outputs": {
-        "info": "/nix/store/drdxz5p29n4m01464lm4krn6hb3vh4pn-gnugrep-3.11-info",
-        "out": "/nix/store/g6xzw8ig9afmwl91ql2q06gignjrv67a-gnugrep-3.11"
-      },
-      "system": "aarch64-linux",
-      "group": "gnugrep",
-      "priority": 5
-    },
-    {
-      "attr_path": "gnugrep",
-      "broken": false,
-      "derivation": "/nix/store/ijl51lmjqydk0lbhixs7jwcwl892lw63-gnugrep-3.11.drv",
-      "description": "GNU implementation of the Unix grep command",
-      "install_id": "gnugrep",
-      "license": "GPL-3.0-or-later",
-      "locked_url": "https://github.com/flox/nixpkgs?rev=f771eb401a46846c1aebd20552521b233dd7e18b",
-      "name": "gnugrep-3.11",
-      "pname": "gnugrep",
-      "rev": "f771eb401a46846c1aebd20552521b233dd7e18b",
-      "rev_count": 789333,
-      "rev_date": "2025-04-24T20:20:57Z",
-      "scrape_date": "2025-04-27T05:14:18.244870Z",
-      "stabilities": [
-        "unstable"
-      ],
-      "unfree": false,
-      "version": "3.11",
-      "outputs_to_install": [
-        "out"
-      ],
-      "outputs": {
-        "info": "/nix/store/z1vq2h25hmb1mwsvpg9cw8zaf73jpx9s-gnugrep-3.11-info",
-        "out": "/nix/store/8i12gp78n1m9z794miwbsclgyyp5nm5s-gnugrep-3.11"
+        "out": "/nix/store/n2jdas93k04qdphj6bwpxwdijngl5c9h-netstat-net-tools-2.10"
       },
       "system": "x86_64-linux",
-      "group": "gnugrep",
+      "group": "env-tools",
       "priority": 5
     },
     {
       "attr_path": "gnugrep",
       "broken": false,
-      "derivation": "/nix/store/w3vjc0a4z6azmfq946v3dcfqh6xcmdcw-gnugrep-3.11.drv",
+      "derivation": "/nix/store/v7vrgc336xfzm4dfvns4dz619pm8lhb0-gnugrep-3.12.drv",
       "description": "GNU implementation of the Unix grep command",
       "install_id": "gnugrep",
       "license": "GPL-3.0-or-later",
-      "locked_url": "https://github.com/flox/nixpkgs?rev=f771eb401a46846c1aebd20552521b233dd7e18b",
-      "name": "gnugrep-3.11",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=6a08e6bb4e46ff7fcbb53d409b253f6bad8a28ce",
+      "name": "gnugrep-3.12",
       "pname": "gnugrep",
-      "rev": "f771eb401a46846c1aebd20552521b233dd7e18b",
-      "rev_count": 789333,
-      "rev_date": "2025-04-24T20:20:57Z",
-      "scrape_date": "2025-04-27T04:18:42.720210Z",
+      "rev": "6a08e6bb4e46ff7fcbb53d409b253f6bad8a28ce",
+      "rev_count": 883951,
+      "rev_date": "2025-10-25T06:24:58Z",
+      "scrape_date": "2025-10-27T02:08:16.550490Z",
       "stabilities": [
         "unstable"
       ],
       "unfree": false,
-      "version": "3.11",
+      "version": "3.12",
       "outputs_to_install": [
         "out"
       ],
       "outputs": {
-        "info": "/nix/store/hcb9ayahnrkjdp19cybanwq5l0jac0kz-gnugrep-3.11-info",
-        "out": "/nix/store/vyfs7l798mabb0kqw5v7xk87mzjn3d3x-gnugrep-3.11"
+        "info": "/nix/store/633fi2d3kcxa7r6b8cz2v0168s4cjsjv-gnugrep-3.12-info",
+        "out": "/nix/store/pkm05xssgm2hwdww8d55d7vpfr256j5a-gnugrep-3.12"
       },
       "system": "aarch64-darwin",
       "group": "gnugrep",
@@ -787,115 +727,117 @@
     {
       "attr_path": "gnugrep",
       "broken": false,
-      "derivation": "/nix/store/7g1nkqc5sprn1k97qmbfi2vka8ir1hp8-gnugrep-3.11.drv",
+      "derivation": "/nix/store/rkrh89kmclk3knxqknpsw2cll58y0dgm-gnugrep-3.12.drv",
       "description": "GNU implementation of the Unix grep command",
       "install_id": "gnugrep",
       "license": "GPL-3.0-or-later",
-      "locked_url": "https://github.com/flox/nixpkgs?rev=f771eb401a46846c1aebd20552521b233dd7e18b",
-      "name": "gnugrep-3.11",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=6a08e6bb4e46ff7fcbb53d409b253f6bad8a28ce",
+      "name": "gnugrep-3.12",
       "pname": "gnugrep",
-      "rev": "f771eb401a46846c1aebd20552521b233dd7e18b",
-      "rev_count": 789333,
-      "rev_date": "2025-04-24T20:20:57Z",
-      "scrape_date": "2025-04-27T04:53:39.905376Z",
+      "rev": "6a08e6bb4e46ff7fcbb53d409b253f6bad8a28ce",
+      "rev_count": 883951,
+      "rev_date": "2025-10-25T06:24:58Z",
+      "scrape_date": "2025-10-27T02:18:27.873557Z",
       "stabilities": [
         "unstable"
       ],
       "unfree": false,
-      "version": "3.11",
+      "version": "3.12",
       "outputs_to_install": [
         "out"
       ],
       "outputs": {
-        "info": "/nix/store/h3dyjzs9y34g3mycmifx9rfi35pv75gv-gnugrep-3.11-info",
-        "out": "/nix/store/w006g66vssk3hhgv7vm23fmnazqyd9rl-gnugrep-3.11"
+        "info": "/nix/store/a4ikw2j19058jhq6wwzmmdw6acz9k2cg-gnugrep-3.12-info",
+        "out": "/nix/store/jw3yay18038ibvqip3nxlpdqwfikqsmg-gnugrep-3.12"
+      },
+      "system": "aarch64-linux",
+      "group": "gnugrep",
+      "priority": 5
+    },
+    {
+      "attr_path": "gnugrep",
+      "broken": false,
+      "derivation": "/nix/store/k1pzp8i4cyymrzwds6h53pngnsjwr2q2-gnugrep-3.12.drv",
+      "description": "GNU implementation of the Unix grep command",
+      "install_id": "gnugrep",
+      "license": "GPL-3.0-or-later",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=6a08e6bb4e46ff7fcbb53d409b253f6bad8a28ce",
+      "name": "gnugrep-3.12",
+      "pname": "gnugrep",
+      "rev": "6a08e6bb4e46ff7fcbb53d409b253f6bad8a28ce",
+      "rev_count": 883951,
+      "rev_date": "2025-10-25T06:24:58Z",
+      "scrape_date": "2025-10-27T02:29:22.435430Z",
+      "stabilities": [
+        "unstable"
+      ],
+      "unfree": false,
+      "version": "3.12",
+      "outputs_to_install": [
+        "out"
+      ],
+      "outputs": {
+        "info": "/nix/store/qbnac6g52ymb8sihd2hfxxl560yj36jy-gnugrep-3.12-info",
+        "out": "/nix/store/fpyld5hhwwk48gpg6fxnflifcs3dsyks-gnugrep-3.12"
       },
       "system": "x86_64-darwin",
       "group": "gnugrep",
       "priority": 5
     },
     {
-      "attr_path": "bat",
+      "attr_path": "gnugrep",
       "broken": false,
-      "derivation": "/nix/store/x34py05hr9kbqq3v7yj1w5rbrd7lj2hc-bat-0.25.0.drv",
-      "description": "Cat(1) clone with syntax highlighting and Git integration",
-      "install_id": "bat",
-      "license": "[ Apache-2.0, MIT ]",
-      "locked_url": "https://github.com/flox/nixpkgs?rev=f771eb401a46846c1aebd20552521b233dd7e18b",
-      "name": "bat-0.25.0",
-      "pname": "bat",
-      "rev": "f771eb401a46846c1aebd20552521b233dd7e18b",
-      "rev_count": 789333,
-      "rev_date": "2025-04-24T20:20:57Z",
-      "scrape_date": "2025-04-27T04:36:21.880660Z",
+      "derivation": "/nix/store/dglwakv8s90wyh4lva5am0xbyngjr7ar-gnugrep-3.12.drv",
+      "description": "GNU implementation of the Unix grep command",
+      "install_id": "gnugrep",
+      "license": "GPL-3.0-or-later",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=6a08e6bb4e46ff7fcbb53d409b253f6bad8a28ce",
+      "name": "gnugrep-3.12",
+      "pname": "gnugrep",
+      "rev": "6a08e6bb4e46ff7fcbb53d409b253f6bad8a28ce",
+      "rev_count": 883951,
+      "rev_date": "2025-10-25T06:24:58Z",
+      "scrape_date": "2025-10-27T03:00:56.266158Z",
       "stabilities": [
         "unstable"
       ],
       "unfree": false,
-      "version": "0.25.0",
+      "version": "3.12",
       "outputs_to_install": [
         "out"
       ],
       "outputs": {
-        "out": "/nix/store/aqpwblil73wrjvjckhagjdwbbj8y6qpm-bat-0.25.0"
-      },
-      "system": "aarch64-linux",
-      "group": "helper-tools",
-      "priority": 5
-    },
-    {
-      "attr_path": "bat",
-      "broken": false,
-      "derivation": "/nix/store/y2b64irmqc3qmlzjqc3r8r6imclfbiii-bat-0.25.0.drv",
-      "description": "Cat(1) clone with syntax highlighting and Git integration",
-      "install_id": "bat",
-      "license": "[ Apache-2.0, MIT ]",
-      "locked_url": "https://github.com/flox/nixpkgs?rev=f771eb401a46846c1aebd20552521b233dd7e18b",
-      "name": "bat-0.25.0",
-      "pname": "bat",
-      "rev": "f771eb401a46846c1aebd20552521b233dd7e18b",
-      "rev_count": 789333,
-      "rev_date": "2025-04-24T20:20:57Z",
-      "scrape_date": "2025-04-27T05:14:16.441436Z",
-      "stabilities": [
-        "unstable"
-      ],
-      "unfree": false,
-      "version": "0.25.0",
-      "outputs_to_install": [
-        "out"
-      ],
-      "outputs": {
-        "out": "/nix/store/znb9lva77lsydvmy3ra1h0ilzm4fgkgc-bat-0.25.0"
+        "info": "/nix/store/kl4063insinngdc4if43n7fmmjn44p6j-gnugrep-3.12-info",
+        "out": "/nix/store/22r4s6lqhl43jkazn51f3c18qwk894g4-gnugrep-3.12"
       },
       "system": "x86_64-linux",
-      "group": "helper-tools",
+      "group": "gnugrep",
       "priority": 5
     },
     {
       "attr_path": "bat",
       "broken": false,
-      "derivation": "/nix/store/zv04rfzmqbkibdxai2jzqykgc7l245df-bat-0.25.0.drv",
+      "derivation": "/nix/store/g61bbk9rk22w1ax1p18zv5wfb675ws29-bat-0.26.0.drv",
       "description": "Cat(1) clone with syntax highlighting and Git integration",
       "install_id": "bat",
       "license": "[ Apache-2.0, MIT ]",
-      "locked_url": "https://github.com/flox/nixpkgs?rev=f771eb401a46846c1aebd20552521b233dd7e18b",
-      "name": "bat-0.25.0",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=6a08e6bb4e46ff7fcbb53d409b253f6bad8a28ce",
+      "name": "bat-0.26.0",
       "pname": "bat",
-      "rev": "f771eb401a46846c1aebd20552521b233dd7e18b",
-      "rev_count": 789333,
-      "rev_date": "2025-04-24T20:20:57Z",
-      "scrape_date": "2025-04-27T04:18:41.922348Z",
+      "rev": "6a08e6bb4e46ff7fcbb53d409b253f6bad8a28ce",
+      "rev_count": 883951,
+      "rev_date": "2025-10-25T06:24:58Z",
+      "scrape_date": "2025-10-27T02:08:14.700296Z",
       "stabilities": [
         "unstable"
       ],
       "unfree": false,
-      "version": "0.25.0",
+      "version": "0.26.0",
       "outputs_to_install": [
         "out"
       ],
       "outputs": {
-        "out": "/nix/store/29xjspshldxxsx7ff6fs6n8nz7rwwa0n-bat-0.25.0"
+        "out": "/nix/store/m1s1wqd7nswi7jnlg146g0m3rsvsg9a7-bat-0.26.0"
       },
       "system": "aarch64-darwin",
       "group": "helper-tools",
@@ -904,97 +846,85 @@
     {
       "attr_path": "bat",
       "broken": false,
-      "derivation": "/nix/store/h4jyxngwni1w7zzv586c4izw4j6cwiq4-bat-0.25.0.drv",
+      "derivation": "/nix/store/6rh4yfkz53zgzzg2yl09x69w9c9qd8b2-bat-0.26.0.drv",
       "description": "Cat(1) clone with syntax highlighting and Git integration",
       "install_id": "bat",
       "license": "[ Apache-2.0, MIT ]",
-      "locked_url": "https://github.com/flox/nixpkgs?rev=f771eb401a46846c1aebd20552521b233dd7e18b",
-      "name": "bat-0.25.0",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=6a08e6bb4e46ff7fcbb53d409b253f6bad8a28ce",
+      "name": "bat-0.26.0",
       "pname": "bat",
-      "rev": "f771eb401a46846c1aebd20552521b233dd7e18b",
-      "rev_count": 789333,
-      "rev_date": "2025-04-24T20:20:57Z",
-      "scrape_date": "2025-04-27T04:53:39.088601Z",
+      "rev": "6a08e6bb4e46ff7fcbb53d409b253f6bad8a28ce",
+      "rev_count": 883951,
+      "rev_date": "2025-10-25T06:24:58Z",
+      "scrape_date": "2025-10-27T02:18:25.817515Z",
       "stabilities": [
         "unstable"
       ],
       "unfree": false,
-      "version": "0.25.0",
+      "version": "0.26.0",
       "outputs_to_install": [
         "out"
       ],
       "outputs": {
-        "out": "/nix/store/zsjjqxpx1m3n1677jsk3viy84rxhh7s5-bat-0.25.0"
-      },
-      "system": "x86_64-darwin",
-      "group": "helper-tools",
-      "priority": 5
-    },
-    {
-      "attr_path": "curl",
-      "broken": false,
-      "derivation": "/nix/store/yq3cgczhqmmrwclib223sw30cv5bjnsp-curl-8.12.1.drv",
-      "description": "Command line tool for transferring files with URL syntax",
-      "install_id": "curl",
-      "license": "curl",
-      "locked_url": "https://github.com/flox/nixpkgs?rev=f771eb401a46846c1aebd20552521b233dd7e18b",
-      "name": "curl-8.12.1",
-      "pname": "curl",
-      "rev": "f771eb401a46846c1aebd20552521b233dd7e18b",
-      "rev_count": 789333,
-      "rev_date": "2025-04-24T20:20:57Z",
-      "scrape_date": "2025-04-27T04:36:22.299111Z",
-      "stabilities": [
-        "unstable"
-      ],
-      "unfree": false,
-      "version": "8.12.1",
-      "outputs_to_install": [
-        "bin",
-        "man"
-      ],
-      "outputs": {
-        "bin": "/nix/store/hvlljyxp5xzrv719f5j7m7gnyb87mx41-curl-8.12.1-bin",
-        "debug": "/nix/store/z8lpvdvih1mspz5j1lsbgagsjpl2wizw-curl-8.12.1-debug",
-        "dev": "/nix/store/npbpw2121z4akxngf176q1mdlxfkwv0j-curl-8.12.1-dev",
-        "devdoc": "/nix/store/r6kp2rzlm8vfflnzrhsf21b20ixgmpfp-curl-8.12.1-devdoc",
-        "man": "/nix/store/cb83qlmflk1w18ndysbbm9hvg053w3f6-curl-8.12.1-man",
-        "out": "/nix/store/gy6v84p7iy8p2wy7w0qh56vbqwz446kk-curl-8.12.1"
+        "out": "/nix/store/0am602vqa4zyl5m75na8gl47dk66zzid-bat-0.26.0"
       },
       "system": "aarch64-linux",
       "group": "helper-tools",
       "priority": 5
     },
     {
-      "attr_path": "curl",
+      "attr_path": "bat",
       "broken": false,
-      "derivation": "/nix/store/c7phcbkl7nzja980jnyy0g1dni8qb782-curl-8.12.1.drv",
-      "description": "Command line tool for transferring files with URL syntax",
-      "install_id": "curl",
-      "license": "curl",
-      "locked_url": "https://github.com/flox/nixpkgs?rev=f771eb401a46846c1aebd20552521b233dd7e18b",
-      "name": "curl-8.12.1",
-      "pname": "curl",
-      "rev": "f771eb401a46846c1aebd20552521b233dd7e18b",
-      "rev_count": 789333,
-      "rev_date": "2025-04-24T20:20:57Z",
-      "scrape_date": "2025-04-27T05:14:16.929266Z",
+      "derivation": "/nix/store/0jmi4m11dp8sdwn47cbhifzs518cf7fr-bat-0.26.0.drv",
+      "description": "Cat(1) clone with syntax highlighting and Git integration",
+      "install_id": "bat",
+      "license": "[ Apache-2.0, MIT ]",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=6a08e6bb4e46ff7fcbb53d409b253f6bad8a28ce",
+      "name": "bat-0.26.0",
+      "pname": "bat",
+      "rev": "6a08e6bb4e46ff7fcbb53d409b253f6bad8a28ce",
+      "rev_count": 883951,
+      "rev_date": "2025-10-25T06:24:58Z",
+      "scrape_date": "2025-10-27T02:29:21.295854Z",
       "stabilities": [
         "unstable"
       ],
       "unfree": false,
-      "version": "8.12.1",
+      "version": "0.26.0",
       "outputs_to_install": [
-        "bin",
-        "man"
+        "out"
       ],
       "outputs": {
-        "bin": "/nix/store/16g6gyg131k8vgna13ilb4v9msh5fmi9-curl-8.12.1-bin",
-        "debug": "/nix/store/v7kw0dv1r94d7xjknibh53wl8yqwinh8-curl-8.12.1-debug",
-        "dev": "/nix/store/0rnns5hhxpvx08p0k3j6bhivj70y6wli-curl-8.12.1-dev",
-        "devdoc": "/nix/store/mxjg45wa0ibsyzlilbiiy3hqbpn5zfxw-curl-8.12.1-devdoc",
-        "man": "/nix/store/y8h3k07g8hpbs8ifx6vxlbh2kfpl4m65-curl-8.12.1-man",
-        "out": "/nix/store/kmq714baxkd5yzpnbp09b7dhnks6m74q-curl-8.12.1"
+        "out": "/nix/store/7f6piwxyq7g8lw0d61bzy9nvmq1lsxv7-bat-0.26.0"
+      },
+      "system": "x86_64-darwin",
+      "group": "helper-tools",
+      "priority": 5
+    },
+    {
+      "attr_path": "bat",
+      "broken": false,
+      "derivation": "/nix/store/dcxwgk3d8jlh0yxhlarnyn0dbhmsn6ai-bat-0.26.0.drv",
+      "description": "Cat(1) clone with syntax highlighting and Git integration",
+      "install_id": "bat",
+      "license": "[ Apache-2.0, MIT ]",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=6a08e6bb4e46ff7fcbb53d409b253f6bad8a28ce",
+      "name": "bat-0.26.0",
+      "pname": "bat",
+      "rev": "6a08e6bb4e46ff7fcbb53d409b253f6bad8a28ce",
+      "rev_count": 883951,
+      "rev_date": "2025-10-25T06:24:58Z",
+      "scrape_date": "2025-10-27T03:00:53.952554Z",
+      "stabilities": [
+        "unstable"
+      ],
+      "unfree": false,
+      "version": "0.26.0",
+      "outputs_to_install": [
+        "out"
+      ],
+      "outputs": {
+        "out": "/nix/store/vsih714glpw1gdr86yrif87pf0cvj9ha-bat-0.26.0"
       },
       "system": "x86_64-linux",
       "group": "helper-tools",
@@ -1003,32 +933,32 @@
     {
       "attr_path": "curl",
       "broken": false,
-      "derivation": "/nix/store/vdyh7cx27q7mga5i15cqlkj3rl4q1zm7-curl-8.12.1.drv",
+      "derivation": "/nix/store/g9b4bixj0n0bv1vf9bz0kakq86hh24h4-curl-8.16.0.drv",
       "description": "Command line tool for transferring files with URL syntax",
       "install_id": "curl",
       "license": "curl",
-      "locked_url": "https://github.com/flox/nixpkgs?rev=f771eb401a46846c1aebd20552521b233dd7e18b",
-      "name": "curl-8.12.1",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=6a08e6bb4e46ff7fcbb53d409b253f6bad8a28ce",
+      "name": "curl-8.16.0",
       "pname": "curl",
-      "rev": "f771eb401a46846c1aebd20552521b233dd7e18b",
-      "rev_count": 789333,
-      "rev_date": "2025-04-24T20:20:57Z",
-      "scrape_date": "2025-04-27T04:18:42.222157Z",
+      "rev": "6a08e6bb4e46ff7fcbb53d409b253f6bad8a28ce",
+      "rev_count": 883951,
+      "rev_date": "2025-10-25T06:24:58Z",
+      "scrape_date": "2025-10-27T02:08:15.120034Z",
       "stabilities": [
         "unstable"
       ],
       "unfree": false,
-      "version": "8.12.1",
+      "version": "8.16.0",
       "outputs_to_install": [
         "bin",
         "man"
       ],
       "outputs": {
-        "bin": "/nix/store/krgqarvv8y1xr2f7z5vxxva3nn7d1x8l-curl-8.12.1-bin",
-        "dev": "/nix/store/8rsm3wrn90wm3h9bcr44j2z5g3qlnq8w-curl-8.12.1-dev",
-        "devdoc": "/nix/store/mcxbd00pvp9z2p3baqjypiirrnxyqn1i-curl-8.12.1-devdoc",
-        "man": "/nix/store/nxxww0dn65fw7aky9zvghsykr0syb8lg-curl-8.12.1-man",
-        "out": "/nix/store/r011ii30b9gphcrwppszgv9bnd6d605r-curl-8.12.1"
+        "bin": "/nix/store/982cq6ga80yn9nghx479fbqqwf7kf8n1-curl-8.16.0-bin",
+        "dev": "/nix/store/qxzi15y4apihsg2infxn66b6hz5lws3h-curl-8.16.0-dev",
+        "devdoc": "/nix/store/bz1ap1ahksz62gz79h8anfhsyz1ir0jw-curl-8.16.0-devdoc",
+        "man": "/nix/store/rsdippinyvz3myz505vi6sgx8vmh30px-curl-8.16.0-man",
+        "out": "/nix/store/8fgfydjv40m1pw8bpwm30kxw24284fvg-curl-8.16.0"
       },
       "system": "aarch64-darwin",
       "group": "helper-tools",
@@ -1037,100 +967,102 @@
     {
       "attr_path": "curl",
       "broken": false,
-      "derivation": "/nix/store/fq1birpdcm24zlsq0hnhq7sbaalyjzj1-curl-8.12.1.drv",
+      "derivation": "/nix/store/iij2ckwkfzzc50q6yr4jrqxc4kqiyrz6-curl-8.16.0.drv",
       "description": "Command line tool for transferring files with URL syntax",
       "install_id": "curl",
       "license": "curl",
-      "locked_url": "https://github.com/flox/nixpkgs?rev=f771eb401a46846c1aebd20552521b233dd7e18b",
-      "name": "curl-8.12.1",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=6a08e6bb4e46ff7fcbb53d409b253f6bad8a28ce",
+      "name": "curl-8.16.0",
       "pname": "curl",
-      "rev": "f771eb401a46846c1aebd20552521b233dd7e18b",
-      "rev_count": 789333,
-      "rev_date": "2025-04-24T20:20:57Z",
-      "scrape_date": "2025-04-27T04:53:39.375004Z",
+      "rev": "6a08e6bb4e46ff7fcbb53d409b253f6bad8a28ce",
+      "rev_count": 883951,
+      "rev_date": "2025-10-25T06:24:58Z",
+      "scrape_date": "2025-10-27T02:18:26.359385Z",
       "stabilities": [
         "unstable"
       ],
       "unfree": false,
-      "version": "8.12.1",
+      "version": "8.16.0",
       "outputs_to_install": [
         "bin",
         "man"
       ],
       "outputs": {
-        "bin": "/nix/store/3nm8cgv7xg1qadvgcshmvspmsr7frvp2-curl-8.12.1-bin",
-        "dev": "/nix/store/vij71byxpyrpxsyvb6z4vh75hj51la5f-curl-8.12.1-dev",
-        "devdoc": "/nix/store/6zf74b4kalqx1653vwsv7vpng113igi7-curl-8.12.1-devdoc",
-        "man": "/nix/store/4aphz90jsdfzx5cfzl5nfnml7czswg09-curl-8.12.1-man",
-        "out": "/nix/store/fswhs12ddagbw24a1gr0rv7sm7aqj7c1-curl-8.12.1"
-      },
-      "system": "x86_64-darwin",
-      "group": "helper-tools",
-      "priority": 5
-    },
-    {
-      "attr_path": "jq",
-      "broken": false,
-      "derivation": "/nix/store/mf49wmr7dzwax8vncr8gs77lgnajaarx-jq-1.7.1.drv",
-      "description": "Lightweight and flexible command-line JSON processor",
-      "install_id": "jq",
-      "license": "MIT",
-      "locked_url": "https://github.com/flox/nixpkgs?rev=f771eb401a46846c1aebd20552521b233dd7e18b",
-      "name": "jq-1.7.1",
-      "pname": "jq",
-      "rev": "f771eb401a46846c1aebd20552521b233dd7e18b",
-      "rev_count": 789333,
-      "rev_date": "2025-04-24T20:20:57Z",
-      "scrape_date": "2025-04-27T04:36:24.728267Z",
-      "stabilities": [
-        "unstable"
-      ],
-      "unfree": false,
-      "version": "1.7.1",
-      "outputs_to_install": [
-        "bin",
-        "man"
-      ],
-      "outputs": {
-        "bin": "/nix/store/k8if483b70jz7k45v7r3zgpwx600slaz-jq-1.7.1-bin",
-        "dev": "/nix/store/l89ym36dx7cr6mxlgxlgzdg9wpi3sfn1-jq-1.7.1-dev",
-        "doc": "/nix/store/cy1fhm3bshrpa32ld7vv354hwgd4nxlf-jq-1.7.1-doc",
-        "man": "/nix/store/857krxj0db5bri4z9gks0hfgw6bzv9wg-jq-1.7.1-man",
-        "out": "/nix/store/vdigqrk4rsyy21wkmcw32np2wg33iq7l-jq-1.7.1"
+        "bin": "/nix/store/qnakzidljavpz27az7gjkyydb7ckjg6r-curl-8.16.0-bin",
+        "debug": "/nix/store/zxlv6n85qw1lzmx4xblgc0lz1vv0hg1f-curl-8.16.0-debug",
+        "dev": "/nix/store/aypq6najvfyhzx4k80a1vy329qmqj9zb-curl-8.16.0-dev",
+        "devdoc": "/nix/store/b7w1516fx1mywmkl9dqsm1rnjmpvz7a3-curl-8.16.0-devdoc",
+        "man": "/nix/store/dfgh660rbbj8s3l3xvy8klmkks4pkg3w-curl-8.16.0-man",
+        "out": "/nix/store/pl917hpmpx64fisdisv2zjmk09grvm4g-curl-8.16.0"
       },
       "system": "aarch64-linux",
       "group": "helper-tools",
       "priority": 5
     },
     {
-      "attr_path": "jq",
+      "attr_path": "curl",
       "broken": false,
-      "derivation": "/nix/store/pv893078nkchi2flra5cfdl04fv2qzcz-jq-1.7.1.drv",
-      "description": "Lightweight and flexible command-line JSON processor",
-      "install_id": "jq",
-      "license": "MIT",
-      "locked_url": "https://github.com/flox/nixpkgs?rev=f771eb401a46846c1aebd20552521b233dd7e18b",
-      "name": "jq-1.7.1",
-      "pname": "jq",
-      "rev": "f771eb401a46846c1aebd20552521b233dd7e18b",
-      "rev_count": 789333,
-      "rev_date": "2025-04-24T20:20:57Z",
-      "scrape_date": "2025-04-27T05:14:19.660971Z",
+      "derivation": "/nix/store/1ln4jpjmml6ndr42f2rbv21j8racgiik-curl-8.16.0.drv",
+      "description": "Command line tool for transferring files with URL syntax",
+      "install_id": "curl",
+      "license": "curl",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=6a08e6bb4e46ff7fcbb53d409b253f6bad8a28ce",
+      "name": "curl-8.16.0",
+      "pname": "curl",
+      "rev": "6a08e6bb4e46ff7fcbb53d409b253f6bad8a28ce",
+      "rev_count": 883951,
+      "rev_date": "2025-10-25T06:24:58Z",
+      "scrape_date": "2025-10-27T02:29:21.679404Z",
       "stabilities": [
         "unstable"
       ],
       "unfree": false,
-      "version": "1.7.1",
+      "version": "8.16.0",
       "outputs_to_install": [
         "bin",
         "man"
       ],
       "outputs": {
-        "bin": "/nix/store/3nawavhk39z9p0l87vdpbiarvyirzv01-jq-1.7.1-bin",
-        "dev": "/nix/store/g53bmywyp08ppwfcr8i0hilpz2v7vby7-jq-1.7.1-dev",
-        "doc": "/nix/store/hf32jpvi9pg899kz18iwnlw57w83kq78-jq-1.7.1-doc",
-        "man": "/nix/store/9ym6hfn6id819vmjgffn9lxk980q6xbm-jq-1.7.1-man",
-        "out": "/nix/store/2y5zfakdg53hqbac3rnvb72vmllpn9zf-jq-1.7.1"
+        "bin": "/nix/store/irf7vpckgi9128jh7by1438ns3qgvfqz-curl-8.16.0-bin",
+        "dev": "/nix/store/sv8p7spya9zf0163xb454wvl7jbmws57-curl-8.16.0-dev",
+        "devdoc": "/nix/store/85fm556955nskhdr8q66ny2fk4fggzh1-curl-8.16.0-devdoc",
+        "man": "/nix/store/a6znnvphjwyzhxjq8vbkr35ng6xglbfb-curl-8.16.0-man",
+        "out": "/nix/store/sfr307vn71cyfnfmgckhwggq251rnrfr-curl-8.16.0"
+      },
+      "system": "x86_64-darwin",
+      "group": "helper-tools",
+      "priority": 5
+    },
+    {
+      "attr_path": "curl",
+      "broken": false,
+      "derivation": "/nix/store/yh73y300l9r1csw9zghd7im341rrp106-curl-8.16.0.drv",
+      "description": "Command line tool for transferring files with URL syntax",
+      "install_id": "curl",
+      "license": "curl",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=6a08e6bb4e46ff7fcbb53d409b253f6bad8a28ce",
+      "name": "curl-8.16.0",
+      "pname": "curl",
+      "rev": "6a08e6bb4e46ff7fcbb53d409b253f6bad8a28ce",
+      "rev_count": 883951,
+      "rev_date": "2025-10-25T06:24:58Z",
+      "scrape_date": "2025-10-27T03:00:54.560041Z",
+      "stabilities": [
+        "unstable"
+      ],
+      "unfree": false,
+      "version": "8.16.0",
+      "outputs_to_install": [
+        "bin",
+        "man"
+      ],
+      "outputs": {
+        "bin": "/nix/store/xvh4bi0cc2cw18lpn6ax9m4zwnn1s9lj-curl-8.16.0-bin",
+        "debug": "/nix/store/33lwk5v78214pmlnhphbijpvbh8gjbbq-curl-8.16.0-debug",
+        "dev": "/nix/store/b65dj8iryqd1bss2qlg5ipxqndngcl9n-curl-8.16.0-dev",
+        "devdoc": "/nix/store/bz67f9xwj2i7zanwkrxb6dy9bbm2283d-curl-8.16.0-devdoc",
+        "man": "/nix/store/q4jbdyq7f0zks4i9xhfyx2pj6x92g9dj-curl-8.16.0-man",
+        "out": "/nix/store/8np9zvwqmwsnbkbrwm8x7jq4ygdkjz5g-curl-8.16.0"
       },
       "system": "x86_64-linux",
       "group": "helper-tools",
@@ -1139,32 +1071,32 @@
     {
       "attr_path": "jq",
       "broken": false,
-      "derivation": "/nix/store/kysqbgfgwgifws19mgz09d4044rzl03f-jq-1.7.1.drv",
+      "derivation": "/nix/store/x0hycn9knfcq79i5habjgyz5akx7m7nr-jq-1.8.1.drv",
       "description": "Lightweight and flexible command-line JSON processor",
       "install_id": "jq",
       "license": "MIT",
-      "locked_url": "https://github.com/flox/nixpkgs?rev=f771eb401a46846c1aebd20552521b233dd7e18b",
-      "name": "jq-1.7.1",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=6a08e6bb4e46ff7fcbb53d409b253f6bad8a28ce",
+      "name": "jq-1.8.1",
       "pname": "jq",
-      "rev": "f771eb401a46846c1aebd20552521b233dd7e18b",
-      "rev_count": 789333,
-      "rev_date": "2025-04-24T20:20:57Z",
-      "scrape_date": "2025-04-27T04:18:43.164752Z",
+      "rev": "6a08e6bb4e46ff7fcbb53d409b253f6bad8a28ce",
+      "rev_count": 883951,
+      "rev_date": "2025-10-25T06:24:58Z",
+      "scrape_date": "2025-10-27T02:08:30.388549Z",
       "stabilities": [
         "unstable"
       ],
       "unfree": false,
-      "version": "1.7.1",
+      "version": "1.8.1",
       "outputs_to_install": [
         "bin",
         "man"
       ],
       "outputs": {
-        "bin": "/nix/store/d0r880glv6pvpxibssrcl2v7v4sqijfx-jq-1.7.1-bin",
-        "dev": "/nix/store/d3w37gvgsapsh612vyy0b0lnjq81bhhd-jq-1.7.1-dev",
-        "doc": "/nix/store/31mydlnw005lpaslc5yqgmxy5mfhzs98-jq-1.7.1-doc",
-        "man": "/nix/store/51dbhjrpi3dnj3jv9npjk1wvqcjfpz2n-jq-1.7.1-man",
-        "out": "/nix/store/kd68ckkv7lqnfb46rk1746mhig0hhpl5-jq-1.7.1"
+        "bin": "/nix/store/vh3xibzhaz3nl5m97ka2i5sxivv59sgn-jq-1.8.1-bin",
+        "dev": "/nix/store/ni42jbsfngy5l81p2lz9v5wcl4kwl9nf-jq-1.8.1-dev",
+        "doc": "/nix/store/hy9hxygqscjkz0faz5xlxwkj7sn6v74i-jq-1.8.1-doc",
+        "man": "/nix/store/k9swya8a42jsa59jd2xcw0pvacj0xxyn-jq-1.8.1-man",
+        "out": "/nix/store/qabxprfzl0lygph7yg3kq6b8si410syd-jq-1.8.1"
       },
       "system": "aarch64-darwin",
       "group": "helper-tools",
@@ -1173,136 +1105,134 @@
     {
       "attr_path": "jq",
       "broken": false,
-      "derivation": "/nix/store/h2pw48h5vwkabjrvq7ff08y6gdfl7dqw-jq-1.7.1.drv",
+      "derivation": "/nix/store/f2yda9q3f7miq3md0r47d25cbbwqwacw-jq-1.8.1.drv",
       "description": "Lightweight and flexible command-line JSON processor",
       "install_id": "jq",
       "license": "MIT",
-      "locked_url": "https://github.com/flox/nixpkgs?rev=f771eb401a46846c1aebd20552521b233dd7e18b",
-      "name": "jq-1.7.1",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=6a08e6bb4e46ff7fcbb53d409b253f6bad8a28ce",
+      "name": "jq-1.8.1",
       "pname": "jq",
-      "rev": "f771eb401a46846c1aebd20552521b233dd7e18b",
-      "rev_count": 789333,
-      "rev_date": "2025-04-24T20:20:57Z",
-      "scrape_date": "2025-04-27T04:53:40.357520Z",
+      "rev": "6a08e6bb4e46ff7fcbb53d409b253f6bad8a28ce",
+      "rev_count": 883951,
+      "rev_date": "2025-10-25T06:24:58Z",
+      "scrape_date": "2025-10-27T02:18:46.543569Z",
       "stabilities": [
         "unstable"
       ],
       "unfree": false,
-      "version": "1.7.1",
+      "version": "1.8.1",
       "outputs_to_install": [
         "bin",
         "man"
       ],
       "outputs": {
-        "bin": "/nix/store/d7scikakdayw3xjw8pm55q8j146qwxwd-jq-1.7.1-bin",
-        "dev": "/nix/store/h80zvna5sb5klg3q56l22rw2cac35pzm-jq-1.7.1-dev",
-        "doc": "/nix/store/v51p982wn5hrjvfprr5h5f7ffakj86iq-jq-1.7.1-doc",
-        "man": "/nix/store/giabrd1iawzw666w62n4dw7czs6k580i-jq-1.7.1-man",
-        "out": "/nix/store/8fd0arnj59yvp8clz9a14p61dhchp8kk-jq-1.7.1"
+        "bin": "/nix/store/pqr9gww8fksrllfr38k9jvl7k5q5awf7-jq-1.8.1-bin",
+        "dev": "/nix/store/qqcccyr96a1p4j7ywgzhqi06n5y47mk0-jq-1.8.1-dev",
+        "doc": "/nix/store/ankng0jgm40wkgwiz3n8rj6hanmgdsx7-jq-1.8.1-doc",
+        "man": "/nix/store/n0y7a3f5hmglwifndimclg99mpn554bl-jq-1.8.1-man",
+        "out": "/nix/store/6h1mv44dhnq2jb94373cab59yaq5y8wz-jq-1.8.1"
+      },
+      "system": "aarch64-linux",
+      "group": "helper-tools",
+      "priority": 5
+    },
+    {
+      "attr_path": "jq",
+      "broken": false,
+      "derivation": "/nix/store/yvb5zsm4ffb3k3216mry8zvpzn5sigm3-jq-1.8.1.drv",
+      "description": "Lightweight and flexible command-line JSON processor",
+      "install_id": "jq",
+      "license": "MIT",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=6a08e6bb4e46ff7fcbb53d409b253f6bad8a28ce",
+      "name": "jq-1.8.1",
+      "pname": "jq",
+      "rev": "6a08e6bb4e46ff7fcbb53d409b253f6bad8a28ce",
+      "rev_count": 883951,
+      "rev_date": "2025-10-25T06:24:58Z",
+      "scrape_date": "2025-10-27T02:29:36.409900Z",
+      "stabilities": [
+        "unstable"
+      ],
+      "unfree": false,
+      "version": "1.8.1",
+      "outputs_to_install": [
+        "bin",
+        "man"
+      ],
+      "outputs": {
+        "bin": "/nix/store/r52fkpag200agnznp2var2p0f0d0i4ch-jq-1.8.1-bin",
+        "dev": "/nix/store/ijwpwk35g7l8amallvhqymwnnspmxgcy-jq-1.8.1-dev",
+        "doc": "/nix/store/zci6xwc00v98flb0jqhdaac0231pmgvb-jq-1.8.1-doc",
+        "man": "/nix/store/xbvg59a0kdin1fibnqrw4l445a5dh9bc-jq-1.8.1-man",
+        "out": "/nix/store/50fm8yn7mpxfks0cvrjifi58r90q5c6h-jq-1.8.1"
       },
       "system": "x86_64-darwin",
       "group": "helper-tools",
       "priority": 5
     },
     {
-      "attr_path": "bash",
+      "attr_path": "jq",
       "broken": false,
-      "derivation": "/nix/store/6y93yh90w0x1z5d8vhrnkdsxsliydgwq-bash-interactive-5.2p37.drv",
-      "description": "GNU Bourne-Again Shell, the de facto standard shell on Linux (for interactive use)",
-      "install_id": "bash",
-      "license": "GPL-3.0-or-later",
-      "locked_url": "https://github.com/flox/nixpkgs?rev=f771eb401a46846c1aebd20552521b233dd7e18b",
-      "name": "bash-interactive-5.2p37",
-      "pname": "bash",
-      "rev": "f771eb401a46846c1aebd20552521b233dd7e18b",
-      "rev_count": 789333,
-      "rev_date": "2025-04-24T20:20:57Z",
-      "scrape_date": "2025-04-27T04:36:21.877971Z",
+      "derivation": "/nix/store/qk16np2i3ls20ih6n8lc38l6f3y6s7i3-jq-1.8.1.drv",
+      "description": "Lightweight and flexible command-line JSON processor",
+      "install_id": "jq",
+      "license": "MIT",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=6a08e6bb4e46ff7fcbb53d409b253f6bad8a28ce",
+      "name": "jq-1.8.1",
+      "pname": "jq",
+      "rev": "6a08e6bb4e46ff7fcbb53d409b253f6bad8a28ce",
+      "rev_count": 883951,
+      "rev_date": "2025-10-25T06:24:58Z",
+      "scrape_date": "2025-10-27T03:01:16.369852Z",
       "stabilities": [
         "unstable"
       ],
       "unfree": false,
-      "version": "5.2p37",
+      "version": "1.8.1",
       "outputs_to_install": [
-        "man",
-        "out"
+        "bin",
+        "man"
       ],
       "outputs": {
-        "debug": "/nix/store/26zf7pim4zpwfjb95r8cchm7h93cz7mr-bash-interactive-5.2p37-debug",
-        "dev": "/nix/store/1vg484z3g5sv0lnmnag2ag4mj6fgsm4x-bash-interactive-5.2p37-dev",
-        "doc": "/nix/store/lnh49s60fcbncc18z5n9gvxaw64fjpcc-bash-interactive-5.2p37-doc",
-        "info": "/nix/store/f6ay4qmjndhsvqb82wr6vgckzfbri8xy-bash-interactive-5.2p37-info",
-        "man": "/nix/store/1mnhsigz5wnb5dq0v38nbfngfp83nxwa-bash-interactive-5.2p37-man",
-        "out": "/nix/store/86spmd2gg2v0v7zviqxh6y4jrs0zb37i-bash-interactive-5.2p37"
-      },
-      "system": "aarch64-linux",
-      "group": "toplevel",
-      "priority": 5
-    },
-    {
-      "attr_path": "bash",
-      "broken": false,
-      "derivation": "/nix/store/rpyqrks23ipmcpmjl4242gmqk3v1z21j-bash-interactive-5.2p37.drv",
-      "description": "GNU Bourne-Again Shell, the de facto standard shell on Linux (for interactive use)",
-      "install_id": "bash",
-      "license": "GPL-3.0-or-later",
-      "locked_url": "https://github.com/flox/nixpkgs?rev=f771eb401a46846c1aebd20552521b233dd7e18b",
-      "name": "bash-interactive-5.2p37",
-      "pname": "bash",
-      "rev": "f771eb401a46846c1aebd20552521b233dd7e18b",
-      "rev_count": 789333,
-      "rev_date": "2025-04-24T20:20:57Z",
-      "scrape_date": "2025-04-27T05:14:16.438484Z",
-      "stabilities": [
-        "unstable"
-      ],
-      "unfree": false,
-      "version": "5.2p37",
-      "outputs_to_install": [
-        "man",
-        "out"
-      ],
-      "outputs": {
-        "debug": "/nix/store/92023r59a9v1nkgrqv9mayddd3233p45-bash-interactive-5.2p37-debug",
-        "dev": "/nix/store/9nrh5ga5dgz3f957w33iqzsfw2gkk5hq-bash-interactive-5.2p37-dev",
-        "doc": "/nix/store/1qbrlv6ll2sdrac04zpvb6hjvg30307y-bash-interactive-5.2p37-doc",
-        "info": "/nix/store/4rw0flfjd0xlis2yik8hz8izilsnxf1h-bash-interactive-5.2p37-info",
-        "man": "/nix/store/1z2p0d1sjd9gnfl049l61sy2qdd61dvb-bash-interactive-5.2p37-man",
-        "out": "/nix/store/m3hnxdlz6v6650ggqz29nsqbvzvdvnsy-bash-interactive-5.2p37"
+        "bin": "/nix/store/frzsv47z1mcyrp941zab08mx6kardizi-jq-1.8.1-bin",
+        "dev": "/nix/store/caq8n6m9m5zyhf0by83ksbimqmpggkwr-jq-1.8.1-dev",
+        "doc": "/nix/store/n3wl5jkmnzfg0a1vjxxx8w2n7js1b5sr-jq-1.8.1-doc",
+        "man": "/nix/store/rs84gk428azdd7ca46ki3w60yqp54ksk-jq-1.8.1-man",
+        "out": "/nix/store/zsw99s8nv2qffdg47jf8x8pyml9b0x2r-jq-1.8.1"
       },
       "system": "x86_64-linux",
-      "group": "toplevel",
+      "group": "helper-tools",
       "priority": 5
     },
     {
       "attr_path": "bash",
       "broken": false,
-      "derivation": "/nix/store/7l7c6d6as7x2nwfzb4236fjdm02mjs3c-bash-interactive-5.2p37.drv",
+      "derivation": "/nix/store/9dqnzsws9mdkibwndx9zxylblcgrxi99-bash-interactive-5.3p3.drv",
       "description": "GNU Bourne-Again Shell, the de facto standard shell on Linux (for interactive use)",
       "install_id": "bash",
       "license": "GPL-3.0-or-later",
-      "locked_url": "https://github.com/flox/nixpkgs?rev=f771eb401a46846c1aebd20552521b233dd7e18b",
-      "name": "bash-interactive-5.2p37",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=0b4defa2584313f3b781240b29d61f6f9f7e0df3",
+      "name": "bash-interactive-5.3p3",
       "pname": "bash",
-      "rev": "f771eb401a46846c1aebd20552521b233dd7e18b",
-      "rev_count": 789333,
-      "rev_date": "2025-04-24T20:20:57Z",
-      "scrape_date": "2025-04-27T04:18:41.920491Z",
+      "rev": "0b4defa2584313f3b781240b29d61f6f9f7e0df3",
+      "rev_count": 875086,
+      "rev_date": "2025-10-09T19:42:10Z",
+      "scrape_date": "2025-10-11T01:21:26.807342Z",
       "stabilities": [
         "unstable"
       ],
       "unfree": false,
-      "version": "5.2p37",
+      "version": "5.3p3",
       "outputs_to_install": [
         "man",
         "out"
       ],
       "outputs": {
-        "dev": "/nix/store/1hbx0k930mf4pkb994x5dfgs7lcnsqq0-bash-interactive-5.2p37-dev",
-        "doc": "/nix/store/gyxhzxgh07pvqni8hbsls1bgzj1a2f8l-bash-interactive-5.2p37-doc",
-        "info": "/nix/store/m9ccdl3xgmk3dzz1lrvbw79sjq0dxdbh-bash-interactive-5.2p37-info",
-        "man": "/nix/store/q9gsfxm6w9awwahz0sj408bx5i22xzr5-bash-interactive-5.2p37-man",
-        "out": "/nix/store/gh2gn7xbqnahi44yd01xkv2vy172bg1v-bash-interactive-5.2p37"
+        "dev": "/nix/store/py3p8wc5dhgd04kyww4hvhwf40g1fbj8-bash-interactive-5.3p3-dev",
+        "doc": "/nix/store/bplvdnvr47g06ifw5ksjxkd9dvjw21pq-bash-interactive-5.3p3-doc",
+        "info": "/nix/store/fzk74pz9xa69zzc3hwrcvlks6n55phi7-bash-interactive-5.3p3-info",
+        "man": "/nix/store/cwcwxkws8f40v7vqy1psq3czsjhqvff5-bash-interactive-5.3p3-man",
+        "out": "/nix/store/j26b6rcrvvpvqqcq5gmzxxipjb8ycy09-bash-interactive-5.3p3"
       },
       "system": "aarch64-darwin",
       "group": "toplevel",
@@ -1311,90 +1241,102 @@
     {
       "attr_path": "bash",
       "broken": false,
-      "derivation": "/nix/store/xyrdkzinhkcvd9l5jmbadhpaw750yzlh-bash-interactive-5.2p37.drv",
+      "derivation": "/nix/store/v6p6sdss6hqhikzlbw96vxp848h5af1a-bash-interactive-5.3p3.drv",
       "description": "GNU Bourne-Again Shell, the de facto standard shell on Linux (for interactive use)",
       "install_id": "bash",
       "license": "GPL-3.0-or-later",
-      "locked_url": "https://github.com/flox/nixpkgs?rev=f771eb401a46846c1aebd20552521b233dd7e18b",
-      "name": "bash-interactive-5.2p37",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=0b4defa2584313f3b781240b29d61f6f9f7e0df3",
+      "name": "bash-interactive-5.3p3",
       "pname": "bash",
-      "rev": "f771eb401a46846c1aebd20552521b233dd7e18b",
-      "rev_count": 789333,
-      "rev_date": "2025-04-24T20:20:57Z",
-      "scrape_date": "2025-04-27T04:53:39.086723Z",
+      "rev": "0b4defa2584313f3b781240b29d61f6f9f7e0df3",
+      "rev_count": 875086,
+      "rev_date": "2025-10-09T19:42:10Z",
+      "scrape_date": "2025-10-11T01:50:54.397204Z",
       "stabilities": [
         "unstable"
       ],
       "unfree": false,
-      "version": "5.2p37",
+      "version": "5.3p3",
       "outputs_to_install": [
         "man",
         "out"
       ],
       "outputs": {
-        "dev": "/nix/store/241gc427lrqrnybd8j23wpc4sz28g12r-bash-interactive-5.2p37-dev",
-        "doc": "/nix/store/r6rpyfnqzzjw01q9khczbnhynf45ixjq-bash-interactive-5.2p37-doc",
-        "info": "/nix/store/m9g7v85kixxb6qaxys8v8hg14g68nwm3-bash-interactive-5.2p37-info",
-        "man": "/nix/store/pf0h950fa13szp0giihc2gd8vpwm91mi-bash-interactive-5.2p37-man",
-        "out": "/nix/store/wlkvcypggzncs98lnrl2ivywkiqqgjnw-bash-interactive-5.2p37"
-      },
-      "system": "x86_64-darwin",
-      "group": "toplevel",
-      "priority": 5
-    },
-    {
-      "attr_path": "gum",
-      "broken": false,
-      "derivation": "/nix/store/3czfawlla2cp2pr0wmb151w3s3nniqrc-gum-0.16.0.drv",
-      "description": "Tasty Bubble Gum for your shell",
-      "install_id": "gum",
-      "license": "MIT",
-      "locked_url": "https://github.com/flox/nixpkgs?rev=f771eb401a46846c1aebd20552521b233dd7e18b",
-      "name": "gum-0.16.0",
-      "pname": "gum",
-      "rev": "f771eb401a46846c1aebd20552521b233dd7e18b",
-      "rev_count": 789333,
-      "rev_date": "2025-04-24T20:20:57Z",
-      "scrape_date": "2025-04-27T04:36:23.725965Z",
-      "stabilities": [
-        "unstable"
-      ],
-      "unfree": false,
-      "version": "0.16.0",
-      "outputs_to_install": [
-        "out"
-      ],
-      "outputs": {
-        "out": "/nix/store/p7f7gana5d3f4rvlal3sz2x8l4g8s5g4-gum-0.16.0"
+        "debug": "/nix/store/1kmjszxmn1wf2afy2yrqanph47x8n8nz-bash-interactive-5.3p3-debug",
+        "dev": "/nix/store/48yddf1lng0yx0qs2bh9znbv4grbdm9s-bash-interactive-5.3p3-dev",
+        "doc": "/nix/store/6mr9lld6dv2cz01kk4zm6jnjvxbdg0j3-bash-interactive-5.3p3-doc",
+        "info": "/nix/store/mcyvhns8hfjhz6qbjf0yacrvwq98abvh-bash-interactive-5.3p3-info",
+        "man": "/nix/store/1q5rqakisr3f2vni8hzn4b5ks54gamga-bash-interactive-5.3p3-man",
+        "out": "/nix/store/fd0lzh4h1q0yciaary1wwk3i2p4x3741-bash-interactive-5.3p3"
       },
       "system": "aarch64-linux",
       "group": "toplevel",
       "priority": 5
     },
     {
-      "attr_path": "gum",
+      "attr_path": "bash",
       "broken": false,
-      "derivation": "/nix/store/4il6pjc1qhn6mhgxfbfbkygy29ymk3j1-gum-0.16.0.drv",
-      "description": "Tasty Bubble Gum for your shell",
-      "install_id": "gum",
-      "license": "MIT",
-      "locked_url": "https://github.com/flox/nixpkgs?rev=f771eb401a46846c1aebd20552521b233dd7e18b",
-      "name": "gum-0.16.0",
-      "pname": "gum",
-      "rev": "f771eb401a46846c1aebd20552521b233dd7e18b",
-      "rev_count": 789333,
-      "rev_date": "2025-04-24T20:20:57Z",
-      "scrape_date": "2025-04-27T05:14:18.524193Z",
+      "derivation": "/nix/store/85vhix9g2gmlvs7fzrm67rdz2x8i4kqh-bash-interactive-5.3p3.drv",
+      "description": "GNU Bourne-Again Shell, the de facto standard shell on Linux (for interactive use)",
+      "install_id": "bash",
+      "license": "GPL-3.0-or-later",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=0b4defa2584313f3b781240b29d61f6f9f7e0df3",
+      "name": "bash-interactive-5.3p3",
+      "pname": "bash",
+      "rev": "0b4defa2584313f3b781240b29d61f6f9f7e0df3",
+      "rev_count": 875086,
+      "rev_date": "2025-10-09T19:42:10Z",
+      "scrape_date": "2025-10-11T02:18:56.641570Z",
       "stabilities": [
         "unstable"
       ],
       "unfree": false,
-      "version": "0.16.0",
+      "version": "5.3p3",
       "outputs_to_install": [
+        "man",
         "out"
       ],
       "outputs": {
-        "out": "/nix/store/kr0rzsgcv41c3qz5cnj7lyrpipcpnmfb-gum-0.16.0"
+        "dev": "/nix/store/dr7rv9n1wd9gasrjx8pnz2c7mqvplnj9-bash-interactive-5.3p3-dev",
+        "doc": "/nix/store/izhcx09is4ps35c3yrgiy0y1gq19k26m-bash-interactive-5.3p3-doc",
+        "info": "/nix/store/awz9dgazrdynaijgm3zcb7rmf4h5x4ii-bash-interactive-5.3p3-info",
+        "man": "/nix/store/0nsjpji5w3dgz0c8id82y4jr4yrnnfzd-bash-interactive-5.3p3-man",
+        "out": "/nix/store/7xankm2z1b9fqhs7pwymvqkpyf8ncgp1-bash-interactive-5.3p3"
+      },
+      "system": "x86_64-darwin",
+      "group": "toplevel",
+      "priority": 5
+    },
+    {
+      "attr_path": "bash",
+      "broken": false,
+      "derivation": "/nix/store/15p0ac1xa3mrxngm4vvqppiy6qd8a86l-bash-interactive-5.3p3.drv",
+      "description": "GNU Bourne-Again Shell, the de facto standard shell on Linux (for interactive use)",
+      "install_id": "bash",
+      "license": "GPL-3.0-or-later",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=0b4defa2584313f3b781240b29d61f6f9f7e0df3",
+      "name": "bash-interactive-5.3p3",
+      "pname": "bash",
+      "rev": "0b4defa2584313f3b781240b29d61f6f9f7e0df3",
+      "rev_count": 875086,
+      "rev_date": "2025-10-09T19:42:10Z",
+      "scrape_date": "2025-10-11T02:50:01.228120Z",
+      "stabilities": [
+        "unstable"
+      ],
+      "unfree": false,
+      "version": "5.3p3",
+      "outputs_to_install": [
+        "man",
+        "out"
+      ],
+      "outputs": {
+        "debug": "/nix/store/2kzx5xcc9qqjv3sbm3k145qai8j2si3k-bash-interactive-5.3p3-debug",
+        "dev": "/nix/store/64fl347asdaq87pskx9d8ij9yv4s4895-bash-interactive-5.3p3-dev",
+        "doc": "/nix/store/mpvcfv6b0z00jmpqgjljap67rsilcjvw-bash-interactive-5.3p3-doc",
+        "info": "/nix/store/i4scy74k3rp2vw3ccla2k940hmkpnn87-bash-interactive-5.3p3-info",
+        "man": "/nix/store/yk0sm9y6pwjf595s9d9hk4yphrhadq8m-bash-interactive-5.3p3-man",
+        "out": "/nix/store/2j7r5np0vaz4cnqkymp1mqivmjj1x9xl-bash-interactive-5.3p3"
       },
       "system": "x86_64-linux",
       "group": "toplevel",
@@ -1403,27 +1345,27 @@
     {
       "attr_path": "gum",
       "broken": false,
-      "derivation": "/nix/store/j68sh9zv7wl2183chdjh9lyfgirrf82m-gum-0.16.0.drv",
+      "derivation": "/nix/store/zcr78jy20ygivgy7x16qrzjhzba6kisg-gum-0.17.0.drv",
       "description": "Tasty Bubble Gum for your shell",
       "install_id": "gum",
       "license": "MIT",
-      "locked_url": "https://github.com/flox/nixpkgs?rev=f771eb401a46846c1aebd20552521b233dd7e18b",
-      "name": "gum-0.16.0",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=0b4defa2584313f3b781240b29d61f6f9f7e0df3",
+      "name": "gum-0.17.0",
       "pname": "gum",
-      "rev": "f771eb401a46846c1aebd20552521b233dd7e18b",
-      "rev_count": 789333,
-      "rev_date": "2025-04-24T20:20:57Z",
-      "scrape_date": "2025-04-27T04:18:42.861682Z",
+      "rev": "0b4defa2584313f3b781240b29d61f6f9f7e0df3",
+      "rev_count": 875086,
+      "rev_date": "2025-10-09T19:42:10Z",
+      "scrape_date": "2025-10-11T01:21:28.657975Z",
       "stabilities": [
         "unstable"
       ],
       "unfree": false,
-      "version": "0.16.0",
+      "version": "0.17.0",
       "outputs_to_install": [
         "out"
       ],
       "outputs": {
-        "out": "/nix/store/8pyjhiwin98a1bcg2l51lv98bz0jw7wq-gum-0.16.0"
+        "out": "/nix/store/qg77457254d234pgjpgicgj8zq3kv9wc-gum-0.17.0"
       },
       "system": "aarch64-darwin",
       "group": "toplevel",
@@ -1432,87 +1374,85 @@
     {
       "attr_path": "gum",
       "broken": false,
-      "derivation": "/nix/store/sfm0cm6sj219zppa4xngzggqbkk3plki-gum-0.16.0.drv",
+      "derivation": "/nix/store/kh14iv89aiwcibj885ygi893krviak4x-gum-0.17.0.drv",
       "description": "Tasty Bubble Gum for your shell",
       "install_id": "gum",
       "license": "MIT",
-      "locked_url": "https://github.com/flox/nixpkgs?rev=f771eb401a46846c1aebd20552521b233dd7e18b",
-      "name": "gum-0.16.0",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=0b4defa2584313f3b781240b29d61f6f9f7e0df3",
+      "name": "gum-0.17.0",
       "pname": "gum",
-      "rev": "f771eb401a46846c1aebd20552521b233dd7e18b",
-      "rev_count": 789333,
-      "rev_date": "2025-04-24T20:20:57Z",
-      "scrape_date": "2025-04-27T04:53:40.048219Z",
+      "rev": "0b4defa2584313f3b781240b29d61f6f9f7e0df3",
+      "rev_count": 875086,
+      "rev_date": "2025-10-09T19:42:10Z",
+      "scrape_date": "2025-10-11T01:50:56.684979Z",
       "stabilities": [
         "unstable"
       ],
       "unfree": false,
-      "version": "0.16.0",
+      "version": "0.17.0",
       "outputs_to_install": [
         "out"
       ],
       "outputs": {
-        "out": "/nix/store/3hfzhy6kp19x03l360mf5k2k8imjg14a-gum-0.16.0"
-      },
-      "system": "x86_64-darwin",
-      "group": "toplevel",
-      "priority": 5
-    },
-    {
-      "attr_path": "jdk",
-      "broken": false,
-      "derivation": "/nix/store/2xk8jh3qa3d8v8hs7xy8mpwddkmiq3dh-openjdk-21.0.5+11.drv",
-      "description": "Open-source Java Development Kit",
-      "install_id": "jdk",
-      "license": "GPL-2.0-only",
-      "locked_url": "https://github.com/flox/nixpkgs?rev=f771eb401a46846c1aebd20552521b233dd7e18b",
-      "name": "openjdk-21.0.5+11",
-      "pname": "jdk",
-      "rev": "f771eb401a46846c1aebd20552521b233dd7e18b",
-      "rev_count": 789333,
-      "rev_date": "2025-04-24T20:20:57Z",
-      "scrape_date": "2025-04-27T04:36:24.657230Z",
-      "stabilities": [
-        "unstable"
-      ],
-      "unfree": false,
-      "version": "21.0.5+11",
-      "outputs_to_install": [
-        "out"
-      ],
-      "outputs": {
-        "debug": "/nix/store/di3vg628rw8vy5sgfighv4bhag7vcmaw-openjdk-21.0.5+11-debug",
-        "out": "/nix/store/1vdnkw9l0iv9jyaqp44p7afb11x94ykx-openjdk-21.0.5+11"
+        "out": "/nix/store/l4dl9dcnfn57rpbhyyqnkm69q1pxah5w-gum-0.17.0"
       },
       "system": "aarch64-linux",
       "group": "toplevel",
       "priority": 5
     },
     {
-      "attr_path": "jdk",
+      "attr_path": "gum",
       "broken": false,
-      "derivation": "/nix/store/cqzq3qqjgp9rj492m2cj82x8vc3c1py2-openjdk-21.0.5+11.drv",
-      "description": "Open-source Java Development Kit",
-      "install_id": "jdk",
-      "license": "GPL-2.0-only",
-      "locked_url": "https://github.com/flox/nixpkgs?rev=f771eb401a46846c1aebd20552521b233dd7e18b",
-      "name": "openjdk-21.0.5+11",
-      "pname": "jdk",
-      "rev": "f771eb401a46846c1aebd20552521b233dd7e18b",
-      "rev_count": 789333,
-      "rev_date": "2025-04-24T20:20:57Z",
-      "scrape_date": "2025-04-27T05:14:19.582050Z",
+      "derivation": "/nix/store/3ab2lq99amixflvic5lh3llmzgjxfgsi-gum-0.17.0.drv",
+      "description": "Tasty Bubble Gum for your shell",
+      "install_id": "gum",
+      "license": "MIT",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=0b4defa2584313f3b781240b29d61f6f9f7e0df3",
+      "name": "gum-0.17.0",
+      "pname": "gum",
+      "rev": "0b4defa2584313f3b781240b29d61f6f9f7e0df3",
+      "rev_count": 875086,
+      "rev_date": "2025-10-09T19:42:10Z",
+      "scrape_date": "2025-10-11T02:18:57.959799Z",
       "stabilities": [
         "unstable"
       ],
       "unfree": false,
-      "version": "21.0.5+11",
+      "version": "0.17.0",
       "outputs_to_install": [
         "out"
       ],
       "outputs": {
-        "debug": "/nix/store/8745ilvhps8wz7b109304xbra9nczpnd-openjdk-21.0.5+11-debug",
-        "out": "/nix/store/k7sl9awa4r5i8z3fj8wz90cac1v7s5n7-openjdk-21.0.5+11"
+        "out": "/nix/store/vzdbx8cgarb3k8l6in6xxh14vyblqa07-gum-0.17.0"
+      },
+      "system": "x86_64-darwin",
+      "group": "toplevel",
+      "priority": 5
+    },
+    {
+      "attr_path": "gum",
+      "broken": false,
+      "derivation": "/nix/store/8zmn3dw7ypdagwamcydqm7hj0ipag2y1-gum-0.17.0.drv",
+      "description": "Tasty Bubble Gum for your shell",
+      "install_id": "gum",
+      "license": "MIT",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=0b4defa2584313f3b781240b29d61f6f9f7e0df3",
+      "name": "gum-0.17.0",
+      "pname": "gum",
+      "rev": "0b4defa2584313f3b781240b29d61f6f9f7e0df3",
+      "rev_count": 875086,
+      "rev_date": "2025-10-09T19:42:10Z",
+      "scrape_date": "2025-10-11T02:50:03.883001Z",
+      "stabilities": [
+        "unstable"
+      ],
+      "unfree": false,
+      "version": "0.17.0",
+      "outputs_to_install": [
+        "out"
+      ],
+      "outputs": {
+        "out": "/nix/store/xrp3rs1p0r7qd5q0ii2zn895f24q7s4m-gum-0.17.0"
       },
       "system": "x86_64-linux",
       "group": "toplevel",
@@ -1521,27 +1461,27 @@
     {
       "attr_path": "jdk",
       "broken": false,
-      "derivation": "/nix/store/zrjvkhk1hx7mqi5hxi9j6651jqafxwxv-zulu-ca-jdk-21.0.4.drv",
+      "derivation": "/nix/store/b7wbccqf9sqwd9093mg3r1fb7fgri4a7-zulu-ca-jdk-21.0.8.drv",
       "description": "Certified builds of OpenJDK",
       "install_id": "jdk",
       "license": "GPL-2.0-only",
-      "locked_url": "https://github.com/flox/nixpkgs?rev=f771eb401a46846c1aebd20552521b233dd7e18b",
-      "name": "zulu-ca-jdk-21.0.4",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=0b4defa2584313f3b781240b29d61f6f9f7e0df3",
+      "name": "zulu-ca-jdk-21.0.8",
       "pname": "jdk",
-      "rev": "f771eb401a46846c1aebd20552521b233dd7e18b",
-      "rev_count": 789333,
-      "rev_date": "2025-04-24T20:20:57Z",
-      "scrape_date": "2025-04-27T04:18:43.126803Z",
+      "rev": "0b4defa2584313f3b781240b29d61f6f9f7e0df3",
+      "rev_count": 875086,
+      "rev_date": "2025-10-09T19:42:10Z",
+      "scrape_date": "2025-10-11T01:21:42.213977Z",
       "stabilities": [
         "unstable"
       ],
       "unfree": false,
-      "version": "21.0.4",
+      "version": "21.0.8",
       "outputs_to_install": [
         "out"
       ],
       "outputs": {
-        "out": "/nix/store/36yvq3c4i9qcqhm4n37v5qnk5sqjy5iq-zulu-ca-jdk-21.0.4"
+        "out": "/nix/store/2shlkyladcpv8s5hrs99c7v71bwb5r43-zulu-ca-jdk-21.0.8"
       },
       "system": "aarch64-darwin",
       "group": "toplevel",
@@ -1550,85 +1490,87 @@
     {
       "attr_path": "jdk",
       "broken": false,
-      "derivation": "/nix/store/7b5rgvacfjzx8jd24jlmplyz48y9jxx3-zulu-ca-jdk-21.0.4.drv",
-      "description": "Certified builds of OpenJDK",
+      "derivation": "/nix/store/acw29fn4wdh9ylmq810ihgsv76bk26i9-openjdk-21.0.8+9.drv",
+      "description": "Open-source Java Development Kit",
       "install_id": "jdk",
       "license": "GPL-2.0-only",
-      "locked_url": "https://github.com/flox/nixpkgs?rev=f771eb401a46846c1aebd20552521b233dd7e18b",
-      "name": "zulu-ca-jdk-21.0.4",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=0b4defa2584313f3b781240b29d61f6f9f7e0df3",
+      "name": "openjdk-21.0.8+9",
       "pname": "jdk",
-      "rev": "f771eb401a46846c1aebd20552521b233dd7e18b",
-      "rev_count": 789333,
-      "rev_date": "2025-04-24T20:20:57Z",
-      "scrape_date": "2025-04-27T04:53:40.318708Z",
+      "rev": "0b4defa2584313f3b781240b29d61f6f9f7e0df3",
+      "rev_count": 875086,
+      "rev_date": "2025-10-09T19:42:10Z",
+      "scrape_date": "2025-10-11T01:51:14.337185Z",
       "stabilities": [
         "unstable"
       ],
       "unfree": false,
-      "version": "21.0.4",
+      "version": "21.0.8+9",
       "outputs_to_install": [
         "out"
       ],
       "outputs": {
-        "out": "/nix/store/dlf455vq9gh7mhdg5h2mvkf87any49g4-zulu-ca-jdk-21.0.4"
-      },
-      "system": "x86_64-darwin",
-      "group": "toplevel",
-      "priority": 5
-    },
-    {
-      "attr_path": "apacheKafka",
-      "broken": false,
-      "derivation": "/nix/store/8785mvic61sdp4lr7zqkqkm1dxxcgvbm-apache-kafka-2.13-4.0.0.drv",
-      "description": "High-throughput distributed messaging system",
-      "install_id": "kafka",
-      "license": "Apache-2.0",
-      "locked_url": "https://github.com/flox/nixpkgs?rev=f771eb401a46846c1aebd20552521b233dd7e18b",
-      "name": "apache-kafka-2.13-4.0.0",
-      "pname": "apacheKafka",
-      "rev": "f771eb401a46846c1aebd20552521b233dd7e18b",
-      "rev_count": 789333,
-      "rev_date": "2025-04-24T20:20:57Z",
-      "scrape_date": "2025-04-27T04:36:21.805940Z",
-      "stabilities": [
-        "unstable"
-      ],
-      "unfree": false,
-      "version": "2.13-4.0.0",
-      "outputs_to_install": [
-        "out"
-      ],
-      "outputs": {
-        "out": "/nix/store/z40jyzmw39nww09cpgly0hb02iafqkk2-apache-kafka-2.13-4.0.0"
+        "debug": "/nix/store/nmb2rbl2kds2bl4b4rqqlynhc5vq10a1-openjdk-21.0.8+9-debug",
+        "out": "/nix/store/n17r40xwp5rvr9b401da08xiv9x9y5mq-openjdk-21.0.8+9"
       },
       "system": "aarch64-linux",
       "group": "toplevel",
       "priority": 5
     },
     {
-      "attr_path": "apacheKafka",
+      "attr_path": "jdk",
       "broken": false,
-      "derivation": "/nix/store/p9i0yd40p0yh79vj3bnvng898jpq0rlj-apache-kafka-2.13-4.0.0.drv",
-      "description": "High-throughput distributed messaging system",
-      "install_id": "kafka",
-      "license": "Apache-2.0",
-      "locked_url": "https://github.com/flox/nixpkgs?rev=f771eb401a46846c1aebd20552521b233dd7e18b",
-      "name": "apache-kafka-2.13-4.0.0",
-      "pname": "apacheKafka",
-      "rev": "f771eb401a46846c1aebd20552521b233dd7e18b",
-      "rev_count": 789333,
-      "rev_date": "2025-04-24T20:20:57Z",
-      "scrape_date": "2025-04-27T05:14:16.356789Z",
+      "derivation": "/nix/store/diwpx1r2dqgb48m7cvfxrga236cgnl1l-zulu-ca-jdk-21.0.8.drv",
+      "description": "Certified builds of OpenJDK",
+      "install_id": "jdk",
+      "license": "GPL-2.0-only",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=0b4defa2584313f3b781240b29d61f6f9f7e0df3",
+      "name": "zulu-ca-jdk-21.0.8",
+      "pname": "jdk",
+      "rev": "0b4defa2584313f3b781240b29d61f6f9f7e0df3",
+      "rev_count": 875086,
+      "rev_date": "2025-10-09T19:42:10Z",
+      "scrape_date": "2025-10-11T02:19:11.707230Z",
       "stabilities": [
         "unstable"
       ],
       "unfree": false,
-      "version": "2.13-4.0.0",
+      "version": "21.0.8",
       "outputs_to_install": [
         "out"
       ],
       "outputs": {
-        "out": "/nix/store/kggi42gkbl6pf5knq7dvadjba76ncx9l-apache-kafka-2.13-4.0.0"
+        "out": "/nix/store/gfnvnk6mqvihkh81ajnbv6w43m9ss3ki-zulu-ca-jdk-21.0.8"
+      },
+      "system": "x86_64-darwin",
+      "group": "toplevel",
+      "priority": 5
+    },
+    {
+      "attr_path": "jdk",
+      "broken": false,
+      "derivation": "/nix/store/g8pka0i7j0dsz59sd5acl8kycdq5xaa2-openjdk-21.0.8+9.drv",
+      "description": "Open-source Java Development Kit",
+      "install_id": "jdk",
+      "license": "GPL-2.0-only",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=0b4defa2584313f3b781240b29d61f6f9f7e0df3",
+      "name": "openjdk-21.0.8+9",
+      "pname": "jdk",
+      "rev": "0b4defa2584313f3b781240b29d61f6f9f7e0df3",
+      "rev_count": 875086,
+      "rev_date": "2025-10-09T19:42:10Z",
+      "scrape_date": "2025-10-11T02:50:22.664485Z",
+      "stabilities": [
+        "unstable"
+      ],
+      "unfree": false,
+      "version": "21.0.8+9",
+      "outputs_to_install": [
+        "out"
+      ],
+      "outputs": {
+        "debug": "/nix/store/8n7g1dv9cy7xgfwlizhg2cfwj2f4avd8-openjdk-21.0.8+9-debug",
+        "out": "/nix/store/0x556ql275jkl46k6lklpyvwn5c4p244-openjdk-21.0.8+9"
       },
       "system": "x86_64-linux",
       "group": "toplevel",
@@ -1637,27 +1579,27 @@
     {
       "attr_path": "apacheKafka",
       "broken": false,
-      "derivation": "/nix/store/7w5wdh7gkv80ygssbmrlb3s9nzpmp1a1-apache-kafka-2.13-4.0.0.drv",
+      "derivation": "/nix/store/pzlca8vzy5l1py8g7nihrlgfzvwpnhv1-apache-kafka-2.13-4.1.0.drv",
       "description": "High-throughput distributed messaging system",
       "install_id": "kafka",
       "license": "Apache-2.0",
-      "locked_url": "https://github.com/flox/nixpkgs?rev=f771eb401a46846c1aebd20552521b233dd7e18b",
-      "name": "apache-kafka-2.13-4.0.0",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=0b4defa2584313f3b781240b29d61f6f9f7e0df3",
+      "name": "apache-kafka-2.13-4.1.0",
       "pname": "apacheKafka",
-      "rev": "f771eb401a46846c1aebd20552521b233dd7e18b",
-      "rev_count": 789333,
-      "rev_date": "2025-04-24T20:20:57Z",
-      "scrape_date": "2025-04-27T04:18:41.863140Z",
+      "rev": "0b4defa2584313f3b781240b29d61f6f9f7e0df3",
+      "rev_count": 875086,
+      "rev_date": "2025-10-09T19:42:10Z",
+      "scrape_date": "2025-10-11T01:21:26.714311Z",
       "stabilities": [
         "unstable"
       ],
       "unfree": false,
-      "version": "2.13-4.0.0",
+      "version": "2.13-4.1.0",
       "outputs_to_install": [
         "out"
       ],
       "outputs": {
-        "out": "/nix/store/rsih9kb17h5srswmlqp65dfvgia835qk-apache-kafka-2.13-4.0.0"
+        "out": "/nix/store/a79dq4ml70kra350f52m0na4hwak1r29-apache-kafka-2.13-4.1.0"
       },
       "system": "aarch64-darwin",
       "group": "toplevel",
@@ -1666,29 +1608,87 @@
     {
       "attr_path": "apacheKafka",
       "broken": false,
-      "derivation": "/nix/store/4h6nl21dm23gk28qjg00zsvghwvzibi9-apache-kafka-2.13-4.0.0.drv",
+      "derivation": "/nix/store/qkdxvfxjvdqbpn96a04j4v91jwz5alrr-apache-kafka-2.13-4.1.0.drv",
       "description": "High-throughput distributed messaging system",
       "install_id": "kafka",
       "license": "Apache-2.0",
-      "locked_url": "https://github.com/flox/nixpkgs?rev=f771eb401a46846c1aebd20552521b233dd7e18b",
-      "name": "apache-kafka-2.13-4.0.0",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=0b4defa2584313f3b781240b29d61f6f9f7e0df3",
+      "name": "apache-kafka-2.13-4.1.0",
       "pname": "apacheKafka",
-      "rev": "f771eb401a46846c1aebd20552521b233dd7e18b",
-      "rev_count": 789333,
-      "rev_date": "2025-04-24T20:20:57Z",
-      "scrape_date": "2025-04-27T04:53:39.034318Z",
+      "rev": "0b4defa2584313f3b781240b29d61f6f9f7e0df3",
+      "rev_count": 875086,
+      "rev_date": "2025-10-09T19:42:10Z",
+      "scrape_date": "2025-10-11T01:50:54.307408Z",
       "stabilities": [
         "unstable"
       ],
       "unfree": false,
-      "version": "2.13-4.0.0",
+      "version": "2.13-4.1.0",
       "outputs_to_install": [
         "out"
       ],
       "outputs": {
-        "out": "/nix/store/07vxiy0qq0y0ivsiax7k8syfg3bqkn4x-apache-kafka-2.13-4.0.0"
+        "out": "/nix/store/awy9vpz10qhqz6ggk2wvwvs13dhlsrbf-apache-kafka-2.13-4.1.0"
+      },
+      "system": "aarch64-linux",
+      "group": "toplevel",
+      "priority": 5
+    },
+    {
+      "attr_path": "apacheKafka",
+      "broken": false,
+      "derivation": "/nix/store/nynxqfjfb4w3y5gzq45dpyaxkyimz2bb-apache-kafka-2.13-4.1.0.drv",
+      "description": "High-throughput distributed messaging system",
+      "install_id": "kafka",
+      "license": "Apache-2.0",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=0b4defa2584313f3b781240b29d61f6f9f7e0df3",
+      "name": "apache-kafka-2.13-4.1.0",
+      "pname": "apacheKafka",
+      "rev": "0b4defa2584313f3b781240b29d61f6f9f7e0df3",
+      "rev_count": 875086,
+      "rev_date": "2025-10-09T19:42:10Z",
+      "scrape_date": "2025-10-11T02:18:56.575309Z",
+      "stabilities": [
+        "unstable"
+      ],
+      "unfree": false,
+      "version": "2.13-4.1.0",
+      "outputs_to_install": [
+        "out"
+      ],
+      "outputs": {
+        "out": "/nix/store/f2zf6aqdkmb3s4zba3h3ha264ylgkrs5-apache-kafka-2.13-4.1.0"
       },
       "system": "x86_64-darwin",
+      "group": "toplevel",
+      "priority": 5
+    },
+    {
+      "attr_path": "apacheKafka",
+      "broken": false,
+      "derivation": "/nix/store/ig824np71czn7biqh5yz8azmnn904qmz-apache-kafka-2.13-4.1.0.drv",
+      "description": "High-throughput distributed messaging system",
+      "install_id": "kafka",
+      "license": "Apache-2.0",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=0b4defa2584313f3b781240b29d61f6f9f7e0df3",
+      "name": "apache-kafka-2.13-4.1.0",
+      "pname": "apacheKafka",
+      "rev": "0b4defa2584313f3b781240b29d61f6f9f7e0df3",
+      "rev_count": 875086,
+      "rev_date": "2025-10-09T19:42:10Z",
+      "scrape_date": "2025-10-11T02:50:01.127983Z",
+      "stabilities": [
+        "unstable"
+      ],
+      "unfree": false,
+      "version": "2.13-4.1.0",
+      "outputs_to_install": [
+        "out"
+      ],
+      "outputs": {
+        "out": "/nix/store/rnj995ln2k37p2x1nl3z0wb60565spc9-apache-kafka-2.13-4.1.0"
+      },
+      "system": "x86_64-linux",
       "group": "toplevel",
       "priority": 5
     }

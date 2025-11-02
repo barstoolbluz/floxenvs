@@ -4,7 +4,7 @@ The `spark` environment is designed for local, interactive use—especially when
 
 This environment simplifies Apache Spark cluster deployment by providing an interactive configuration wizard, automatic network detection, and service management.
 
-The separate [`spark-basic`](https://github.com/barstoolbluz/floxenvs/blob/main/spark-basic/README.md) environment is designed for CI, headless setups, or scripted workflows—i.e., any non-interactive context.
+The separate [`spark-headless`](https://github.com/barstoolbluz/floxenvs/blob/main/spark-headless/README.md) environment is designed for CI, headless setups, or scripted workflows—i.e., any non-interactive context.
 
 ## ✨ Features
 

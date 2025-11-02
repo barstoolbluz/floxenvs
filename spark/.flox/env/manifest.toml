@@ -171,7 +171,7 @@ info() {
 
 readme() {
   if [[ "$1" == "--refresh" ]] || [ ! -s "$FLOX_ENV_PROJECT/README.md" ]; then
-    curl -sL "https://raw.githubusercontent.com/barstoolbluz/floxenvs/main/spark-basic/README.md" > "$FLOX_ENV_PROJECT/README.md" 2>/dev/null
+    curl -sL "https://raw.githubusercontent.com/barstoolbluz/floxenvs/main/spark-headless/README.md" > "$FLOX_ENV_PROJECT/README.md" 2>/dev/null
   fi
   bat --language markdown "$FLOX_ENV_PROJECT/README.md" 2>/dev/null
 }
@@ -197,7 +197,7 @@ info() {
 
 readme() {
   if [[ "$1" == "--refresh" ]] || [ ! -s "$FLOX_ENV_PROJECT/README.md" ]; then
-    curl -sL "https://raw.githubusercontent.com/barstoolbluz/floxenvs/main/spark-basic/README.md" > "$FLOX_ENV_PROJECT/README.md" 2>/dev/null
+    curl -sL "https://raw.githubusercontent.com/barstoolbluz/floxenvs/main/spark-headless/README.md" > "$FLOX_ENV_PROJECT/README.md" 2>/dev/null
   fi
   bat --language markdown "$FLOX_ENV_PROJECT/README.md" 2>/dev/null
 }
@@ -223,7 +223,7 @@ end
 
 function readme
   if test "$argv[1]" = "--refresh"; or test ! -s "$FLOX_ENV_PROJECT/README.md"
-    curl -sL "https://raw.githubusercontent.com/barstoolbluz/floxenvs/main/spark-basic/README.md" > "$FLOX_ENV_PROJECT/README.md" 2>/dev/null
+    curl -sL "https://raw.githubusercontent.com/barstoolbluz/floxenvs/main/spark-headless/README.md" > "$FLOX_ENV_PROJECT/README.md" 2>/dev/null
   end
   bat --language markdown "$FLOX_ENV_PROJECT/README.md" 2>/dev/null
 end
