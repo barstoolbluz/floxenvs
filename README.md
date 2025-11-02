@@ -8,46 +8,80 @@ This repo contains pre-configured [Flox](https://flox.dev/docs) environments for
 
 - Runs consistently across macOS and Linux
 - Includes smart defaults that don't get in your way
-- Offers simple terminal UI for configuration
-- Works out of the box—in some cases with a wizard-driven setup experience
+- Works out of the box with sensible configurations
+- Offers both interactive (wizard-driven) and headless (automation-friendly) variants for many tools
+
+## 🎯 Understanding Interactive vs Headless Environments
+
+Many environments in this collection come in **two variants** to support different workflows:
+
+### Interactive Environments
+Perfect for local development and learning:
+- 🧙 **Interactive configuration wizards** guide you through setup
+- 🎨 **Rich terminal UI** using gum for a friendly experience
+- 📚 **Great for learning** - explains options as you configure
+- 🔧 **Flexible** - easily reconfigure by re-running wizards
+
+**Best for:** Local development, first-time users, learning, exploration
+
+### Headless Environments
+Perfect for automation and CI/CD:
+- ⚙️ **Environment variable configuration** - no interactive prompts
+- 🤖 **Scriptable and automatable** - perfect for CI/CD pipelines
+- 🚀 **Zero interaction required** - sensible defaults that just work
+- 📦 **Container-friendly** - no TTY required
+
+**Best for:** Docker containers, CI/CD pipelines, automated scripts, production deployments
+
+### How to Choose
+Environments marked with ⚡ have both variants available:
+- Choose the **base name** (e.g., `postgres`) for interactive wizard-driven setup
+- Choose the **-headless variant** (e.g., `postgres-headless`) for automation and scripting
+
+**Example:**
+```bash
+# Interactive - wizard guides you through configuration
+cd postgres && flox activate
+
+# Headless - configure via environment variables
+cd postgres-headless && PGPORT=5432 PGDATABASE=mydb flox activate -s
+```
 
 ## 📦 Available Environments
 
-### CLI Tools
-- [**awscli**](./awscli) - AWSCLI2 with local (keyring / encrypted file) auth support
-- [**aws-1pass**](./aws-1pass) - AWSCLI2 with 1Password auth support
-- [**ghcli**](./ghcli) - GitHub CLI with local (keyring / encrypted file) auth support
-- [**xplatform-cli-tools**](./xplatform-cli-tools) - AWSCLI2, GitHub CLI, and Git with 1Password auth support
+### CLI & Development Tools
+- [**awscli**](./awscli) - AWS CLI v2 with encrypted credential storage (keyring/file)
+- [**aws-1pass**](./aws-1pass) - AWS CLI v2 with 1Password integration
+- [**ghcli**](./ghcli) - GitHub CLI with encrypted credential storage (keyring/file)
+- [**xplatform-cli-tools**](./xplatform-cli-tools) - AWS CLI, GitHub CLI, and Git with 1Password integration
 
+### Databases ⚡
+- [**postgres**](./postgres) / [**postgres-headless**](./postgres-headless) - PostgreSQL 16 with PostGIS extension
+- [**neo4j**](./neo4j) / [**neo4j-headless**](./neo4j-headless) - Neo4j graph database
 
-### Database Environments
-
-- [**postgresql**](./postgres) - PostgreSQL with PostGIS
-- [**neo4j**](./neo4j) - Neo4j graph database
-
-### Data Analysis & Visualization
-
+### Data Analytics & BI
 - [**postgres-metabase**](./postgres-metabase) - PostgreSQL + Metabase BI platform
-- [**superset**](./superset) - Apache Superset + PostgreSQL for BI / Analytics
-- [**harlequin**](./harlequin-postgres) - PostgreSQL + Harlequin terminal SQL IDE
+- [**harlequin-postgres**](./harlequin-postgres) - PostgreSQL + Harlequin terminal-based SQL IDE
 
-### Data Integration + Data Engineering + General Distributed Compute
+### Distributed Computing & Streaming ⚡
+- [**spark**](./spark) / [**spark-headless**](./spark-headless) - Apache Spark cluster computing
+- [**kafka**](./kafka) / [**kafka-headless**](./kafka-headless) - Apache Kafka streaming platform
 
-- [**spark**](./spark) - Apache Spark with interactive configuration wizard
-- [**kafka**](./kafka) - Apache Kafka with interactive configuration wizard
-- [**spark-basic**](./spark-basic) - Apache Spark designed for headless use
-- [**kafka-basic**](./kafka-basic) - Apache Kafka designed for headless use
+### Container Orchestration ⚡
+- [**kind**](./kind) / [**kind-headless**](./kind-headless) - Kubernetes in Docker with essential K8s tools
 
-### Containers and Kubernetes (K8s)
-- [**kind**](./kind) - Kubernetes IN Docker, essential K8s tools, and a KIND auto-configuration wizard
- 
+### Data Science & Notebooks ⚡
+- [**jupyterlab**](./jupyterlab) / [**jupyterlab-headless**](./jupyterlab-headless) - JupyterLab notebook environment
+
 ### Python Development
-
 - [**python310**](./python310) - Python 3.10 with smart venv management
 - [**python311**](./python311) - Python 3.11 with smart venv management
 - [**python312**](./python312) - Python 3.12 with smart venv management
 - [**python313**](./python313) - Python 3.13 with smart venv management
-- [**python-postgres**](./python-postgres) - Python 3.12 with SQLAlchemy + other tools for working with PostgreSQL
+- [**python-postgres**](./python-postgres) - Python 3.12 with PostgreSQL tools and SQLAlchemy
+
+### AI & Machine Learning
+- [**wsl2-ollama**](./wsl2-ollama) - Ollama LLM runtime optimized for WSL2
 
 ## 🚀 Getting Started
 
@@ -57,13 +91,37 @@ This repo contains pre-configured [Flox](https://flox.dev/docs) environments for
 2. Clone this repo
    ```bash
    git clone https://github.com/barstoolbluz/floxenvs
+   cd floxenvs
    ```
 
-### Activating an Environment
+### Quick Start Examples
+
+**For local development (interactive):**
+```bash
+cd postgres
+flox activate
+# Follow the interactive wizard to configure PostgreSQL
+```
+
+**For CI/CD or automation (headless):**
+```bash
+cd postgres-headless
+PGPORT=5432 PGDATABASE=mydb flox activate -s
+# Starts immediately with your configuration
+```
+
+**For basic activation:**
+```bash
+cd python312
+flox activate
+# Python 3.12 environment ready to use
+```
+
+### General Usage
 
 1. Navigate to the environment you want to use
    ```bash
-   cd floxenvs/postgresql
+   cd floxenvs/postgres
    ```
 
 2. Activate the environment
@@ -88,7 +146,7 @@ Flox uses declarative configuration to create reproducible environments with:
 - Specific package versions
 - Built-in environment variables
 - Built-in service management capabilities
-- Activation hooks that terraform environments or perform other tasks on startup
+- Activation hooks that configure environments or perform other tasks on startup
 
 ## 💻 System Requirements
 
@@ -103,6 +161,7 @@ Want to add a new environment? Create a PR with:
 1. A new directory for your environment
 2. A complete Flox environment with `manifest.toml` and `manifest.lock` files located in `.flox/env/`
 3. A README following our template
+4. For service-based environments, consider providing both interactive and headless variants
 
 ## 🔗 Key Features of Flox
 
@@ -119,4 +178,3 @@ Want to add a new environment? Create a PR with:
 MIT
 
 ---
-
