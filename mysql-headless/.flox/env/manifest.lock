@@ -1,0 +1,160 @@
+{
+  "lockfile-version": 1,
+  "manifest": {
+    "version": 1,
+    "install": {
+      "mysql": {
+        "pkg-path": "mysql80"
+      }
+    },
+    "vars": {
+      "MYSQL_CONFIG_DIR": "$FLOX_ENV_CACHE/mysql-config",
+      "MYSQL_DATA_DIR": "$FLOX_ENV_CACHE/mysql-data",
+      "MYSQL_LOG_DIR": "$FLOX_ENV_CACHE/mysql-logs",
+      "MYSQL_RUN_DIR": "$FLOX_ENV_CACHE/mysql-run"
+    },
+    "hook": {
+      "on-activate": "# Create required directories\nmkdir -p \"$FLOX_ENV_CACHE/mysql-config\"\nmkdir -p \"$FLOX_ENV_CACHE/mysql-logs\"\nmkdir -p \"$FLOX_ENV_CACHE/mysql-data\"\nmkdir -p \"$FLOX_ENV_CACHE/mysql-run\"\n\n# === INIT-TIME VARIABLES ===\n# These affect mysqld --initialize and cannot change without deleting datadir\nexport MYSQL_ROOT_PASSWORD=\"${MYSQL_ROOT_PASSWORD:-mysqlpass}\"\nexport MYSQL_USER=\"${MYSQL_USER:-}\"\nexport MYSQL_PASSWORD=\"${MYSQL_PASSWORD:-}\"\nexport MYSQL_CHARSET=\"${MYSQL_CHARSET:-utf8mb4}\"\nexport MYSQL_COLLATION=\"${MYSQL_COLLATION:-utf8mb4_unicode_ci}\"\nexport MYSQL_AUTH_PLUGIN=\"${MYSQL_AUTH_PLUGIN:-mysql_native_password}\"\nexport MYSQL_INIT_ARGS=\"${MYSQL_INIT_ARGS:-}\"\n\n# === RUNTIME VARIABLES - Connection ===\n# These can be changed by restarting the service\nexport MYSQL_BIND_ADDRESS=\"${MYSQL_BIND_ADDRESS:-127.0.0.1}\"\nexport MYSQL_PORT=\"${MYSQL_PORT:-13306}\"\nexport MYSQL_DATABASE=\"${MYSQL_DATABASE:-mysql}\"\n\n# === RUNTIME VARIABLES - Performance Basic ===\nexport MYSQL_MAX_CONNECTIONS=\"${MYSQL_MAX_CONNECTIONS:-151}\"\nexport MYSQL_INNODB_BUFFER_POOL_SIZE=\"${MYSQL_INNODB_BUFFER_POOL_SIZE:-128M}\"\nexport MYSQL_TMP_TABLE_SIZE=\"${MYSQL_TMP_TABLE_SIZE:-16M}\"\nexport MYSQL_MAX_HEAP_TABLE_SIZE=\"${MYSQL_MAX_HEAP_TABLE_SIZE:-16M}\"\nexport MYSQL_THREAD_CACHE_SIZE=\"${MYSQL_THREAD_CACHE_SIZE:-9}\"\n\n# === RUNTIME VARIABLES - Query Memory ===\nexport MYSQL_SORT_BUFFER_SIZE=\"${MYSQL_SORT_BUFFER_SIZE:-256K}\"\nexport MYSQL_JOIN_BUFFER_SIZE=\"${MYSQL_JOIN_BUFFER_SIZE:-256K}\"\n\n# === RUNTIME VARIABLES - InnoDB ===\nexport MYSQL_INNODB_LOG_FILE_SIZE=\"${MYSQL_INNODB_LOG_FILE_SIZE:-48M}\"\nexport MYSQL_INNODB_FLUSH_LOG_AT_TRX_COMMIT=\"${MYSQL_INNODB_FLUSH_LOG_AT_TRX_COMMIT:-1}\"\nexport MYSQL_INNODB_FLUSH_METHOD=\"${MYSQL_INNODB_FLUSH_METHOD:-}\"\nexport MYSQL_INNODB_FILE_PER_TABLE=\"${MYSQL_INNODB_FILE_PER_TABLE:-ON}\"\n\n# === RUNTIME VARIABLES - Logging ===\nexport MYSQL_SLOW_QUERY_LOG=\"${MYSQL_SLOW_QUERY_LOG:-OFF}\"\nexport MYSQL_LONG_QUERY_TIME=\"${MYSQL_LONG_QUERY_TIME:-10}\"\nexport MYSQL_LOG_BIN=\"${MYSQL_LOG_BIN:-}\"\n\n# === RUNTIME VARIABLES - Binary Log Management ===\nexport MYSQL_BINLOG_FORMAT=\"${MYSQL_BINLOG_FORMAT:-MIXED}\"\nexport MYSQL_MAX_BINLOG_SIZE=\"${MYSQL_MAX_BINLOG_SIZE:-1G}\"\nexport MYSQL_BINLOG_EXPIRE_LOGS_SECONDS=\"${MYSQL_BINLOG_EXPIRE_LOGS_SECONDS:-2592000}\"\nexport MYSQL_SYNC_BINLOG=\"${MYSQL_SYNC_BINLOG:-1}\"\n\n# === FLEXIBILITY ===\nexport MYSQL_EXTRA_OPTS=\"${MYSQL_EXTRA_OPTS:-}\"\n\n# === DERIVED VARIABLES ===\nexport MYSQL_DIR=\"${MYSQL_DIR:-$FLOX_ENV_CACHE/mysql-data}\"\nexport MYSQL_DATADIR=\"$MYSQL_DIR/data\"\nexport MYSQL_SOCKET_DIR=\"$MYSQL_DIR/run\"\nexport MYSQL_SOCKET=\"$MYSQL_SOCKET_DIR/mysql.sock\"\nexport MYSQL_LOG_ERROR=\"$MYSQL_SOCKET_DIR/error.log\"\nexport DATABASE_URL=\"mysql://root:$MYSQL_ROOT_PASSWORD@$MYSQL_BIND_ADDRESS:$MYSQL_PORT/$MYSQL_DATABASE\"\n\n# === INITIALIZATION FUNCTION ===\ninitialize_mysql() {\n    # Check if already initialized\n    if [ -d \"$MYSQL_DATADIR/mysql\" ]; then\n        return 0\n    fi\n\n    # Create directories with proper permissions\n    mkdir -p \"$MYSQL_DATADIR\" \"$MYSQL_SOCKET_DIR\"\n    chmod 700 \"$MYSQL_DATADIR\" \"$MYSQL_SOCKET_DIR\"\n\n    # Initialize MySQL with direct execution\n    echo \"Initializing MySQL database...\"\n    mysqld --initialize-insecure \\\n        --datadir=\"$MYSQL_DATADIR\" \\\n        --user=\"$USER\" \\\n        $MYSQL_INIT_ARGS \\\n        > /dev/null 2>&1\n\n    if [ $? -ne 0 ]; then\n        echo \"❌ Failed to initialize MySQL\"\n        return 1\n    fi\n\n    # Start MySQL temporarily to set password and create database\n    echo \"Configuring MySQL...\"\n    mysqld --datadir=\"$MYSQL_DATADIR\" \\\n        --socket=\"$MYSQL_SOCKET\" \\\n        --bind-address=127.0.0.1 \\\n        --port=\"$MYSQL_PORT\" \\\n        --default-authentication-plugin=\"$MYSQL_AUTH_PLUGIN\" \\\n        --mysqlx=0 \\\n        --skip-networking \\\n        --log-error=\"$MYSQL_LOG_ERROR\" \\\n        > /dev/null 2>&1 &\n    MYSQL_PID=$!\n\n    sleep 3  # Wait for startup\n\n    # Set root password\n    mysqladmin -u root --socket=\"$MYSQL_SOCKET\" password \"$MYSQL_ROOT_PASSWORD\" > /dev/null 2>&1\n\n    # Create additional user if specified\n    if [ -n \"$MYSQL_USER\" ] && [ -n \"$MYSQL_PASSWORD\" ]; then\n        mysql -u root --password=\"$MYSQL_ROOT_PASSWORD\" --socket=\"$MYSQL_SOCKET\" <<EOF > /dev/null 2>&1\nCREATE USER IF NOT EXISTS '$MYSQL_USER'@'localhost' IDENTIFIED BY '$MYSQL_PASSWORD';\nCREATE USER IF NOT EXISTS '$MYSQL_USER'@'%' IDENTIFIED BY '$MYSQL_PASSWORD';\nGRANT ALL PRIVILEGES ON *.* TO '$MYSQL_USER'@'localhost';\nGRANT ALL PRIVILEGES ON *.* TO '$MYSQL_USER'@'%';\nFLUSH PRIVILEGES;\nEOF\n    fi\n\n    # Create database if not \"mysql\"\n    if [ \"$MYSQL_DATABASE\" != \"mysql\" ]; then\n        mysql -u root --password=\"$MYSQL_ROOT_PASSWORD\" --socket=\"$MYSQL_SOCKET\" \\\n            -e \"CREATE DATABASE IF NOT EXISTS \\`$MYSQL_DATABASE\\`;\" > /dev/null 2>&1\n    fi\n\n    # Stop MySQL\n    mysqladmin -u root --password=\"$MYSQL_ROOT_PASSWORD\" --socket=\"$MYSQL_SOCKET\" shutdown > /dev/null 2>&1\n    wait $MYSQL_PID 2>/dev/null\n\n    echo \"✅ MySQL initialized successfully\"\n    return 0\n}\n\n# Run initialization\ninitialize_mysql\n\n# Display info with safety warnings\necho \"\"\necho \"✅ MySQL environment ready (headless mode)\"\necho \"\"\n\n# Safety warnings\nif [ \"$MYSQL_BIND_ADDRESS\" = \"0.0.0.0\" ]; then\n    echo \"⚠️  WARNING: Listening on all interfaces - NETWORK EXPOSED\"\nfi\nif [ \"$MYSQL_INNODB_FLUSH_LOG_AT_TRX_COMMIT\" = \"0\" ] || [ \"$MYSQL_INNODB_FLUSH_LOG_AT_TRX_COMMIT\" = \"2\" ]; then\n    echo \"⚠️  WARNING: innodb_flush_log_at_trx_commit=$MYSQL_INNODB_FLUSH_LOG_AT_TRX_COMMIT - DATA LOSS RISK\"\nfi\n[ \"$MYSQL_BIND_ADDRESS\" = \"0.0.0.0\" ] || [ \"$MYSQL_INNODB_FLUSH_LOG_AT_TRX_COMMIT\" = \"0\" ] || [ \"$MYSQL_INNODB_FLUSH_LOG_AT_TRX_COMMIT\" = \"2\" ] && echo \"\"\n\necho \"Connection:\"\necho \"  Bind address: ${MYSQL_BIND_ADDRESS}:${MYSQL_PORT}\"\necho \"  Socket: ${MYSQL_SOCKET}\"\necho \"  Database: ${MYSQL_DATABASE}\"\necho \"  Root password: ${MYSQL_ROOT_PASSWORD}\"\necho \"\"\necho \"Performance:\"\necho \"  Max connections: ${MYSQL_MAX_CONNECTIONS}\"\necho \"  InnoDB buffer pool: ${MYSQL_INNODB_BUFFER_POOL_SIZE}\"\necho \"  InnoDB flush at commit: ${MYSQL_INNODB_FLUSH_LOG_AT_TRX_COMMIT}\"\necho \"\"\necho \"Commands:\"\necho \"  flox activate -s        Start MySQL\"\necho \"  mysql -u root -p        Connect to database\"\necho \"  mysql-info              Show configuration\"\necho \"\"\n"
+    },
+    "profile": {
+      "bash": "mysql-info() {\n    echo \"MySQL 8.0 (Headless Mode) - Configuration\"\n    echo \"\"\n    echo \"Connection:\"\n    echo \"  Bind address: ${MYSQL_BIND_ADDRESS}:${MYSQL_PORT}\"\n    echo \"  Socket: ${MYSQL_SOCKET}\"\n    echo \"  Database: ${MYSQL_DATABASE}\"\n    echo \"  Root user: root\"\n    echo \"  Auth plugin: ${MYSQL_AUTH_PLUGIN}\"\n    echo \"\"\n    echo \"Performance:\"\n    echo \"  Max connections: ${MYSQL_MAX_CONNECTIONS}\"\n    echo \"  InnoDB buffer pool: ${MYSQL_INNODB_BUFFER_POOL_SIZE}\"\n    echo \"  Tmp table size: ${MYSQL_TMP_TABLE_SIZE}\"\n    echo \"  Max heap table size: ${MYSQL_MAX_HEAP_TABLE_SIZE}\"\n    echo \"  Thread cache size: ${MYSQL_THREAD_CACHE_SIZE}\"\n    echo \"\"\n    echo \"InnoDB:\"\n    echo \"  Log file size: ${MYSQL_INNODB_LOG_FILE_SIZE}\"\n    echo \"  Flush at commit: ${MYSQL_INNODB_FLUSH_LOG_AT_TRX_COMMIT}\"\n    echo \"  File per table: ${MYSQL_INNODB_FILE_PER_TABLE}\"\n    echo \"\"\n    echo \"Logging:\"\n    echo \"  Slow query log: ${MYSQL_SLOW_QUERY_LOG}\"\n    echo \"  Long query time: ${MYSQL_LONG_QUERY_TIME}s\"\n    echo \"\"\n    echo \"Data Directory: ${MYSQL_DATADIR}\"\n    echo \"\"\n    echo \"Commands:\"\n    echo \"  mysql -u root -p            Connect (password: $MYSQL_ROOT_PASSWORD)\"\n    echo \"  flox services status        Check service status\"\n    echo \"  flox services logs mysql    View service logs\"\n    echo \"  flox services restart mysql Restart with new settings\"\n}\nexport -f mysql-info\n",
+      "zsh": "mysql-info() {\n    echo \"MySQL 8.0 (Headless Mode) - Configuration\"\n    echo \"\"\n    echo \"Connection:\"\n    echo \"  Bind address: ${MYSQL_BIND_ADDRESS}:${MYSQL_PORT}\"\n    echo \"  Socket: ${MYSQL_SOCKET}\"\n    echo \"  Database: ${MYSQL_DATABASE}\"\n    echo \"  Root user: root\"\n    echo \"  Auth plugin: ${MYSQL_AUTH_PLUGIN}\"\n    echo \"\"\n    echo \"Performance:\"\n    echo \"  Max connections: ${MYSQL_MAX_CONNECTIONS}\"\n    echo \"  InnoDB buffer pool: ${MYSQL_INNODB_BUFFER_POOL_SIZE}\"\n    echo \"  Tmp table size: ${MYSQL_TMP_TABLE_SIZE}\"\n    echo \"  Max heap table size: ${MYSQL_MAX_HEAP_TABLE_SIZE}\"\n    echo \"  Thread cache size: ${MYSQL_THREAD_CACHE_SIZE}\"\n    echo \"\"\n    echo \"InnoDB:\"\n    echo \"  Log file size: ${MYSQL_INNODB_LOG_FILE_SIZE}\"\n    echo \"  Flush at commit: ${MYSQL_INNODB_FLUSH_LOG_AT_TRX_COMMIT}\"\n    echo \"  File per table: ${MYSQL_INNODB_FILE_PER_TABLE}\"\n    echo \"\"\n    echo \"Logging:\"\n    echo \"  Slow query log: ${MYSQL_SLOW_QUERY_LOG}\"\n    echo \"  Long query time: ${MYSQL_LONG_QUERY_TIME}s\"\n    echo \"\"\n    echo \"Data Directory: ${MYSQL_DATADIR}\"\n    echo \"\"\n    echo \"Commands:\"\n    echo \"  mysql -u root -p            Connect (password: $MYSQL_ROOT_PASSWORD)\"\n    echo \"  flox services status        Check service status\"\n    echo \"  flox services logs mysql    View service logs\"\n    echo \"  flox services restart mysql Restart with new settings\"\n}\n",
+      "fish": "function mysql-info\n    echo \"MySQL 8.0 (Headless Mode) - Configuration\"\n    echo \"\"\n    echo \"Connection:\"\n    echo \"  Bind address: $MYSQL_BIND_ADDRESS:$MYSQL_PORT\"\n    echo \"  Socket: $MYSQL_SOCKET\"\n    echo \"  Database: $MYSQL_DATABASE\"\n    echo \"  Root user: root\"\n    echo \"  Auth plugin: $MYSQL_AUTH_PLUGIN\"\n    echo \"\"\n    echo \"Performance:\"\n    echo \"  Max connections: $MYSQL_MAX_CONNECTIONS\"\n    echo \"  InnoDB buffer pool: $MYSQL_INNODB_BUFFER_POOL_SIZE\"\n    echo \"  Tmp table size: $MYSQL_TMP_TABLE_SIZE\"\n    echo \"  Max heap table size: $MYSQL_MAX_HEAP_TABLE_SIZE\"\n    echo \"  Thread cache size: $MYSQL_THREAD_CACHE_SIZE\"\n    echo \"\"\n    echo \"InnoDB:\"\n    echo \"  Log file size: $MYSQL_INNODB_LOG_FILE_SIZE\"\n    echo \"  Flush at commit: $MYSQL_INNODB_FLUSH_LOG_AT_TRX_COMMIT\"\n    echo \"  File per table: $MYSQL_INNODB_FILE_PER_TABLE\"\n    echo \"\"\n    echo \"Logging:\"\n    echo \"  Slow query log: $MYSQL_SLOW_QUERY_LOG\"\n    echo \"  Long query time: $MYSQL_LONG_QUERY_TIME\"s\n    echo \"\"\n    echo \"Data Directory: $MYSQL_DATADIR\"\n    echo \"\"\n    echo \"Commands:\"\n    echo \"  mysql -u root -p            Connect (password: $MYSQL_ROOT_PASSWORD)\"\n    echo \"  flox services status        Check service status\"\n    echo \"  flox services logs mysql    View service logs\"\n    echo \"  flox services restart mysql Restart with new settings\"\nend\n"
+    },
+    "options": {
+      "systems": [
+        "aarch64-darwin",
+        "aarch64-linux",
+        "x86_64-darwin",
+        "x86_64-linux"
+      ]
+    },
+    "services": {
+      "mysql": {
+        "command": "# Ensure socket directory exists\nmkdir -p \"$MYSQL_SOCKET_DIR\"\nchmod 700 \"$MYSQL_SOCKET_DIR\"\n\n# Start MySQL with all runtime configuration\nexec mysqld --datadir=\"$MYSQL_DATADIR\" \\\n  --socket=\"$MYSQL_SOCKET\" \\\n  --bind-address=\"$MYSQL_BIND_ADDRESS\" \\\n  --port=\"$MYSQL_PORT\" \\\n  --default-authentication-plugin=\"$MYSQL_AUTH_PLUGIN\" \\\n  --character-set-server=\"$MYSQL_CHARSET\" \\\n  --collation-server=\"$MYSQL_COLLATION\" \\\n  --mysqlx=0 \\\n  --log-error=\"$MYSQL_LOG_ERROR\" \\\n  --max-connections=\"$MYSQL_MAX_CONNECTIONS\" \\\n  --innodb-buffer-pool-size=\"$MYSQL_INNODB_BUFFER_POOL_SIZE\" \\\n  --tmp-table-size=\"$MYSQL_TMP_TABLE_SIZE\" \\\n  --max-heap-table-size=\"$MYSQL_MAX_HEAP_TABLE_SIZE\" \\\n  --thread-cache-size=\"$MYSQL_THREAD_CACHE_SIZE\" \\\n  --sort-buffer-size=\"$MYSQL_SORT_BUFFER_SIZE\" \\\n  --join-buffer-size=\"$MYSQL_JOIN_BUFFER_SIZE\" \\\n  --innodb-log-file-size=\"$MYSQL_INNODB_LOG_FILE_SIZE\" \\\n  --innodb-flush-log-at-trx-commit=\"$MYSQL_INNODB_FLUSH_LOG_AT_TRX_COMMIT\" \\\n  $([ -n \"$MYSQL_INNODB_FLUSH_METHOD\" ] && echo \"--innodb-flush-method=$MYSQL_INNODB_FLUSH_METHOD\") \\\n  --innodb-file-per-table=\"$MYSQL_INNODB_FILE_PER_TABLE\" \\\n  --slow-query-log=\"$MYSQL_SLOW_QUERY_LOG\" \\\n  --long-query-time=\"$MYSQL_LONG_QUERY_TIME\" \\\n  $([ -n \"$MYSQL_LOG_BIN\" ] && echo \"--log-bin=$MYSQL_LOG_BIN\") \\\n  --binlog-format=\"$MYSQL_BINLOG_FORMAT\" \\\n  --max-binlog-size=\"$MYSQL_MAX_BINLOG_SIZE\" \\\n  --binlog-expire-logs-seconds=\"$MYSQL_BINLOG_EXPIRE_LOGS_SECONDS\" \\\n  --sync-binlog=\"$MYSQL_SYNC_BINLOG\" \\\n  $MYSQL_EXTRA_OPTS\n"
+      }
+    }
+  },
+  "packages": [
+    {
+      "attr_path": "mysql80",
+      "broken": false,
+      "derivation": "/nix/store/ra6l29cy4pbimm9ydlqlwxy1gp8c8cb0-mysql-8.0.43.drv",
+      "description": "World's most popular open source database",
+      "install_id": "mysql",
+      "license": "GPL-2.0-only",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=6a08e6bb4e46ff7fcbb53d409b253f6bad8a28ce",
+      "name": "mysql-8.0.43",
+      "pname": "mysql80",
+      "rev": "6a08e6bb4e46ff7fcbb53d409b253f6bad8a28ce",
+      "rev_count": 883951,
+      "rev_date": "2025-10-25T06:24:58Z",
+      "scrape_date": "2025-10-27T02:08:36.193151Z",
+      "stabilities": [
+        "unstable"
+      ],
+      "unfree": false,
+      "version": "8.0.43",
+      "outputs_to_install": [
+        "out"
+      ],
+      "outputs": {
+        "out": "/nix/store/g6fhxprlqxx3na5z5lpjp4d3xp0rpx44-mysql-8.0.43",
+        "static": "/nix/store/hdxnhrvrjaf7rvm0pqhigwjx53hvm5xv-mysql-8.0.43-static"
+      },
+      "system": "aarch64-darwin",
+      "group": "toplevel",
+      "priority": 5
+    },
+    {
+      "attr_path": "mysql80",
+      "broken": false,
+      "derivation": "/nix/store/7nwp3zm0f19731al62ff6gn6wjwbbzrb-mysql-8.0.43.drv",
+      "description": "World's most popular open source database",
+      "install_id": "mysql",
+      "license": "GPL-2.0-only",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=6a08e6bb4e46ff7fcbb53d409b253f6bad8a28ce",
+      "name": "mysql-8.0.43",
+      "pname": "mysql80",
+      "rev": "6a08e6bb4e46ff7fcbb53d409b253f6bad8a28ce",
+      "rev_count": 883951,
+      "rev_date": "2025-10-25T06:24:58Z",
+      "scrape_date": "2025-10-27T02:19:00.085085Z",
+      "stabilities": [
+        "unstable"
+      ],
+      "unfree": false,
+      "version": "8.0.43",
+      "outputs_to_install": [
+        "out"
+      ],
+      "outputs": {
+        "out": "/nix/store/2gna7cbyby4aafyiz9lhji5pq6x17n4h-mysql-8.0.43",
+        "static": "/nix/store/047zd9y6qk1d2jl4aicnmshwzkdvdfdm-mysql-8.0.43-static"
+      },
+      "system": "aarch64-linux",
+      "group": "toplevel",
+      "priority": 5
+    },
+    {
+      "attr_path": "mysql80",
+      "broken": false,
+      "derivation": "/nix/store/mcs3w84a2jq0jrgj4dq530cjy730h7i3-mysql-8.0.43.drv",
+      "description": "World's most popular open source database",
+      "install_id": "mysql",
+      "license": "GPL-2.0-only",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=6a08e6bb4e46ff7fcbb53d409b253f6bad8a28ce",
+      "name": "mysql-8.0.43",
+      "pname": "mysql80",
+      "rev": "6a08e6bb4e46ff7fcbb53d409b253f6bad8a28ce",
+      "rev_count": 883951,
+      "rev_date": "2025-10-25T06:24:58Z",
+      "scrape_date": "2025-10-27T02:29:41.993405Z",
+      "stabilities": [
+        "unstable"
+      ],
+      "unfree": false,
+      "version": "8.0.43",
+      "outputs_to_install": [
+        "out"
+      ],
+      "outputs": {
+        "out": "/nix/store/0147id23hg04gdlsz7j3b6qd44p9z37l-mysql-8.0.43",
+        "static": "/nix/store/nnsz1dkcp7zra4dnhz6cgv0ah0rq5i5y-mysql-8.0.43-static"
+      },
+      "system": "x86_64-darwin",
+      "group": "toplevel",
+      "priority": 5
+    },
+    {
+      "attr_path": "mysql80",
+      "broken": false,
+      "derivation": "/nix/store/aaxzwh7s7d9px4yy3q6sxis2agrcvj88-mysql-8.0.43.drv",
+      "description": "World's most popular open source database",
+      "install_id": "mysql",
+      "license": "GPL-2.0-only",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=6a08e6bb4e46ff7fcbb53d409b253f6bad8a28ce",
+      "name": "mysql-8.0.43",
+      "pname": "mysql80",
+      "rev": "6a08e6bb4e46ff7fcbb53d409b253f6bad8a28ce",
+      "rev_count": 883951,
+      "rev_date": "2025-10-25T06:24:58Z",
+      "scrape_date": "2025-10-27T03:01:32.229263Z",
+      "stabilities": [
+        "unstable"
+      ],
+      "unfree": false,
+      "version": "8.0.43",
+      "outputs_to_install": [
+        "out"
+      ],
+      "outputs": {
+        "out": "/nix/store/qqh5qqmq9kbdd7hj7nnv6wjhlpfkip43-mysql-8.0.43",
+        "static": "/nix/store/1h5mqgy7n912linfqrhxip8nijs3khri-mysql-8.0.43-static"
+      },
+      "system": "x86_64-linux",
+      "group": "toplevel",
+      "priority": 5
+    }
+  ]
+}

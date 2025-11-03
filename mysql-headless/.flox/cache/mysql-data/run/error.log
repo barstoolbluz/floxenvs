@@ -1,0 +1,10 @@
+2025-11-03T01:49:29.664777Z 0 [Warning] [MY-010918] [Server] 'default_authentication_plugin' is deprecated and will be removed in a future release. Please use authentication_policy instead.
+2025-11-03T01:49:29.664786Z 0 [System] [MY-010116] [Server] /nix/store/qqh5qqmq9kbdd7hj7nnv6wjhlpfkip43-mysql-8.0.43/bin/mysqld (mysqld 8.0.43) starting as process 880152
+2025-11-03T01:49:29.674005Z 1 [System] [MY-013576] [InnoDB] InnoDB initialization has started.
+2025-11-03T01:49:29.877277Z 1 [System] [MY-013577] [InnoDB] InnoDB initialization has ended.
+2025-11-03T01:49:30.050902Z 0 [Warning] [MY-010068] [Server] CA certificate ca.pem is self signed.
+2025-11-03T01:49:30.050924Z 0 [System] [MY-013602] [Server] Channel mysql_main configured to support TLS. Encrypted connections are now supported for this channel.
+2025-11-03T01:49:30.066380Z 0 [System] [MY-010931] [Server] /nix/store/qqh5qqmq9kbdd7hj7nnv6wjhlpfkip43-mysql-8.0.43/bin/mysqld: ready for connections. Version: '8.0.43'  socket: '/home/daedalus/dev/testes/floxenvs/mysql-headless/.flox/cache/mysql-data/run/mysql.sock'  port: 0  Source distribution.
+2025-11-03T01:49:32.442748Z 8 [Warning] [MY-013360] [Server] Plugin mysql_native_password reported: ''mysql_native_password' is deprecated and will be removed in a future release. Please use caching_sha2_password instead'
+2025-11-03T01:49:32.497250Z 9 [System] [MY-013172] [Server] Received SHUTDOWN from user root. Shutting down mysqld (Version: 8.0.43).
+2025-11-03T01:49:32.998851Z 0 [System] [MY-010910] [Server] /nix/store/qqh5qqmq9kbdd7hj7nnv6wjhlpfkip43-mysql-8.0.43/bin/mysqld: Shutdown complete (mysqld 8.0.43)  Source distribution.

@@ -1,0 +1,36 @@
+2025-11-03T01:02:15.491204Z DEBUG flox_watchdog::sentry: Initializing Sentry with DSN: https://85c9526795f5047c99a5247aab616295:@o4506548203094016.ingest.us.sentry.io/4506548241825792
+2025-11-03T01:02:15.504304Z DEBUG sentry: enabled sentry client for DSN https://85c9526795f5047c99a5247aab616295:@o4506548203094016.ingest.us.sentry.io/4506548241825792
+2025-11-03T01:02:15.504368Z DEBUG watchdog{socket="/run/user/1000/flox.0baad380.sock" log_dir="/home/daedalus/dev/testes/floxenvs/mysql-headless/.flox/log"}: flox_watchdog: starting
+2025-11-03T01:02:15.504402Z DEBUG watchdog{socket="/run/user/1000/flox.0baad380.sock" log_dir="/home/daedalus/dev/testes/floxenvs/mysql-headless/.flox/log"}: flox_watchdog: checked socket path="/run/user/1000/flox.0baad380.sock" exists=false
+2025-11-03T01:02:15.504407Z  INFO watchdog{socket="/run/user/1000/flox.0baad380.sock" log_dir="/home/daedalus/dev/testes/floxenvs/mysql-headless/.flox/log"}: flox_watchdog: watchdog is on duty this_pid=814311 target_activation_id="db1868c1"
+2025-11-03T01:02:15.504537Z DEBUG watchdog{socket="/run/user/1000/flox.0baad380.sock" log_dir="/home/daedalus/dev/testes/floxenvs/mysql-headless/.flox/log"}: flox_watchdog: waiting for termination
+2025-11-03T01:02:15.504547Z DEBUG flox_watchdog::logger: still watching, woof woof
+2025-11-03T01:02:24.934877Z  INFO watchdog{socket="/run/user/1000/flox.0baad380.sock" log_dir="/home/daedalus/dev/testes/floxenvs/mysql-headless/.flox/log"}: flox_watchdog: running cleanup after all PIDs terminated
+2025-11-03T01:02:24.934919Z DEBUG watchdog{socket="/run/user/1000/flox.0baad380.sock" log_dir="/home/daedalus/dev/testes/floxenvs/mysql-headless/.flox/log"}: flox_watchdog: running cleanup
+2025-11-03T01:02:24.934929Z DEBUG watchdog{socket="/run/user/1000/flox.0baad380.sock" log_dir="/home/daedalus/dev/testes/floxenvs/mysql-headless/.flox/log"}: flox_watchdog: did not shut down process-compose reason="no socket"
+2025-11-03T01:02:24.935068Z DEBUG watchdog{socket="/run/user/1000/flox.0baad380.sock" log_dir="/home/daedalus/dev/testes/floxenvs/mysql-headless/.flox/log"}: flox_watchdog: finished cleanup
+2025-11-03T01:02:24.935131Z DEBUG sentry: dropping client guard -> disposing client
+2025-11-03T01:02:24.935488Z DEBUG sentry: client close; request transport to shut down
+2025-11-03T01:02:24.935487Z DEBUG reqwest::connect: starting new connection: https://o4506548203094016.ingest.us.sentry.io/
+2025-11-03T01:02:24.967473Z DEBUG hyper_util::client::legacy::connect::http: connecting to 34.120.195.249:443
+2025-11-03T01:02:24.971895Z DEBUG hyper_util::client::legacy::connect::http: connected to 34.120.195.249:443
+2025-11-03T01:02:25.006044Z DEBUG hyper_util::client::legacy::pool: pooling idle connection for ("https", o4506548203094016.ingest.us.sentry.io)
+2025-11-03T01:02:25.006162Z DEBUG sentry: Get response: `{"id":"615d6b37d6d046e08e13acd403740d81"}`
+2025-11-03T01:06:51.615081Z DEBUG flox_watchdog::sentry: Initializing Sentry with DSN: https://85c9526795f5047c99a5247aab616295:@o4506548203094016.ingest.us.sentry.io/4506548241825792
+2025-11-03T01:06:51.623269Z DEBUG sentry: enabled sentry client for DSN https://85c9526795f5047c99a5247aab616295:@o4506548203094016.ingest.us.sentry.io/4506548241825792
+2025-11-03T01:06:51.623318Z DEBUG watchdog{socket="/run/user/1000/flox.0baad380.sock" log_dir="/home/daedalus/dev/testes/floxenvs/mysql-headless/.flox/log"}: flox_watchdog: starting
+2025-11-03T01:06:51.623341Z DEBUG watchdog{socket="/run/user/1000/flox.0baad380.sock" log_dir="/home/daedalus/dev/testes/floxenvs/mysql-headless/.flox/log"}: flox_watchdog: checked socket path="/run/user/1000/flox.0baad380.sock" exists=false
+2025-11-03T01:06:51.623344Z  INFO watchdog{socket="/run/user/1000/flox.0baad380.sock" log_dir="/home/daedalus/dev/testes/floxenvs/mysql-headless/.flox/log"}: flox_watchdog: watchdog is on duty this_pid=822732 target_activation_id="db1868c1"
+2025-11-03T01:06:51.623407Z DEBUG flox_watchdog::logger: still watching, woof woof
+2025-11-03T01:06:51.623411Z DEBUG watchdog{socket="/run/user/1000/flox.0baad380.sock" log_dir="/home/daedalus/dev/testes/floxenvs/mysql-headless/.flox/log"}: flox_watchdog: waiting for termination
+2025-11-03T01:06:59.242174Z  INFO watchdog{socket="/run/user/1000/flox.0baad380.sock" log_dir="/home/daedalus/dev/testes/floxenvs/mysql-headless/.flox/log"}: flox_watchdog: running cleanup after all PIDs terminated
+2025-11-03T01:06:59.242200Z DEBUG watchdog{socket="/run/user/1000/flox.0baad380.sock" log_dir="/home/daedalus/dev/testes/floxenvs/mysql-headless/.flox/log"}: flox_watchdog: running cleanup
+2025-11-03T01:06:59.242206Z DEBUG watchdog{socket="/run/user/1000/flox.0baad380.sock" log_dir="/home/daedalus/dev/testes/floxenvs/mysql-headless/.flox/log"}: flox_watchdog: did not shut down process-compose reason="no socket"
+2025-11-03T01:06:59.242280Z DEBUG watchdog{socket="/run/user/1000/flox.0baad380.sock" log_dir="/home/daedalus/dev/testes/floxenvs/mysql-headless/.flox/log"}: flox_watchdog: finished cleanup
+2025-11-03T01:06:59.242316Z DEBUG sentry: dropping client guard -> disposing client
+2025-11-03T01:06:59.242412Z DEBUG sentry: client close; request transport to shut down
+2025-11-03T01:06:59.242474Z DEBUG reqwest::connect: starting new connection: https://o4506548203094016.ingest.us.sentry.io/
+2025-11-03T01:06:59.266574Z DEBUG hyper_util::client::legacy::connect::http: connecting to 34.120.195.249:443
+2025-11-03T01:06:59.275931Z DEBUG hyper_util::client::legacy::connect::http: connected to 34.120.195.249:443
+2025-11-03T01:06:59.315015Z DEBUG hyper_util::client::legacy::pool: pooling idle connection for ("https", o4506548203094016.ingest.us.sentry.io)
+2025-11-03T01:06:59.315056Z DEBUG sentry: Get response: `{"id":"8bad6312d49941f6b6929d034ffd3d2d"}`

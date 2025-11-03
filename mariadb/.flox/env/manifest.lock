@@ -1,0 +1,284 @@
+{
+  "lockfile-version": 1,
+  "manifest": {
+    "version": 1,
+    "install": {
+      "gum": {
+        "pkg-path": "gum"
+      },
+      "mariadb": {
+        "pkg-path": "mariadb"
+      }
+    },
+    "vars": {
+      "MARIADB_BIND_ADDRESS": "127.0.0.1",
+      "MARIADB_DATABASE": "mysql",
+      "MARIADB_PORT": "13307",
+      "MARIADB_ROOT_PASSWORD": "mariadbpass"
+    },
+    "hook": {
+      "on-activate": "# define env vars available during activation\nexport MARIADB_DIR=\"${FLOX_ENV_CACHE}/mariadb\"\nexport CONFIG_FILE=\"${FLOX_ENV_CACHE}/mariadb.config\"\nexport DEFAULT_MARIADB_BIND_ADDRESS=\"127.0.0.1\"\nexport DEFAULT_MARIADB_PORT=\"13307\"\nexport DEFAULT_MARIADB_ROOT_PASSWORD=\"mariadbpass\"\nexport DEFAULT_MARIADB_DATABASE=\"mysql\"\nexport DEFAULT_MARIADB_DIR=\"${FLOX_ENV_CACHE}/mariadb\"\n\n# enable/disable debugging; set to \"true\" to enable verbose output\nexport MARIADB_DEBUG=\"false\"\n\n# this function checks if first run\ncheck_first_run() {\n    if [[ ! -f \"$CONFIG_FILE\" ]]; then\n        return 0 # True, this is the first run\n    else\n        return 1 # False, not the first run\n    fi\n}\n\n# this function loads mariadb.config if exists\nload_config() {\n    if [[ -f \"$CONFIG_FILE\" ]]; then\n        source \"$CONFIG_FILE\"\n    else\n        # set defaults if no mariadb.config\n        export MARIADB_BIND_ADDRESS=\"$DEFAULT_MARIADB_BIND_ADDRESS\"\n        export MARIADB_PORT=\"$DEFAULT_MARIADB_PORT\"\n        export MARIADB_ROOT_PASSWORD=\"$DEFAULT_MARIADB_ROOT_PASSWORD\"\n        export MARIADB_DATABASE=\"$DEFAULT_MARIADB_DATABASE\"\n        export MARIADB_DIR=\"$DEFAULT_MARIADB_DIR\"\n    fi\n}\n\n# this function saves mariadb.config to file\nsave_config() {\n    mkdir -p \"$(dirname \"$CONFIG_FILE\")\"\n    cat > \"$CONFIG_FILE\" << EOF\n# mariadb configuration - Generated on $(date)\nexport MARIADB_BIND_ADDRESS=\"$MARIADB_BIND_ADDRESS\"\nexport MARIADB_PORT=\"$MARIADB_PORT\"\nexport MARIADB_ROOT_PASSWORD=\"$MARIADB_ROOT_PASSWORD\"\nexport MARIADB_DATABASE=\"$MARIADB_DATABASE\"\nexport MARIADB_DIR=\"$MARIADB_DIR\"\nexport MARIADB_DEBUG=\"$MARIADB_DEBUG\"\n\n## BEGIN ACTIVATION HOOK ##\n$(declare -f debug_log)\n$(declare -f check_first_run)\n$(declare -f load_config)\n$(declare -f save_config)\n$(declare -f prompt_for_config)\n$(declare -f update_dependent_vars)\n$(declare -f initialize_mariadb)\n$(declare -f start_mariadb)\n$(declare -f set_root_password)\n$(declare -f create_database)\n$(declare -f stop_mariadb)\n$(declare -f reconfigure_mariadb)\n$(declare -f first_run_setup)\n$(declare -f display_mariadb_config_ui)\n$(declare -f mariadb_setup)\n$(declare -f main)\n## END ACTIVATION HOOK ##\nEOF\n    chmod 644 \"$CONFIG_FILE\"\n}\n\n# this function prompts user 'do you want to custom configure mariadb vars?'\nprompt_for_config() {\n    echo \"\"\n    if gum confirm \"$(gum style --foreground 240 'Would you like to customize your MariaDB configuration?')\" --default=false; then\n        MARIADB_BIND_ADDRESS=$(gum input --placeholder \"$DEFAULT_MARIADB_BIND_ADDRESS\" --value \"$DEFAULT_MARIADB_BIND_ADDRESS\" --prompt \"Bind Address: \")\n        MARIADB_PORT=$(gum input --placeholder \"$DEFAULT_MARIADB_PORT\" --value \"$DEFAULT_MARIADB_PORT\" --prompt \"Port: \")\n        MARIADB_ROOT_PASSWORD=$(gum input --placeholder \"$DEFAULT_MARIADB_ROOT_PASSWORD\" --value \"$DEFAULT_MARIADB_ROOT_PASSWORD\" --prompt \"Root Password: \" --password)\n        MARIADB_DATABASE=$(gum input --placeholder \"$DEFAULT_MARIADB_DATABASE\" --value \"$DEFAULT_MARIADB_DATABASE\" --prompt \"Database: \")\n\n        if gum confirm \"Use default directory for MariaDB data?\" --default=true; then\n            MARIADB_DIR=\"$DEFAULT_MARIADB_DIR\"\n        else\n            MARIADB_DIR=$(gum input --placeholder \"$DEFAULT_MARIADB_DIR\" --value \"$DEFAULT_MARIADB_DIR\" --prompt \"MariaDB Data Directory: \")\n        fi\n    else\n        # defaults for gum prompts\n        MARIADB_BIND_ADDRESS=\"$DEFAULT_MARIADB_BIND_ADDRESS\"\n        MARIADB_PORT=\"$DEFAULT_MARIADB_PORT\"\n        MARIADB_ROOT_PASSWORD=\"$DEFAULT_MARIADB_ROOT_PASSWORD\"\n        MARIADB_DATABASE=\"$DEFAULT_MARIADB_DATABASE\"\n        MARIADB_DIR=\"$DEFAULT_MARIADB_DIR\"\n    fi\n\n    # export user-defined variables\n    export MARIADB_BIND_ADDRESS MARIADB_PORT MARIADB_ROOT_PASSWORD MARIADB_DATABASE MARIADB_DIR\n\n    # save to mariadb.config\n    save_config\n}\n\n# this function handles debug logging\ndebug_log() {\n    if [[ \"$MARIADB_DEBUG\" == \"true\" ]]; then\n        echo \"$@\"\n    fi\n}\n\n# this function updates dependent vars after loading mariadb.config\nupdate_dependent_vars() {\n    # is $MARIADB_DIR an absolute path?\n    if [[ ! \"$MARIADB_DIR\" = /* ]]; then\n        MARIADB_DIR=\"$(pwd)/$MARIADB_DIR\"\n        export MARIADB_DIR\n    fi\n\n    # set dependent vars with absolute paths\n    export MARIADB_DATADIR=\"$MARIADB_DIR/data\"\n    export MARIADB_SOCKET=\"$MARIADB_DIR/run/mysql.sock\"\n    export MARIADB_SOCKET_DIR=\"$MARIADB_DIR/run\"\n    export MARIADB_LOG_ERROR=\"$MARIADB_DIR/run/error.log\"\n    export DATABASE_URL=\"mysql://root:$MARIADB_ROOT_PASSWORD@$MARIADB_BIND_ADDRESS:$MARIADB_PORT/$MARIADB_DATABASE\"\n\n    # debug output\n    debug_log \"Configuration paths:\"\n    debug_log \"  MARIADB_DIR: $MARIADB_DIR\"\n    debug_log \"  MARIADB_DATADIR: $MARIADB_DATADIR\"\n    debug_log \"  MARIADB_SOCKET: $MARIADB_SOCKET\"\n}\n\n# this function initializes mariadb\ninitialize_mariadb() {\n    mkdir -p \"$(dirname \"$MARIADB_DATADIR\")\" && chmod 700 \"$(dirname \"$MARIADB_DATADIR\")\"\n    rm -rf \"$MARIADB_DATADIR\" && mkdir -p \"$MARIADB_DATADIR\" && chmod 700 \"$MARIADB_DATADIR\"\n    mkdir -p \"$MARIADB_SOCKET_DIR\" && chmod 700 \"$MARIADB_SOCKET_DIR\"\n\n    if [[ \"$MARIADB_DEBUG\" == \"true\" ]]; then\n        if ! mysql_install_db --datadir=\"$MARIADB_DATADIR\" --user=\"$USER\"; then\n            echo \"Retrying without --user flag...\"\n            mysql_install_db --datadir=\"$MARIADB_DATADIR\"\n        fi\n    else\n        if ! mysql_install_db --datadir=\"$MARIADB_DATADIR\" --user=\"$USER\" > /dev/null 2>&1; then\n            mysql_install_db --datadir=\"$MARIADB_DATADIR\" > /dev/null 2>&1\n        fi\n    fi\n\n    return $?\n}\n\n# this function starts mariadb\nstart_mariadb() {\n    # is $MARIADB_SOCKET_DIR an absolute path?\n    if [[ ! \"$MARIADB_SOCKET_DIR\" = /* ]]; then\n        debug_log \"Warning: MARIADB_SOCKET_DIR is not an absolute path. Using absolute path instead.\"\n        MARIADB_SOCKET_DIR=\"$(pwd)/$MARIADB_SOCKET_DIR\"\n        export MARIADB_SOCKET_DIR\n        export MARIADB_SOCKET=\"$MARIADB_SOCKET_DIR/mysql.sock\"\n    fi\n\n    # create socket dir\n    debug_log \"Creating MariaDB socket directory at: $MARIADB_SOCKET_DIR\"\n    mkdir -p \"$MARIADB_SOCKET_DIR\"\n    chmod 700 \"$MARIADB_SOCKET_DIR\"\n\n    # was / was not socket dir created successfully?\n    if [[ ! -d \"$MARIADB_SOCKET_DIR\" ]]; then\n        echo \"Error: Failed to create MariaDB socket directory at $MARIADB_SOCKET_DIR\"\n        return 1\n    fi\n\n    debug_log \"Starting MariaDB with socket: $MARIADB_SOCKET\"\n    debug_log \"Data directory: $MARIADB_DATADIR\"\n\n    # start mariadb with or without debugging\n    if [[ \"$MARIADB_DEBUG\" == \"true\" ]]; then\n        mysqld --datadir=\"$MARIADB_DATADIR\" \\\n               --socket=\"$MARIADB_SOCKET\" \\\n               --bind-address=\"$MARIADB_BIND_ADDRESS\" \\\n               --port=\"$MARIADB_PORT\" \\\n               --log-error=\"$MARIADB_LOG_ERROR\" &\n        MARIADB_PID=$!\n    else\n        mysqld --datadir=\"$MARIADB_DATADIR\" \\\n               --socket=\"$MARIADB_SOCKET\" \\\n               --bind-address=\"$MARIADB_BIND_ADDRESS\" \\\n               --port=\"$MARIADB_PORT\" \\\n               --log-error=\"$MARIADB_LOG_ERROR\" > /dev/null 2>&1 &\n        MARIADB_PID=$!\n    fi\n\n    export MARIADB_PID\n    sleep 3  # Wait for MariaDB to start\n\n    return 0\n}\n\n# this function sets root password\nset_root_password() {\n    debug_log \"Setting root password...\"\n    # MariaDB uses unix_socket by default, so connect without password first\n    mysql -u root --socket=\"$MARIADB_SOCKET\" <<EOF > /dev/null 2>&1\nALTER USER 'root'@'localhost' IDENTIFIED BY '$MARIADB_ROOT_PASSWORD';\nFLUSH PRIVILEGES;\nEOF\n    return 0\n}\n\n# this function creates database if not exist\ncreate_database() {\n    if [[ \"$MARIADB_DATABASE\" != \"mysql\" ]]; then\n        debug_log \"Creating database $MARIADB_DATABASE...\"\n        mysql -u root --password=\"$MARIADB_ROOT_PASSWORD\" --socket=\"$MARIADB_SOCKET\" -e \"CREATE DATABASE IF NOT EXISTS \\`$MARIADB_DATABASE\\`;\" > /dev/null 2>&1\n    fi\n    return 0\n}\n\n# this function stops mariadb\nstop_mariadb() {\n    if [[ -n \"$MARIADB_PID\" ]]; then\n        debug_log \"Stopping MariaDB (PID: $MARIADB_PID)...\"\n        if mysqladmin -u root --password=\"$MARIADB_ROOT_PASSWORD\" --socket=\"$MARIADB_SOCKET\" shutdown > /dev/null 2>&1; then\n            wait $MARIADB_PID 2>/dev/null\n        else\n            # If shutdown fails, try kill\n            kill $MARIADB_PID 2>/dev/null\n            sleep 1\n            kill -9 $MARIADB_PID 2>/dev/null\n        fi\n    fi\n    return 0\n}\n\n# we call this function from profile if we want/need to reconfigure mariadb\nreconfigure_mariadb() {\n    rm -f \"$CONFIG_FILE\"\n    first_run_setup\n    mariadb_setup\n}\n\n# it's tautological!\nfirst_run_setup() {\n    if check_first_run; then\n        display_mariadb_config_ui\n    else\n        load_config\n    fi\n\n    update_dependent_vars\n}\n\n# our gum-ified tui (thank you ye good folk at charmbracelet!)\ndisplay_mariadb_config_ui() {\n    clear\n\n    # customize header + colors\n    gum style \\\n        --border rounded \\\n        --border-foreground 240 \\\n        --padding \"1 2\" \\\n        --margin \"1 0\" \\\n        --width 70 \\\n        \"$(gum style --foreground 42 --bold 'MariaDB Configuration')\n\n$(gum style --foreground 240 'First-time setup for your local development database')\"\n\n    prompt_for_config\n}\n\n# mariadb setup master function\nmariadb_setup() {\n    debug_log \"Setting up MariaDB...\"\n\n    # this is where we init mariadb\n    debug_log \"Initializing MariaDB...\"\n    initialize_mariadb || { echo \"Failed to initialize MariaDB\"; return 1; }\n\n    if [[ -d \"$MARIADB_DATADIR/mysql\" ]]; then\n        debug_log \"MariaDB data directory initialized successfully\"\n\n        # this is where we start it up\n        debug_log \"Starting MariaDB...\"\n        start_mariadb || { echo \"Failed to start MariaDB\"; return 1; }\n\n        # set root password\n        debug_log \"Setting root password...\"\n        set_root_password || { echo \"Failed to set root password\"; return 1; }\n\n        # this is where we create database\n        debug_log \"Creating database...\"\n        create_database || { echo \"Failed to create database\"; return 1; }\n\n        # this is where we shut it down\n        debug_log \"Stopping MariaDB...\"\n        stop_mariadb || { echo \"Failed to stop MariaDB\"; return 1; }\n\n        debug_log \"MariaDB setup completed successfully\"\n    else\n        echo \"Error: MariaDB data directory was not initialized correctly\"\n        return 1\n    fi\n\n    return 0\n}\n\n# gummified help message\nshow_mariadb_help() {\n    # Determine display host\n    local display_host\n    if [[ \"$MARIADB_BIND_ADDRESS\" == \"0.0.0.0\" ]]; then\n        display_host=\"localhost\"\n    else\n        display_host=\"$MARIADB_BIND_ADDRESS\"\n    fi\n\n    # Create the help message with Gum styling\n    gum style \\\n        --border rounded \\\n        --border-foreground 240 \\\n        --padding \"1 2\" \\\n        --margin \"1 0\" \\\n        --width 96 \\\n        \"$(gum style --foreground 42 --bold 'This is a  F l o x  MariaDB Environment')\n\n👉  Service Management:\n    $(gum style --foreground 49 'flox activate -s')      Start MariaDB at activation\n    $(gum style --foreground 49 'mariadbstart')          Start MariaDB post activation\n    $(gum style --foreground 49 'mariadbstop')           Stop MariaDB post activation\n    $(gum style --foreground 49 'mariadbrestart')        Restart MariaDB post activation\n\n👉  Configuration:\n    $(gum style --foreground 49 'mariadbconfigure')      Reconfigure MariaDB post activation\n\n👉  Connection:\n    $(gum style --foreground 49 'mysql -u root -p')      Connect to MariaDB (password: $MARIADB_ROOT_PASSWORD)\n\n👉  Connection Details:\n    Host:     $(gum style --foreground 49 \"${display_host}\")\n    Port:     $(gum style --foreground 49 \"${MARIADB_PORT}\")\n    Database: $(gum style --foreground 49 \"${MARIADB_DATABASE}\")\n    Socket:   $(gum style --foreground 49 \"${MARIADB_SOCKET}\")\"\n\n    echo \"\"\n}\n\n# it's tautological!\nmain() {\n    first_run_setup\n\n    mariadb_setup\n\n    show_mariadb_help\n}\n\n# runnit all\nmain\n"
+    },
+    "profile": {
+      "common": "",
+      "bash": "source \"${FLOX_ENV_CACHE}/mariadb.config\" 2>/dev/null || true\nmariadbstart() { flox services start mariadb; }\nmariadbstop() { flox services stop mariadb; }\nmariadbrestart() { flox services restart mariadb; }\nmariadbconfigure() {\n  flox services stop mariadb\n  source \"${FLOX_ENV_CACHE}/mariadb.config\" 2>/dev/null || true\n  reconfigure_mariadb\n  flox services start mariadb\n}\nexport -f mariadbstart mariadbstop mariadbrestart mariadbconfigure\nunset -f debug_log initialize_mariadb start_mariadb stop_mariadb\nunset -f set_root_password create_database check_first_run\nunset -f load_config prompt_for_config display_mariadb_config_ui main\n",
+      "zsh": "source \"${FLOX_ENV_CACHE}/mariadb.config\" 2>/dev/null || true\nmariadbstart() { flox services start mariadb; }\nmariadbstop() { flox services stop mariadb; }\nmariadbrestart() { flox services restart mariadb; }\nmariadbconfigure() {\n  flox services stop mariadb\n  source \"${FLOX_ENV_CACHE}/mariadb.config\" 2>/dev/null || true\n  reconfigure_mariadb\n  flox services start mariadb\n}\nunset -f \"debug_log\" \"initialize_mariadb\" \"start_mariadb\" \"stop_mariadb\"\nunset -f \"set_root_password\" \"create_database\" \"check_first_run\"\nunset -f \"load_config\" \"prompt_for_config\" \"display_mariadb_config_ui\" \"main\"\n",
+      "fish": "source \"$FLOX_ENV_CACHE/mariadb.config\" 2>/dev/null || true\n\nfunction mariadbstart\n    flox services start mariadb\nend\n\nfunction mariadbstop\n    flox services stop mariadb\nend\n\nfunction mariadbrestart\n    flox services restart mariadb\nend\n\nfunction mariadbconfigure\n    flox services stop mariadb\n    source \"$FLOX_ENV_CACHE/mariadb.config\" 2>/dev/null || true\n    reconfigure_mariadb\n    flox services start mariadb\nend\n\nfunctions -e debug_log initialize_mariadb start_mariadb stop_mariadb\nfunctions -e set_root_password create_database check_first_run\nfunctions -e load_config prompt_for_config display_mariadb_config_ui main\n"
+    },
+    "options": {
+      "systems": [
+        "aarch64-darwin",
+        "aarch64-linux",
+        "x86_64-darwin",
+        "x86_64-linux"
+      ]
+    },
+    "services": {
+      "mariadb": {
+        "command": "mysqld --datadir=$MARIADB_DATADIR --socket=$MARIADB_SOCKET --bind-address=$MARIADB_BIND_ADDRESS --port=$MARIADB_PORT --log-error=$MARIADB_LOG_ERROR"
+      }
+    }
+  },
+  "packages": [
+    {
+      "attr_path": "gum",
+      "broken": false,
+      "derivation": "/nix/store/675k33a7fnqda5p3rn5qjc33ivqrh68q-gum-0.17.0.drv",
+      "description": "Tasty Bubble Gum for your shell",
+      "install_id": "gum",
+      "license": "MIT",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=6a08e6bb4e46ff7fcbb53d409b253f6bad8a28ce",
+      "name": "gum-0.17.0",
+      "pname": "gum",
+      "rev": "6a08e6bb4e46ff7fcbb53d409b253f6bad8a28ce",
+      "rev_count": 883951,
+      "rev_date": "2025-10-25T06:24:58Z",
+      "scrape_date": "2025-10-27T02:08:16.755997Z",
+      "stabilities": [
+        "unstable"
+      ],
+      "unfree": false,
+      "version": "0.17.0",
+      "outputs_to_install": [
+        "out"
+      ],
+      "outputs": {
+        "out": "/nix/store/g384sncfvkxfpiswcg01hk6r3z0681ix-gum-0.17.0"
+      },
+      "system": "aarch64-darwin",
+      "group": "toplevel",
+      "priority": 5
+    },
+    {
+      "attr_path": "gum",
+      "broken": false,
+      "derivation": "/nix/store/x4gr782ka05mb2gwd2hxlnwrcxxj8m1m-gum-0.17.0.drv",
+      "description": "Tasty Bubble Gum for your shell",
+      "install_id": "gum",
+      "license": "MIT",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=6a08e6bb4e46ff7fcbb53d409b253f6bad8a28ce",
+      "name": "gum-0.17.0",
+      "pname": "gum",
+      "rev": "6a08e6bb4e46ff7fcbb53d409b253f6bad8a28ce",
+      "rev_count": 883951,
+      "rev_date": "2025-10-25T06:24:58Z",
+      "scrape_date": "2025-10-27T02:18:28.225289Z",
+      "stabilities": [
+        "unstable"
+      ],
+      "unfree": false,
+      "version": "0.17.0",
+      "outputs_to_install": [
+        "out"
+      ],
+      "outputs": {
+        "out": "/nix/store/vkh7n5a7nhxlv4zzxs1anaqcbpsaakdw-gum-0.17.0"
+      },
+      "system": "aarch64-linux",
+      "group": "toplevel",
+      "priority": 5
+    },
+    {
+      "attr_path": "gum",
+      "broken": false,
+      "derivation": "/nix/store/sz3las4dhlb9xrz4fgw4l5zkss3s3afd-gum-0.17.0.drv",
+      "description": "Tasty Bubble Gum for your shell",
+      "install_id": "gum",
+      "license": "MIT",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=6a08e6bb4e46ff7fcbb53d409b253f6bad8a28ce",
+      "name": "gum-0.17.0",
+      "pname": "gum",
+      "rev": "6a08e6bb4e46ff7fcbb53d409b253f6bad8a28ce",
+      "rev_count": 883951,
+      "rev_date": "2025-10-25T06:24:58Z",
+      "scrape_date": "2025-10-27T02:29:22.646362Z",
+      "stabilities": [
+        "unstable"
+      ],
+      "unfree": false,
+      "version": "0.17.0",
+      "outputs_to_install": [
+        "out"
+      ],
+      "outputs": {
+        "out": "/nix/store/j459dmmrrfzia8zgpykkr4fsv0ydrsvg-gum-0.17.0"
+      },
+      "system": "x86_64-darwin",
+      "group": "toplevel",
+      "priority": 5
+    },
+    {
+      "attr_path": "gum",
+      "broken": false,
+      "derivation": "/nix/store/m4rq0l39b36z03rq5sb8y5zsid4y09ad-gum-0.17.0.drv",
+      "description": "Tasty Bubble Gum for your shell",
+      "install_id": "gum",
+      "license": "MIT",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=6a08e6bb4e46ff7fcbb53d409b253f6bad8a28ce",
+      "name": "gum-0.17.0",
+      "pname": "gum",
+      "rev": "6a08e6bb4e46ff7fcbb53d409b253f6bad8a28ce",
+      "rev_count": 883951,
+      "rev_date": "2025-10-25T06:24:58Z",
+      "scrape_date": "2025-10-27T03:00:56.654223Z",
+      "stabilities": [
+        "unstable"
+      ],
+      "unfree": false,
+      "version": "0.17.0",
+      "outputs_to_install": [
+        "out"
+      ],
+      "outputs": {
+        "out": "/nix/store/bqaqgkwjxdq6vxq210v9893ibmag515f-gum-0.17.0"
+      },
+      "system": "x86_64-linux",
+      "group": "toplevel",
+      "priority": 5
+    },
+    {
+      "attr_path": "mariadb",
+      "broken": false,
+      "derivation": "/nix/store/qlcfkfabdbic8233d403sjf68rrrj1i4-mariadb-server-11.4.8.drv",
+      "description": "Enhanced, drop-in replacement for MySQL",
+      "install_id": "mariadb",
+      "license": "GPL-2.0-or-later",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=6a08e6bb4e46ff7fcbb53d409b253f6bad8a28ce",
+      "name": "mariadb-server-11.4.8",
+      "pname": "mariadb",
+      "rev": "6a08e6bb4e46ff7fcbb53d409b253f6bad8a28ce",
+      "rev_count": 883951,
+      "rev_date": "2025-10-25T06:24:58Z",
+      "scrape_date": "2025-10-27T02:08:34.934811Z",
+      "stabilities": [
+        "unstable"
+      ],
+      "unfree": false,
+      "version": "11.4.8",
+      "outputs_to_install": [
+        "man",
+        "out"
+      ],
+      "outputs": {
+        "man": "/nix/store/0r39rjzkjslqzr6c7q7q5svibl795j48-mariadb-server-11.4.8-man",
+        "out": "/nix/store/pqr1lz4mxwna1mp1p9a3gj31inga6qwm-mariadb-server-11.4.8"
+      },
+      "system": "aarch64-darwin",
+      "group": "toplevel",
+      "priority": 5
+    },
+    {
+      "attr_path": "mariadb",
+      "broken": false,
+      "derivation": "/nix/store/yz7g8as3j8aifkpvkd13wkr2r6pl0h47-mariadb-server-11.4.8.drv",
+      "description": "Enhanced, drop-in replacement for MySQL",
+      "install_id": "mariadb",
+      "license": "GPL-2.0-or-later",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=6a08e6bb4e46ff7fcbb53d409b253f6bad8a28ce",
+      "name": "mariadb-server-11.4.8",
+      "pname": "mariadb",
+      "rev": "6a08e6bb4e46ff7fcbb53d409b253f6bad8a28ce",
+      "rev_count": 883951,
+      "rev_date": "2025-10-25T06:24:58Z",
+      "scrape_date": "2025-10-27T02:18:57.854536Z",
+      "stabilities": [
+        "unstable"
+      ],
+      "unfree": false,
+      "version": "11.4.8",
+      "outputs_to_install": [
+        "man",
+        "out"
+      ],
+      "outputs": {
+        "man": "/nix/store/wq0slyrwyxaiwja7yf70ir8cmsxx1bmb-mariadb-server-11.4.8-man",
+        "out": "/nix/store/b7hqlvaz0jwb26ycwmbr01g2yjpbsp81-mariadb-server-11.4.8"
+      },
+      "system": "aarch64-linux",
+      "group": "toplevel",
+      "priority": 5
+    },
+    {
+      "attr_path": "mariadb",
+      "broken": false,
+      "derivation": "/nix/store/nv77q870bhi6lzkh4j99yy0yjpbkv2rp-mariadb-server-11.4.8.drv",
+      "description": "Enhanced, drop-in replacement for MySQL",
+      "install_id": "mariadb",
+      "license": "GPL-2.0-or-later",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=6a08e6bb4e46ff7fcbb53d409b253f6bad8a28ce",
+      "name": "mariadb-server-11.4.8",
+      "pname": "mariadb",
+      "rev": "6a08e6bb4e46ff7fcbb53d409b253f6bad8a28ce",
+      "rev_count": 883951,
+      "rev_date": "2025-10-25T06:24:58Z",
+      "scrape_date": "2025-10-27T02:29:40.792392Z",
+      "stabilities": [
+        "unstable"
+      ],
+      "unfree": false,
+      "version": "11.4.8",
+      "outputs_to_install": [
+        "man",
+        "out"
+      ],
+      "outputs": {
+        "man": "/nix/store/pi2awrkr77rf8f5zn2k8n9b8hgs61m2v-mariadb-server-11.4.8-man",
+        "out": "/nix/store/0ldlsxs8z1vzvsddf20272lhsvla0z74-mariadb-server-11.4.8"
+      },
+      "system": "x86_64-darwin",
+      "group": "toplevel",
+      "priority": 5
+    },
+    {
+      "attr_path": "mariadb",
+      "broken": false,
+      "derivation": "/nix/store/06lydf4ax5sbnidhvfcarrw8vdbp58b4-mariadb-server-11.4.8.drv",
+      "description": "Enhanced, drop-in replacement for MySQL",
+      "install_id": "mariadb",
+      "license": "GPL-2.0-or-later",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=6a08e6bb4e46ff7fcbb53d409b253f6bad8a28ce",
+      "name": "mariadb-server-11.4.8",
+      "pname": "mariadb",
+      "rev": "6a08e6bb4e46ff7fcbb53d409b253f6bad8a28ce",
+      "rev_count": 883951,
+      "rev_date": "2025-10-25T06:24:58Z",
+      "scrape_date": "2025-10-27T03:01:29.664580Z",
+      "stabilities": [
+        "unstable"
+      ],
+      "unfree": false,
+      "version": "11.4.8",
+      "outputs_to_install": [
+        "man",
+        "out"
+      ],
+      "outputs": {
+        "man": "/nix/store/bj7qlb084hbr73kl5akir4z8nfhnqz54-mariadb-server-11.4.8-man",
+        "out": "/nix/store/kkw2q24ikm0bm41sk2fya04fb3qk5907-mariadb-server-11.4.8"
+      },
+      "system": "x86_64-linux",
+      "group": "toplevel",
+      "priority": 5
+    }
+  ]
+}

@@ -57,6 +57,8 @@ cd postgres-headless && PGPORT=5432 PGDATABASE=mydb flox activate -s
 
 ### Databases ⚡
 - [**postgres**](./postgres) / [**postgres-headless**](./postgres-headless) - PostgreSQL 16 with PostGIS extension
+- [**mysql**](./mysql) / [**mysql-headless**](./mysql-headless) - MySQL 8.0 database
+- [**mariadb**](./mariadb) / [**mariadb-headless**](./mariadb-headless) - MariaDB database
 - [**neo4j**](./neo4j) / [**neo4j-headless**](./neo4j-headless) - Neo4j graph database
 
 ### Data Analytics & BI
