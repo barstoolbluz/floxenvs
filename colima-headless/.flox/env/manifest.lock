@@ -1,0 +1,417 @@
+{
+  "lockfile-version": 1,
+  "manifest": {
+    "version": 1,
+    "install": {
+      "colima": {
+        "pkg-path": "colima"
+      },
+      "docker": {
+        "pkg-path": "docker-client"
+      },
+      "kubectl": {
+        "pkg-path": "kubectl"
+      }
+    },
+    "hook": {
+      "on-activate": "# ============================================================================\n# COLIMA CONFIGURATION\n# ============================================================================\n# Runtime-configurable variables with defaults\n# Override: COLIMA_CPU=4 COLIMA_MEMORY=8 flox activate\n# ============================================================================\n\nexport COLIMA_CPU=\"${COLIMA_CPU:-2}\"\nexport COLIMA_MEMORY=\"${COLIMA_MEMORY:-2}\"\nexport COLIMA_DISK=\"${COLIMA_DISK:-60}\"\nexport COLIMA_ARCH=\"${COLIMA_ARCH:-x86_64}\"\nexport COLIMA_RUNTIME=\"${COLIMA_RUNTIME:-docker}\"\nexport COLIMA_PROFILE=\"${COLIMA_PROFILE:-default}\"\nexport COLIMA_KUBERNETES=\"${COLIMA_KUBERNETES:-false}\"\n\n# Auto-detect CPU type based on KVM availability (Linux)\nif [ -z \"$COLIMA_CPU_TYPE\" ]; then\n  if [ \"$(uname)\" = \"Linux\" ] && [ -w /dev/kvm ]; then\n    export COLIMA_CPU_TYPE=\"host\"\n  else\n    export COLIMA_CPU_TYPE=\"qemu64\"\n  fi\nelse\n  export COLIMA_CPU_TYPE=\"${COLIMA_CPU_TYPE}\"\nfi\n\n# ============================================================================\n# SETUP COLIMA CONFIGURATION\n# ============================================================================\n\nsetup_colima() {\n  local config_dir=\"$HOME/.colima/$COLIMA_PROFILE\"\n  local config_file=\"$config_dir/colima.yaml\"\n\n  mkdir -p \"$config_dir\"\n\n  # Generate config if it doesn't exist\n  if [ ! -f \"$config_file\" ]; then\n    cat > \"$config_file\" << EOFCFG\ncpu: ${COLIMA_CPU}\nmemory: ${COLIMA_MEMORY}\ndisk: ${COLIMA_DISK}\narch: ${COLIMA_ARCH}\nruntime: ${COLIMA_RUNTIME}\ncpuType: \"${COLIMA_CPU_TYPE}\"\nEOFCFG\n    echo \"✅ Created Colima config: $config_file\"\n  fi\n}\n\nsetup_colima\n\n# ============================================================================\n# DISPLAY CONFIGURATION\n# ============================================================================\n\necho \"\"\necho \"🐳 Colima Container Runtime Environment\"\necho \"\"\necho \"Active Configuration:\"\necho \"  Profile:     $COLIMA_PROFILE\"\necho \"  CPU:         $COLIMA_CPU cores ($COLIMA_CPU_TYPE)\"\necho \"  Memory:      ${COLIMA_MEMORY}GB\"\necho \"  Disk:        ${COLIMA_DISK}GB\"\necho \"  Runtime:     $COLIMA_RUNTIME\"\necho \"  Kubernetes:  $COLIMA_KUBERNETES\"\necho \"\"\necho \"Runtime Override Examples:\"\necho \"  COLIMA_CPU=4 COLIMA_MEMORY=8 flox activate\"\necho \"  COLIMA_RUNTIME=containerd flox activate\"\necho \"  COLIMA_PROFILE=dev flox activate\"\necho \"  COLIMA_KUBERNETES=true flox activate\"\necho \"\"\necho \"Commands:\"\necho \"  flox activate -s      Start Colima service\"\necho \"  colima-info           Show configuration\"\necho \"  docker ps             Test Docker connection\"\necho \"\"\n"
+    },
+    "profile": {
+      "common": "export DOCKER_HOST=\"unix://$HOME/.colima/$COLIMA_PROFILE/docker.sock\"\nexport KUBECONFIG=\"$HOME/.colima/$COLIMA_PROFILE/kubeconfig\"\n",
+      "bash": "colima-info() {\n  echo \"Colima Container Runtime\"\n  echo \"\"\n  echo \"Configuration:\"\n  echo \"  Profile:     $COLIMA_PROFILE\"\n  echo \"  CPU:         $COLIMA_CPU cores ($COLIMA_CPU_TYPE)\"\n  echo \"  Memory:      ${COLIMA_MEMORY}GB\"\n  echo \"  Disk:        ${COLIMA_DISK}GB\"\n  echo \"  Runtime:     $COLIMA_RUNTIME\"\n  echo \"  Kubernetes:  $COLIMA_KUBERNETES\"\n  echo \"\"\n  echo \"Docker Socket: $DOCKER_HOST\"\n  echo \"\"\n  echo \"Service Commands:\"\n  echo \"  flox activate -s            Start Colima\"\n  echo \"  flox services status        Check status\"\n  echo \"  flox services logs colima   View logs\"\n  echo \"  colima status               Check Colima status\"\n  echo \"\"\n  echo \"Runtime Variables (override on activate):\"\n  echo \"  COLIMA_CPU         CPU cores (default: 2)\"\n  echo \"  COLIMA_MEMORY      Memory in GB (default: 2)\"\n  echo \"  COLIMA_DISK        Disk in GB (default: 60)\"\n  echo \"  COLIMA_RUNTIME     docker|containerd|incus (default: docker)\"\n  echo \"  COLIMA_PROFILE     Profile name (default: default)\"\n  echo \"  COLIMA_CPU_TYPE    CPU type (default: auto-detected)\"\n  echo \"  COLIMA_KUBERNETES  Enable Kubernetes (default: false)\"\n}\nexport -f colima-info\n",
+      "zsh": "colima-info() {\n  echo \"Colima Container Runtime\"\n  echo \"\"\n  echo \"Configuration:\"\n  echo \"  Profile:     $COLIMA_PROFILE\"\n  echo \"  CPU:         $COLIMA_CPU cores ($COLIMA_CPU_TYPE)\"\n  echo \"  Memory:      ${COLIMA_MEMORY}GB\"\n  echo \"  Disk:        ${COLIMA_DISK}GB\"\n  echo \"  Runtime:     $COLIMA_RUNTIME\"\n  echo \"  Kubernetes:  $COLIMA_KUBERNETES\"\n  echo \"\"\n  echo \"Docker Socket: $DOCKER_HOST\"\n  echo \"\"\n  echo \"Service Commands:\"\n  echo \"  flox activate -s            Start Colima\"\n  echo \"  flox services status        Check status\"\n  echo \"  flox services logs colima   View logs\"\n  echo \"  colima status               Check Colima status\"\n  echo \"\"\n  echo \"Runtime Variables (override on activate):\"\n  echo \"  COLIMA_CPU         CPU cores (default: 2)\"\n  echo \"  COLIMA_MEMORY      Memory in GB (default: 2)\"\n  echo \"  COLIMA_DISK        Disk in GB (default: 60)\"\n  echo \"  COLIMA_RUNTIME     docker|containerd|incus (default: docker)\"\n  echo \"  COLIMA_PROFILE     Profile name (default: default)\"\n  echo \"  COLIMA_CPU_TYPE    CPU type (default: auto-detected)\"\n  echo \"  COLIMA_KUBERNETES  Enable Kubernetes (default: false)\"\n}\n",
+      "fish": "function colima-info\n  echo \"Colima Container Runtime\"\n  echo \"\"\n  echo \"Configuration:\"\n  echo \"  Profile:     $COLIMA_PROFILE\"\n  echo \"  CPU:         $COLIMA_CPU cores ($COLIMA_CPU_TYPE)\"\n  echo \"  Memory:      $COLIMA_MEMORY\"GB\n  echo \"  Disk:        ${COLIMA_DISK}GB\"\n  echo \"  Runtime:     $COLIMA_RUNTIME\"\n  echo \"  Kubernetes:  $COLIMA_KUBERNETES\"\n  echo \"\"\n  echo \"Docker Socket: $DOCKER_HOST\"\n  echo \"\"\n  echo \"Service Commands:\"\n  echo \"  flox activate -s            Start Colima\"\n  echo \"  flox services status        Check status\"\n  echo \"  flox services logs colima   View logs\"\n  echo \"  colima status               Check Colima status\"\n  echo \"\"\n  echo \"Runtime Variables (override on activate):\"\n  echo \"  COLIMA_CPU         CPU cores (default: 2)\"\n  echo \"  COLIMA_MEMORY      Memory in GB (default: 2)\"\n  echo \"  COLIMA_DISK        Disk in GB (default: 60)\"\n  echo \"  COLIMA_RUNTIME     docker|containerd|incus (default: docker)\"\n  echo \"  COLIMA_PROFILE     Profile name (default: default)\"\n  echo \"  COLIMA_CPU_TYPE    CPU type (default: auto-detected)\"\n  echo \"  COLIMA_KUBERNETES  Enable Kubernetes (default: false)\"\nend\n"
+    },
+    "options": {
+      "systems": [
+        "aarch64-darwin",
+        "aarch64-linux",
+        "x86_64-darwin",
+        "x86_64-linux"
+      ]
+    },
+    "services": {
+      "colima": {
+        "command": "echo \"Starting Colima profile: $COLIMA_PROFILE\"\necho \"Configuration: ${COLIMA_CPU}CPU, ${COLIMA_MEMORY}GB RAM, ${COLIMA_DISK}GB disk\"\n\n# Start Colima with configuration from environment variables\n# --foreground keeps it running in the foreground\nCOLIMA_CMD=\"colima start\"\nCOLIMA_CMD=\"$COLIMA_CMD --cpu $COLIMA_CPU\"\nCOLIMA_CMD=\"$COLIMA_CMD --memory $COLIMA_MEMORY\"\nCOLIMA_CMD=\"$COLIMA_CMD --disk $COLIMA_DISK\"\nCOLIMA_CMD=\"$COLIMA_CMD --arch $COLIMA_ARCH\"\nCOLIMA_CMD=\"$COLIMA_CMD --runtime $COLIMA_RUNTIME\"\nCOLIMA_CMD=\"$COLIMA_CMD --cpu-type $COLIMA_CPU_TYPE\"\nCOLIMA_CMD=\"$COLIMA_CMD --profile $COLIMA_PROFILE\"\n\n# Add Kubernetes flag if enabled\nif [ \"$COLIMA_KUBERNETES\" = \"true\" ]; then\n  COLIMA_CMD=\"$COLIMA_CMD --kubernetes\"\n  echo \"Kubernetes enabled - kubeconfig will be available at ~/.colima/$COLIMA_PROFILE/kubeconfig\"\nfi\n\nCOLIMA_CMD=\"$COLIMA_CMD --foreground\"\n\neval $COLIMA_CMD\n",
+        "is-daemon": false,
+        "shutdown": {
+          "command": "colima stop --profile $COLIMA_PROFILE"
+        }
+      }
+    }
+  },
+  "packages": [
+    {
+      "attr_path": "colima",
+      "broken": false,
+      "derivation": "/nix/store/mhqpc78rhj2x4nf4vv45pf57lvpknhip-colima-0.9.1.drv",
+      "description": "Container runtimes with minimal setup",
+      "install_id": "colima",
+      "license": "MIT",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=01f116e4df6a15f4ccdffb1bcd41096869fb385c",
+      "name": "colima-0.9.1",
+      "pname": "colima",
+      "rev": "01f116e4df6a15f4ccdffb1bcd41096869fb385c",
+      "rev_count": 882227,
+      "rev_date": "2025-10-22T06:30:52Z",
+      "scrape_date": "2025-10-24T01:11:54.447830Z",
+      "stabilities": [
+        "staging",
+        "unstable"
+      ],
+      "unfree": false,
+      "version": "0.9.1",
+      "outputs_to_install": [
+        "out"
+      ],
+      "outputs": {
+        "out": "/nix/store/0mawm4qv1p14ijaaqn6srayjigl8il5c-colima-0.9.1"
+      },
+      "system": "aarch64-darwin",
+      "group": "toplevel",
+      "priority": 5
+    },
+    {
+      "attr_path": "colima",
+      "broken": false,
+      "derivation": "/nix/store/846b58jwhs1xxmp6vvyhkpk8ckpbd9nm-colima-0.9.1.drv",
+      "description": "Container runtimes with minimal setup",
+      "install_id": "colima",
+      "license": "MIT",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=01f116e4df6a15f4ccdffb1bcd41096869fb385c",
+      "name": "colima-0.9.1",
+      "pname": "colima",
+      "rev": "01f116e4df6a15f4ccdffb1bcd41096869fb385c",
+      "rev_count": 882227,
+      "rev_date": "2025-10-22T06:30:52Z",
+      "scrape_date": "2025-10-24T01:48:37.336571Z",
+      "stabilities": [
+        "staging",
+        "unstable"
+      ],
+      "unfree": false,
+      "version": "0.9.1",
+      "outputs_to_install": [
+        "out"
+      ],
+      "outputs": {
+        "out": "/nix/store/jgdxri3l0g30xk1sxgvk9zlddn6w2pdl-colima-0.9.1"
+      },
+      "system": "aarch64-linux",
+      "group": "toplevel",
+      "priority": 5
+    },
+    {
+      "attr_path": "colima",
+      "broken": false,
+      "derivation": "/nix/store/sipmkd62bazn93vv3s7bqz5ny28ia4fr-colima-0.9.1.drv",
+      "description": "Container runtimes with minimal setup",
+      "install_id": "colima",
+      "license": "MIT",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=01f116e4df6a15f4ccdffb1bcd41096869fb385c",
+      "name": "colima-0.9.1",
+      "pname": "colima",
+      "rev": "01f116e4df6a15f4ccdffb1bcd41096869fb385c",
+      "rev_count": 882227,
+      "rev_date": "2025-10-22T06:30:52Z",
+      "scrape_date": "2025-10-24T02:21:44.001714Z",
+      "stabilities": [
+        "staging",
+        "unstable"
+      ],
+      "unfree": false,
+      "version": "0.9.1",
+      "outputs_to_install": [
+        "out"
+      ],
+      "outputs": {
+        "out": "/nix/store/qhvdgrb2zzyd9pg8s1jxl7xlxp5dzw9c-colima-0.9.1"
+      },
+      "system": "x86_64-darwin",
+      "group": "toplevel",
+      "priority": 5
+    },
+    {
+      "attr_path": "colima",
+      "broken": false,
+      "derivation": "/nix/store/15yxda4llbf3r91v8bxg8pkzzcjhj731-colima-0.9.1.drv",
+      "description": "Container runtimes with minimal setup",
+      "install_id": "colima",
+      "license": "MIT",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=01f116e4df6a15f4ccdffb1bcd41096869fb385c",
+      "name": "colima-0.9.1",
+      "pname": "colima",
+      "rev": "01f116e4df6a15f4ccdffb1bcd41096869fb385c",
+      "rev_count": 882227,
+      "rev_date": "2025-10-22T06:30:52Z",
+      "scrape_date": "2025-10-24T02:58:37.168180Z",
+      "stabilities": [
+        "staging",
+        "unstable"
+      ],
+      "unfree": false,
+      "version": "0.9.1",
+      "outputs_to_install": [
+        "out"
+      ],
+      "outputs": {
+        "out": "/nix/store/wh893by0ivb5gibs1ivms21r21snpbpz-colima-0.9.1"
+      },
+      "system": "x86_64-linux",
+      "group": "toplevel",
+      "priority": 5
+    },
+    {
+      "attr_path": "docker-client",
+      "broken": false,
+      "derivation": "/nix/store/1r74r1vz42bprpfhyjmq9xh9hrvli0pb-docker-28.5.1.drv",
+      "description": "Open source project to pack, ship and run any application as a lightweight container",
+      "install_id": "docker",
+      "license": "Apache-2.0",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=01f116e4df6a15f4ccdffb1bcd41096869fb385c",
+      "name": "docker-28.5.1",
+      "pname": "docker-client",
+      "rev": "01f116e4df6a15f4ccdffb1bcd41096869fb385c",
+      "rev_count": 882227,
+      "rev_date": "2025-10-22T06:30:52Z",
+      "scrape_date": "2025-10-24T01:11:54.694593Z",
+      "stabilities": [
+        "staging",
+        "unstable"
+      ],
+      "unfree": false,
+      "version": "28.5.1",
+      "outputs_to_install": [
+        "out"
+      ],
+      "outputs": {
+        "out": "/nix/store/ydz2b40y83p4xiq6iidjfv24y39srr6k-docker-28.5.1"
+      },
+      "system": "aarch64-darwin",
+      "group": "toplevel",
+      "priority": 5
+    },
+    {
+      "attr_path": "docker-client",
+      "broken": false,
+      "derivation": "/nix/store/ays5c1pz2vyx3016r5gjjsqng090h02z-docker-28.5.1.drv",
+      "description": "Open source project to pack, ship and run any application as a lightweight container",
+      "install_id": "docker",
+      "license": "Apache-2.0",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=01f116e4df6a15f4ccdffb1bcd41096869fb385c",
+      "name": "docker-28.5.1",
+      "pname": "docker-client",
+      "rev": "01f116e4df6a15f4ccdffb1bcd41096869fb385c",
+      "rev_count": 882227,
+      "rev_date": "2025-10-22T06:30:52Z",
+      "scrape_date": "2025-10-24T01:48:37.666185Z",
+      "stabilities": [
+        "staging",
+        "unstable"
+      ],
+      "unfree": false,
+      "version": "28.5.1",
+      "outputs_to_install": [
+        "out"
+      ],
+      "outputs": {
+        "out": "/nix/store/xspixyxxl99506yigwg6s4nisgwr94j2-docker-28.5.1"
+      },
+      "system": "aarch64-linux",
+      "group": "toplevel",
+      "priority": 5
+    },
+    {
+      "attr_path": "docker-client",
+      "broken": false,
+      "derivation": "/nix/store/wa4q5xh7zj7bywsdacmv2yx69qfkfkk4-docker-28.5.1.drv",
+      "description": "Open source project to pack, ship and run any application as a lightweight container",
+      "install_id": "docker",
+      "license": "Apache-2.0",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=01f116e4df6a15f4ccdffb1bcd41096869fb385c",
+      "name": "docker-28.5.1",
+      "pname": "docker-client",
+      "rev": "01f116e4df6a15f4ccdffb1bcd41096869fb385c",
+      "rev_count": 882227,
+      "rev_date": "2025-10-22T06:30:52Z",
+      "scrape_date": "2025-10-24T02:21:44.223119Z",
+      "stabilities": [
+        "staging",
+        "unstable"
+      ],
+      "unfree": false,
+      "version": "28.5.1",
+      "outputs_to_install": [
+        "out"
+      ],
+      "outputs": {
+        "out": "/nix/store/g5slmpmm63q41vllqcqp8f37y609rpl8-docker-28.5.1"
+      },
+      "system": "x86_64-darwin",
+      "group": "toplevel",
+      "priority": 5
+    },
+    {
+      "attr_path": "docker-client",
+      "broken": false,
+      "derivation": "/nix/store/dr58ffp28w00r2hraczf6yd2j5ir3ghq-docker-28.5.1.drv",
+      "description": "Open source project to pack, ship and run any application as a lightweight container",
+      "install_id": "docker",
+      "license": "Apache-2.0",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=01f116e4df6a15f4ccdffb1bcd41096869fb385c",
+      "name": "docker-28.5.1",
+      "pname": "docker-client",
+      "rev": "01f116e4df6a15f4ccdffb1bcd41096869fb385c",
+      "rev_count": 882227,
+      "rev_date": "2025-10-22T06:30:52Z",
+      "scrape_date": "2025-10-24T02:58:37.538602Z",
+      "stabilities": [
+        "staging",
+        "unstable"
+      ],
+      "unfree": false,
+      "version": "28.5.1",
+      "outputs_to_install": [
+        "out"
+      ],
+      "outputs": {
+        "out": "/nix/store/p848mcrs0mq61vk242m2dlwyzv5s77fm-docker-28.5.1"
+      },
+      "system": "x86_64-linux",
+      "group": "toplevel",
+      "priority": 5
+    },
+    {
+      "attr_path": "kubectl",
+      "broken": false,
+      "derivation": "/nix/store/4s4iqkg19cn9d64l0vss4szckhbyddh5-kubectl-1.34.1.drv",
+      "description": "Kubernetes CLI",
+      "install_id": "kubectl",
+      "license": "Apache-2.0",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=01f116e4df6a15f4ccdffb1bcd41096869fb385c",
+      "name": "kubectl-1.34.1",
+      "pname": "kubectl",
+      "rev": "01f116e4df6a15f4ccdffb1bcd41096869fb385c",
+      "rev_count": 882227,
+      "rev_date": "2025-10-22T06:30:52Z",
+      "scrape_date": "2025-10-24T01:12:09.852212Z",
+      "stabilities": [
+        "staging",
+        "unstable"
+      ],
+      "unfree": false,
+      "version": "1.34.1",
+      "outputs_to_install": [
+        "man",
+        "out"
+      ],
+      "outputs": {
+        "convert": "/nix/store/ciffxa4czjlmjzmq4yq21l8zkjvadxsq-kubectl-1.34.1-convert",
+        "man": "/nix/store/5xfa19i31d4vhvbjihf6inqbp410fsp5-kubectl-1.34.1-man",
+        "out": "/nix/store/pv5lknr9a985cdmxy0zqg0vk0562w1js-kubectl-1.34.1"
+      },
+      "system": "aarch64-darwin",
+      "group": "toplevel",
+      "priority": 5
+    },
+    {
+      "attr_path": "kubectl",
+      "broken": false,
+      "derivation": "/nix/store/k9d0hb2s3q1npazrx10sz4bysjkic2si-kubectl-1.34.1.drv",
+      "description": "Kubernetes CLI",
+      "install_id": "kubectl",
+      "license": "Apache-2.0",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=01f116e4df6a15f4ccdffb1bcd41096869fb385c",
+      "name": "kubectl-1.34.1",
+      "pname": "kubectl",
+      "rev": "01f116e4df6a15f4ccdffb1bcd41096869fb385c",
+      "rev_count": 882227,
+      "rev_date": "2025-10-22T06:30:52Z",
+      "scrape_date": "2025-10-24T01:48:58.887941Z",
+      "stabilities": [
+        "staging",
+        "unstable"
+      ],
+      "unfree": false,
+      "version": "1.34.1",
+      "outputs_to_install": [
+        "man",
+        "out"
+      ],
+      "outputs": {
+        "convert": "/nix/store/hhdzbn767znxinwswfqab0d0bg2jpwln-kubectl-1.34.1-convert",
+        "man": "/nix/store/0s8wk88y5rnvnbgsy77x3ak02fnsq01i-kubectl-1.34.1-man",
+        "out": "/nix/store/8xfnh8k465mm5q2cnh83hqk3h4p9i9n2-kubectl-1.34.1"
+      },
+      "system": "aarch64-linux",
+      "group": "toplevel",
+      "priority": 5
+    },
+    {
+      "attr_path": "kubectl",
+      "broken": false,
+      "derivation": "/nix/store/d4x50hyr7wim6gxpc5mk3w80mq6zfrs7-kubectl-1.34.1.drv",
+      "description": "Kubernetes CLI",
+      "install_id": "kubectl",
+      "license": "Apache-2.0",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=01f116e4df6a15f4ccdffb1bcd41096869fb385c",
+      "name": "kubectl-1.34.1",
+      "pname": "kubectl",
+      "rev": "01f116e4df6a15f4ccdffb1bcd41096869fb385c",
+      "rev_count": 882227,
+      "rev_date": "2025-10-22T06:30:52Z",
+      "scrape_date": "2025-10-24T02:21:59.990715Z",
+      "stabilities": [
+        "staging",
+        "unstable"
+      ],
+      "unfree": false,
+      "version": "1.34.1",
+      "outputs_to_install": [
+        "man",
+        "out"
+      ],
+      "outputs": {
+        "convert": "/nix/store/0msa3w7f7bazgfpa2icmz7fkvcdrn4d7-kubectl-1.34.1-convert",
+        "man": "/nix/store/qf79cl59w1kga58030s9a9nvk2b3m1qc-kubectl-1.34.1-man",
+        "out": "/nix/store/80mql1xb9i7l5pb9cs5kmmgxhp351lv1-kubectl-1.34.1"
+      },
+      "system": "x86_64-darwin",
+      "group": "toplevel",
+      "priority": 5
+    },
+    {
+      "attr_path": "kubectl",
+      "broken": false,
+      "derivation": "/nix/store/gnd8gwjpf3q8mi21dydc2nzw87npbva4-kubectl-1.34.1.drv",
+      "description": "Kubernetes CLI",
+      "install_id": "kubectl",
+      "license": "Apache-2.0",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=01f116e4df6a15f4ccdffb1bcd41096869fb385c",
+      "name": "kubectl-1.34.1",
+      "pname": "kubectl",
+      "rev": "01f116e4df6a15f4ccdffb1bcd41096869fb385c",
+      "rev_count": 882227,
+      "rev_date": "2025-10-22T06:30:52Z",
+      "scrape_date": "2025-10-24T02:58:59.950309Z",
+      "stabilities": [
+        "staging",
+        "unstable"
+      ],
+      "unfree": false,
+      "version": "1.34.1",
+      "outputs_to_install": [
+        "man",
+        "out"
+      ],
+      "outputs": {
+        "convert": "/nix/store/aq74byw89ckq4hiw85gl2cq4c8h99wqi-kubectl-1.34.1-convert",
+        "man": "/nix/store/g5wlm6mrnf1pgjqapfb5r8zkh37rizgf-kubectl-1.34.1-man",
+        "out": "/nix/store/hkdsjac8x7pvq0lmazmg7qs6y8k6kayh-kubectl-1.34.1"
+      },
+      "system": "x86_64-linux",
+      "group": "toplevel",
+      "priority": 5
+    }
+  ]
+}
