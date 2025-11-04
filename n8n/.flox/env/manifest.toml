@@ -1,0 +1,606 @@
+version = 1
+
+[install]
+n8n.pkg-path = "n8n"
+gum.pkg-path = "gum"
+
+[include]
+environments = [
+  { remote = "barstoolbluz/postgres-headless" },
+  { remote = "barstoolbluz/redis-headless" },
+]
+
+[vars]
+# Base configuration paths (invariant)
+N8N_CONFIG_DIR = "$FLOX_ENV_CACHE/n8n-config"
+N8N_LOG_DIR = "$FLOX_ENV_CACHE/n8n-logs"
+N8N_DATA_DIR = "$FLOX_ENV_CACHE/n8n-data"
+
+[hook]
+on-activate = '''
+# Create required directories
+mkdir -p "$FLOX_ENV_CACHE/n8n-config"
+mkdir -p "$FLOX_ENV_CACHE/n8n-logs"
+mkdir -p "$FLOX_ENV_CACHE/n8n-data"
+
+export CONFIG_FILE="${FLOX_ENV_CACHE}/n8n.config"
+export ENCRYPTION_KEY_FILE="$FLOX_ENV_CACHE/n8n-encryption.key"
+
+# Default values
+export DEFAULT_DB_TYPE="postgresdb"
+export DEFAULT_DB_HOST="localhost"
+export DEFAULT_DB_PORT="5432"
+export DEFAULT_DB_DATABASE="n8n"
+export DEFAULT_DB_USER="postgres"
+export DEFAULT_DB_PASSWORD="postgres"
+export DEFAULT_N8N_HOST="localhost"
+export DEFAULT_N8N_PORT="5678"
+export DEFAULT_N8N_PROTOCOL="http"
+export DEFAULT_EXECUTIONS_MODE="regular"
+export DEFAULT_BASIC_AUTH="true"
+export DEFAULT_BASIC_AUTH_USER="admin"
+export DEFAULT_BASIC_AUTH_PASSWORD="admin"
+export DEFAULT_REDIS_HOST="127.0.0.1"
+export DEFAULT_REDIS_PORT="16379"
+export DEFAULT_QUEUE_WORKERS="1"
+
+# Check if first run
+check_first_run() {
+    if [[ ! -f "$CONFIG_FILE" ]]; then
+        return 0 # True, first run
+    else
+        return 1 # False, not first run
+    fi
+}
+
+# Load configuration
+load_config() {
+    if [[ -f "$CONFIG_FILE" ]]; then
+        source "$CONFIG_FILE"
+    else
+        # Set defaults
+        export DB_TYPE="$DEFAULT_DB_TYPE"
+        export DB_POSTGRESDB_HOST="$DEFAULT_DB_HOST"
+        export DB_POSTGRESDB_PORT="$DEFAULT_DB_PORT"
+        export DB_POSTGRESDB_DATABASE="$DEFAULT_DB_DATABASE"
+        export DB_POSTGRESDB_USER="$DEFAULT_DB_USER"
+        export DB_POSTGRESDB_PASSWORD="$DEFAULT_DB_PASSWORD"
+        export N8N_HOST="$DEFAULT_N8N_HOST"
+        export N8N_PORT="$DEFAULT_N8N_PORT"
+        export N8N_PROTOCOL="$DEFAULT_N8N_PROTOCOL"
+        export EXECUTIONS_MODE="$DEFAULT_EXECUTIONS_MODE"
+        export N8N_BASIC_AUTH_ACTIVE="$DEFAULT_BASIC_AUTH"
+        export N8N_BASIC_AUTH_USER="$DEFAULT_BASIC_AUTH_USER"
+        export N8N_BASIC_AUTH_PASSWORD="$DEFAULT_BASIC_AUTH_PASSWORD"
+        export QUEUE_BULL_REDIS_HOST="$DEFAULT_REDIS_HOST"
+        export QUEUE_BULL_REDIS_PORT="$DEFAULT_REDIS_PORT"
+        export QUEUE_WORKERS="$DEFAULT_QUEUE_WORKERS"
+        export WEBHOOK_URL=""
+    fi
+}
+
+# Ensure encryption key exists
+ensure_encryption_key() {
+    if [ -f "$ENCRYPTION_KEY_FILE" ]; then
+        export N8N_ENCRYPTION_KEY=$(cat "$ENCRYPTION_KEY_FILE")
+    else
+        export N8N_ENCRYPTION_KEY=$(openssl rand -hex 32)
+        echo "$N8N_ENCRYPTION_KEY" > "$ENCRYPTION_KEY_FILE"
+        chmod 600 "$ENCRYPTION_KEY_FILE"
+        echo ""
+        gum style --foreground 208 "⚠️  Encryption key generated and saved to:"
+        echo "   $ENCRYPTION_KEY_FILE"
+        echo ""
+        gum style --foreground 196 --bold "🔒 CRITICAL: Back up this file!"
+        echo "   Without it, stored credentials are unrecoverable."
+        echo ""
+    fi
+}
+
+# Save configuration
+save_config() {
+    mkdir -p "$(dirname "$CONFIG_FILE")"
+    cat > "$CONFIG_FILE" << EOF
+# n8n configuration - Generated on $(date)
+export DB_TYPE="$DB_TYPE"
+export DB_POSTGRESDB_HOST="$DB_POSTGRESDB_HOST"
+export DB_POSTGRESDB_PORT="$DB_POSTGRESDB_PORT"
+export DB_POSTGRESDB_DATABASE="$DB_POSTGRESDB_DATABASE"
+export DB_POSTGRESDB_USER="$DB_POSTGRESDB_USER"
+export DB_POSTGRESDB_PASSWORD="$DB_POSTGRESDB_PASSWORD"
+export N8N_HOST="$N8N_HOST"
+export N8N_PORT="$N8N_PORT"
+export N8N_PROTOCOL="$N8N_PROTOCOL"
+export EXECUTIONS_MODE="$EXECUTIONS_MODE"
+export N8N_BASIC_AUTH_ACTIVE="$N8N_BASIC_AUTH_ACTIVE"
+export N8N_BASIC_AUTH_USER="$N8N_BASIC_AUTH_USER"
+export N8N_BASIC_AUTH_PASSWORD="$N8N_BASIC_AUTH_PASSWORD"
+export QUEUE_BULL_REDIS_HOST="$QUEUE_BULL_REDIS_HOST"
+export QUEUE_BULL_REDIS_PORT="$QUEUE_BULL_REDIS_PORT"
+export QUEUE_WORKERS="$QUEUE_WORKERS"
+export WEBHOOK_URL="$WEBHOOK_URL"
+EOF
+    chmod 644 "$CONFIG_FILE"
+}
+
+# Prompt for configuration
+prompt_for_config() {
+    gum style --border double --padding "1 2" --border-foreground 212 "
+    🎯 n8n Configuration Wizard
+    "
+
+    echo ""
+    gum style --foreground 33 --bold "──────────────────────────────────────────"
+    gum style --foreground 33 --bold "📊 Database Configuration"
+    gum style --foreground 33 --bold "──────────────────────────────────────────"
+    echo ""
+
+    DB_TYPE=$(gum choose --header "Select database:" "PostgreSQL (recommended)" "SQLite (development only)")
+
+    if [[ "$DB_TYPE" == "PostgreSQL (recommended)" ]]; then
+        export DB_TYPE="postgresdb"
+
+        gum style --foreground 240 "PostgreSQL settings (uses composed postgres-headless):"
+        echo ""
+
+        DB_POSTGRESDB_HOST=$(gum input --placeholder "$DEFAULT_DB_HOST" --value "$DEFAULT_DB_HOST" --prompt "Host: ")
+        DB_POSTGRESDB_PORT=$(gum input --placeholder "$DEFAULT_DB_PORT" --value "$DEFAULT_DB_PORT" --prompt "Port: ")
+        DB_POSTGRESDB_DATABASE=$(gum input --placeholder "$DEFAULT_DB_DATABASE" --value "$DEFAULT_DB_DATABASE" --prompt "Database: ")
+        DB_POSTGRESDB_USER=$(gum input --placeholder "$DEFAULT_DB_USER" --value "$DEFAULT_DB_USER" --prompt "Username: ")
+        DB_POSTGRESDB_PASSWORD=$(gum input --placeholder "$DEFAULT_DB_PASSWORD" --value "$DEFAULT_DB_PASSWORD" --prompt "Password: " --password)
+
+        export DB_POSTGRESDB_HOST DB_POSTGRESDB_PORT DB_POSTGRESDB_DATABASE
+        export DB_POSTGRESDB_USER DB_POSTGRESDB_PASSWORD
+    else
+        export DB_TYPE="sqlite"
+        gum style --foreground 208 "⚠️  SQLite is NOT recommended for production"
+    fi
+
+    echo ""
+    gum style --foreground 33 --bold "──────────────────────────────────────────"
+    gum style --foreground 33 --bold "🔐 Security Configuration"
+    gum style --foreground 33 --bold "──────────────────────────────────────────"
+    echo ""
+
+    if gum confirm "Enable basic authentication?" --default=true; then
+        export N8N_BASIC_AUTH_ACTIVE="true"
+        N8N_BASIC_AUTH_USER=$(gum input --placeholder "$DEFAULT_BASIC_AUTH_USER" --value "$DEFAULT_BASIC_AUTH_USER" --prompt "Username: ")
+        N8N_BASIC_AUTH_PASSWORD=$(gum input --placeholder "$DEFAULT_BASIC_AUTH_PASSWORD" --value "$DEFAULT_BASIC_AUTH_PASSWORD" --prompt "Password: " --password)
+        export N8N_BASIC_AUTH_USER N8N_BASIC_AUTH_PASSWORD
+    else
+        export N8N_BASIC_AUTH_ACTIVE="false"
+        gum style --foreground 208 "⚠️  Authentication disabled - not recommended"
+    fi
+
+    echo ""
+    gum style --foreground 33 --bold "──────────────────────────────────────────"
+    gum style --foreground 33 --bold "📡 Webhook Configuration"
+    gum style --foreground 33 --bold "──────────────────────────────────────────"
+    echo ""
+
+    gum style --foreground 240 "Webhooks require public URLs (e.g., via ngrok)"
+    echo ""
+
+    if gum confirm "Configure webhook tunnel URL?" --default=false; then
+        WEBHOOK_URL=$(gum input --placeholder "https://xyz.ngrok.io" --prompt "Webhook URL: ")
+        export WEBHOOK_URL
+    else
+        export WEBHOOK_URL=""
+    fi
+
+    echo ""
+    gum style --foreground 33 --bold "──────────────────────────────────────────"
+    gum style --foreground 33 --bold "⚙️  Queue Mode (for scaling)"
+    gum style --foreground 33 --bold "──────────────────────────────────────────"
+    echo ""
+
+    gum style --foreground 240 "Queue mode uses Redis for distributed execution"
+    echo ""
+
+    if gum confirm "Enable queue mode?" --default=false; then
+        export EXECUTIONS_MODE="queue"
+        QUEUE_WORKERS=$(gum input --placeholder "$DEFAULT_QUEUE_WORKERS" --value "$DEFAULT_QUEUE_WORKERS" --prompt "Number of workers: ")
+        export QUEUE_WORKERS
+
+        gum style --foreground 240 "Redis settings (uses composed redis-headless):"
+        echo ""
+        QUEUE_BULL_REDIS_HOST=$(gum input --placeholder "$DEFAULT_REDIS_HOST" --value "$DEFAULT_REDIS_HOST" --prompt "Redis Host: ")
+        QUEUE_BULL_REDIS_PORT=$(gum input --placeholder "$DEFAULT_REDIS_PORT" --value "$DEFAULT_REDIS_PORT" --prompt "Redis Port: ")
+        export QUEUE_BULL_REDIS_HOST QUEUE_BULL_REDIS_PORT
+    else
+        export EXECUTIONS_MODE="regular"
+        export QUEUE_WORKERS="0"
+    fi
+
+    # n8n host/port
+    export N8N_HOST="$DEFAULT_N8N_HOST"
+    export N8N_PORT="$DEFAULT_N8N_PORT"
+    export N8N_PROTOCOL="$DEFAULT_N8N_PROTOCOL"
+}
+
+# Initialize n8n
+initialize_n8n() {
+    export N8N_USER_FOLDER="$N8N_DATA_DIR"
+
+    # n8n auto-initializes on first start
+    # Just ensure encryption key is set
+    ensure_encryption_key
+
+    # Additional env vars
+    export QUEUE_HEALTH_CHECK_ACTIVE="true"
+
+    if [ -n "$WEBHOOK_URL" ]; then
+        export WEBHOOK_TUNNEL_URL="$WEBHOOK_URL"
+    fi
+}
+
+# First run setup
+first_run_setup() {
+    gum style --border double --padding "1 2" --border-foreground 212 "
+    🚀 Welcome to n8n!
+
+    Let's configure your workflow automation environment.
+    "
+    echo ""
+
+    prompt_for_config
+
+    echo ""
+    gum style --foreground 46 "✅ Configuration complete!"
+    echo ""
+
+    save_config
+    initialize_n8n
+}
+
+# Display info
+display_n8n_info() {
+    echo ""
+    gum style --border double --padding "1 2" --border-foreground 212 "
+    ✅ n8n Environment Ready
+    "
+    echo ""
+
+    echo "Mode: $EXECUTIONS_MODE"
+    echo "Database: $DB_TYPE"
+    if [ "$DB_TYPE" = "postgresdb" ]; then
+        echo "  Host: $DB_POSTGRESDB_HOST:$DB_POSTGRESDB_PORT"
+        echo "  Database: $DB_POSTGRESDB_DATABASE"
+    fi
+    echo ""
+    echo "n8n URL: $N8N_PROTOCOL://$N8N_HOST:$N8N_PORT"
+
+    if [ "$N8N_BASIC_AUTH_ACTIVE" = "true" ]; then
+        echo "Username: $N8N_BASIC_AUTH_USER"
+        echo "Password: $N8N_BASIC_AUTH_PASSWORD"
+    else
+        echo "⚠️  Authentication: Disabled"
+    fi
+
+    if [ "$EXECUTIONS_MODE" = "queue" ]; then
+        echo ""
+        echo "Queue Mode:"
+        echo "  Workers: $QUEUE_WORKERS"
+        echo "  Redis: $QUEUE_BULL_REDIS_HOST:$QUEUE_BULL_REDIS_PORT"
+    fi
+
+    if [ -n "$WEBHOOK_URL" ]; then
+        echo ""
+        echo "Webhook URL: $WEBHOOK_URL"
+    fi
+
+    echo ""
+    echo "Commands:"
+    echo "  flox activate -s     Start n8n services"
+    echo "  n8n-info             Show configuration"
+    echo "  n8n-reconfigure      Reconfigure environment"
+    echo ""
+}
+
+# Main execution
+main() {
+    if check_first_run; then
+        first_run_setup
+    else
+        load_config
+        ensure_encryption_key
+        initialize_n8n
+    fi
+
+    display_n8n_info
+
+    cd "$FLOX_ENV_PROJECT"
+}
+
+main
+'''
+
+[services]
+n8n-main.command = '''
+exec n8n start
+'''
+
+n8n-worker.command = '''
+if [ "$EXECUTIONS_MODE" = "queue" ]; then
+    exec n8n worker
+else
+    # Not needed in regular mode
+    tail -f /dev/null
+fi
+'''
+
+[profile]
+bash = '''
+n8n-info() {
+    echo "n8n Environment Configuration"
+    echo ""
+    echo "Mode: $EXECUTIONS_MODE"
+    echo "Database: $DB_TYPE"
+    if [ "$DB_TYPE" = "postgresdb" ]; then
+        echo "  Host: $DB_POSTGRESDB_HOST:$DB_POSTGRESDB_PORT"
+        echo "  Database: $DB_POSTGRESDB_DATABASE"
+    fi
+    echo ""
+    echo "n8n URL: $N8N_PROTOCOL://$N8N_HOST:$N8N_PORT"
+
+    if [ "$N8N_BASIC_AUTH_ACTIVE" = "true" ]; then
+        echo "Username: $N8N_BASIC_AUTH_USER"
+        echo "Password: (set)"
+    else
+        echo "Authentication: Disabled"
+    fi
+
+    if [ "$EXECUTIONS_MODE" = "queue" ]; then
+        echo ""
+        echo "Queue Mode:"
+        echo "  Workers: $QUEUE_WORKERS"
+        echo "  Redis: $QUEUE_BULL_REDIS_HOST:$QUEUE_BULL_REDIS_PORT"
+    fi
+
+    if [ -n "$WEBHOOK_URL" ]; then
+        echo ""
+        echo "Webhook URL: $WEBHOOK_URL"
+    fi
+
+    echo ""
+    echo "Encryption Key: $ENCRYPTION_KEY_FILE"
+    echo ""
+    echo "Commands:"
+    echo "  flox services status         Check service status"
+    echo "  flox services logs n8n-main  View main logs"
+    echo "  n8n-reconfigure              Reconfigure environment"
+}
+export -f n8n-info
+
+n8n-reconfigure() {
+    echo "Reconfiguring n8n environment..."
+    echo ""
+
+    # Backup old config
+    if [ -f "$CONFIG_FILE" ]; then
+        cp "$CONFIG_FILE" "$CONFIG_FILE.backup"
+        echo "✅ Backed up old configuration"
+    fi
+
+    # Re-run configuration wizard
+    source "$CONFIG_FILE"
+
+    prompt_for_config() {
+        gum style --border double --padding "1 2" --border-foreground 212 "
+        🔧 Reconfigure n8n
+        "
+        echo ""
+
+        # Copy the prompt logic from hook
+        gum style --foreground 33 --bold "──────────────────────────────────────────"
+        gum style --foreground 33 --bold "📊 Database Configuration"
+        gum style --foreground 33 --bold "──────────────────────────────────────────"
+        echo ""
+
+        DB_TYPE=$(gum choose --header "Select database:" "PostgreSQL (recommended)" "SQLite (development only)")
+
+        if [[ "$DB_TYPE" == "PostgreSQL (recommended)" ]]; then
+            export DB_TYPE="postgresdb"
+
+            gum style --foreground 240 "PostgreSQL settings:"
+            echo ""
+
+            DB_POSTGRESDB_HOST=$(gum input --placeholder "$DB_POSTGRESDB_HOST" --value "$DB_POSTGRESDB_HOST" --prompt "Host: ")
+            DB_POSTGRESDB_PORT=$(gum input --placeholder "$DB_POSTGRESDB_PORT" --value "$DB_POSTGRESDB_PORT" --prompt "Port: ")
+            DB_POSTGRESDB_DATABASE=$(gum input --placeholder "$DB_POSTGRESDB_DATABASE" --value "$DB_POSTGRESDB_DATABASE" --prompt "Database: ")
+            DB_POSTGRESDB_USER=$(gum input --placeholder "$DB_POSTGRESDB_USER" --value "$DB_POSTGRESDB_USER" --prompt "Username: ")
+            DB_POSTGRESDB_PASSWORD=$(gum input --placeholder "$DB_POSTGRESDB_PASSWORD" --value "$DB_POSTGRESDB_PASSWORD" --prompt "Password: " --password)
+
+            export DB_POSTGRESDB_HOST DB_POSTGRESDB_PORT DB_POSTGRESDB_DATABASE
+            export DB_POSTGRESDB_USER DB_POSTGRESDB_PASSWORD
+        else
+            export DB_TYPE="sqlite"
+        fi
+
+        echo ""
+        gum style --foreground 33 --bold "──────────────────────────────────────────"
+        gum style --foreground 33 --bold "🔐 Security Configuration"
+        gum style --foreground 33 --bold "──────────────────────────────────────────"
+        echo ""
+
+        if gum confirm "Enable basic authentication?" --default=true; then
+            export N8N_BASIC_AUTH_ACTIVE="true"
+            N8N_BASIC_AUTH_USER=$(gum input --placeholder "$N8N_BASIC_AUTH_USER" --value "$N8N_BASIC_AUTH_USER" --prompt "Username: ")
+            N8N_BASIC_AUTH_PASSWORD=$(gum input --placeholder "••••••••" --prompt "Password: " --password)
+            export N8N_BASIC_AUTH_USER N8N_BASIC_AUTH_PASSWORD
+        else
+            export N8N_BASIC_AUTH_ACTIVE="false"
+        fi
+
+        echo ""
+        gum style --foreground 33 --bold "──────────────────────────────────────────"
+        gum style --foreground 33 --bold "📡 Webhook Configuration"
+        gum style --foreground 33 --bold "──────────────────────────────────────────"
+        echo ""
+
+        if gum confirm "Configure webhook tunnel URL?" --default=false; then
+            WEBHOOK_URL=$(gum input --placeholder "$WEBHOOK_URL" --value "$WEBHOOK_URL" --prompt "Webhook URL: ")
+            export WEBHOOK_URL
+        else
+            export WEBHOOK_URL=""
+        fi
+
+        echo ""
+        gum style --foreground 33 --bold "──────────────────────────────────────────"
+        gum style --foreground 33 --bold "⚙️  Queue Mode"
+        gum style --foreground 33 --bold "──────────────────────────────────────────"
+        echo ""
+
+        if gum confirm "Enable queue mode?" --default=false; then
+            export EXECUTIONS_MODE="queue"
+            QUEUE_WORKERS=$(gum input --placeholder "$QUEUE_WORKERS" --value "$QUEUE_WORKERS" --prompt "Number of workers: ")
+            export QUEUE_WORKERS
+
+            QUEUE_BULL_REDIS_HOST=$(gum input --placeholder "$QUEUE_BULL_REDIS_HOST" --value "$QUEUE_BULL_REDIS_HOST" --prompt "Redis Host: ")
+            QUEUE_BULL_REDIS_PORT=$(gum input --placeholder "$QUEUE_BULL_REDIS_PORT" --value "$QUEUE_BULL_REDIS_PORT" --prompt "Redis Port: ")
+            export QUEUE_BULL_REDIS_HOST QUEUE_BULL_REDIS_PORT
+        else
+            export EXECUTIONS_MODE="regular"
+            export QUEUE_WORKERS="0"
+        fi
+    }
+
+    prompt_for_config
+
+    # Save new configuration
+    save_config() {
+        mkdir -p "$(dirname "$CONFIG_FILE")"
+        cat > "$CONFIG_FILE" << EOF
+# n8n configuration - Generated on $(date)
+export DB_TYPE="$DB_TYPE"
+export DB_POSTGRESDB_HOST="$DB_POSTGRESDB_HOST"
+export DB_POSTGRESDB_PORT="$DB_POSTGRESDB_PORT"
+export DB_POSTGRESDB_DATABASE="$DB_POSTGRESDB_DATABASE"
+export DB_POSTGRESDB_USER="$DB_POSTGRESDB_USER"
+export DB_POSTGRESDB_PASSWORD="$DB_POSTGRESDB_PASSWORD"
+export N8N_HOST="$N8N_HOST"
+export N8N_PORT="$N8N_PORT"
+export N8N_PROTOCOL="$N8N_PROTOCOL"
+export EXECUTIONS_MODE="$EXECUTIONS_MODE"
+export N8N_BASIC_AUTH_ACTIVE="$N8N_BASIC_AUTH_ACTIVE"
+export N8N_BASIC_AUTH_USER="$N8N_BASIC_AUTH_USER"
+export N8N_BASIC_AUTH_PASSWORD="$N8N_BASIC_AUTH_PASSWORD"
+export QUEUE_BULL_REDIS_HOST="$QUEUE_BULL_REDIS_HOST"
+export QUEUE_BULL_REDIS_PORT="$QUEUE_BULL_REDIS_PORT"
+export QUEUE_WORKERS="$QUEUE_WORKERS"
+export WEBHOOK_URL="$WEBHOOK_URL"
+EOF
+        chmod 644 "$CONFIG_FILE"
+    }
+
+    save_config
+
+    echo ""
+    gum style --foreground 46 "✅ Configuration saved!"
+    echo ""
+    echo "Restart services to apply changes:"
+    echo "  flox services restart"
+}
+export -f n8n-reconfigure
+'''
+
+zsh = '''
+n8n-info() {
+    echo "n8n Environment Configuration"
+    echo ""
+    echo "Mode: $EXECUTIONS_MODE"
+    echo "Database: $DB_TYPE"
+    if [ "$DB_TYPE" = "postgresdb" ]; then
+        echo "  Host: $DB_POSTGRESDB_HOST:$DB_POSTGRESDB_PORT"
+        echo "  Database: $DB_POSTGRESDB_DATABASE"
+    fi
+    echo ""
+    echo "n8n URL: $N8N_PROTOCOL://$N8N_HOST:$N8N_PORT"
+
+    if [ "$N8N_BASIC_AUTH_ACTIVE" = "true" ]; then
+        echo "Username: $N8N_BASIC_AUTH_USER"
+        echo "Password: (set)"
+    else
+        echo "Authentication: Disabled"
+    fi
+
+    if [ "$EXECUTIONS_MODE" = "queue" ]; then
+        echo ""
+        echo "Queue Mode:"
+        echo "  Workers: $QUEUE_WORKERS"
+        echo "  Redis: $QUEUE_BULL_REDIS_HOST:$QUEUE_BULL_REDIS_PORT"
+    fi
+
+    if [ -n "$WEBHOOK_URL" ]; then
+        echo ""
+        echo "Webhook URL: $WEBHOOK_URL"
+    fi
+
+    echo ""
+    echo "Encryption Key: $ENCRYPTION_KEY_FILE"
+    echo ""
+    echo "Commands:"
+    echo "  flox services status         Check service status"
+    echo "  flox services logs n8n-main  View main logs"
+    echo "  n8n-reconfigure              Reconfigure environment"
+}
+
+n8n-reconfigure() {
+    echo "Use bash shell for reconfiguration:"
+    echo "  bash -c 'n8n-reconfigure'"
+}
+'''
+
+fish = '''
+function n8n-info
+    echo "n8n Environment Configuration"
+    echo ""
+    echo "Mode: $EXECUTIONS_MODE"
+    echo "Database: $DB_TYPE"
+    if test "$DB_TYPE" = "postgresdb"
+        echo "  Host: $DB_POSTGRESDB_HOST:$DB_POSTGRESDB_PORT"
+        echo "  Database: $DB_POSTGRESDB_DATABASE"
+    end
+    echo ""
+    echo "n8n URL: $N8N_PROTOCOL://$N8N_HOST:$N8N_PORT"
+
+    if test "$N8N_BASIC_AUTH_ACTIVE" = "true"
+        echo "Username: $N8N_BASIC_AUTH_USER"
+        echo "Password: (set)"
+    else
+        echo "Authentication: Disabled"
+    end
+
+    if test "$EXECUTIONS_MODE" = "queue"
+        echo ""
+        echo "Queue Mode:"
+        echo "  Workers: $QUEUE_WORKERS"
+        echo "  Redis: $QUEUE_BULL_REDIS_HOST:$QUEUE_BULL_REDIS_PORT"
+    end
+
+    if test -n "$WEBHOOK_URL"
+        echo ""
+        echo "Webhook URL: $WEBHOOK_URL"
+    end
+
+    echo ""
+    echo "Encryption Key: $ENCRYPTION_KEY_FILE"
+    echo ""
+    echo "Commands:"
+    echo "  flox services status         Check service status"
+    echo "  flox services logs n8n-main  View main logs"
+end
+
+function n8n-reconfigure
+    echo "Use bash shell for reconfiguration:"
+    echo "  bash -c 'n8n-reconfigure'"
+end
+'''
+
+[options]
+systems = [
+  "aarch64-darwin",
+  "aarch64-linux",
+  "x86_64-darwin",
+  "x86_64-linux",
+]

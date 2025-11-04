@@ -27,6 +27,9 @@
       },
       "kubectl": {
         "pkg-path": "kubectl"
+      },
+      "n8n": {
+        "pkg-path": "n8n"
       }
     },
     "vars": {
@@ -196,7 +199,7 @@
       "rev": "4be998207d41bdfb9dcea1c4107f5891a08b7c85",
       "rev_count": 9,
       "rev_date": "2025-11-04T02:16:53Z",
-      "scrape_date": "2025-11-04T17:24:38.970938253Z",
+      "scrape_date": "2025-11-04T19:03:02.157643719Z",
       "stabilities": [
         "unstable"
       ],
@@ -844,6 +847,122 @@
       "system": "x86_64-linux",
       "group": "toplevel",
       "priority": 5
+    },
+    {
+      "attr_path": "n8n",
+      "broken": false,
+      "derivation": "/nix/store/ji81ss453i1n99ga9z76bbjvzqdi4j2l-n8n-1.115.3.drv",
+      "description": "Free and source-available fair-code licensed workflow automation tool",
+      "install_id": "n8n",
+      "license": "SUL-1.0",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=6a08e6bb4e46ff7fcbb53d409b253f6bad8a28ce",
+      "name": "n8n-1.115.3",
+      "pname": "n8n",
+      "rev": "6a08e6bb4e46ff7fcbb53d409b253f6bad8a28ce",
+      "rev_count": 883951,
+      "rev_date": "2025-10-25T06:24:58Z",
+      "scrape_date": "2025-10-27T02:08:36.207521Z",
+      "stabilities": [
+        "unstable"
+      ],
+      "unfree": true,
+      "version": "1.115.3",
+      "outputs_to_install": [
+        "out"
+      ],
+      "outputs": {
+        "out": "/nix/store/782sab57knxc7gz51hzzibh495gk4vc3-n8n-1.115.3"
+      },
+      "system": "aarch64-darwin",
+      "group": "toplevel",
+      "priority": 5
+    },
+    {
+      "attr_path": "n8n",
+      "broken": false,
+      "derivation": "/nix/store/bgd4x7vbpwq917n4cl42naxagzfc74aj-n8n-1.115.3.drv",
+      "description": "Free and source-available fair-code licensed workflow automation tool",
+      "install_id": "n8n",
+      "license": "SUL-1.0",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=6a08e6bb4e46ff7fcbb53d409b253f6bad8a28ce",
+      "name": "n8n-1.115.3",
+      "pname": "n8n",
+      "rev": "6a08e6bb4e46ff7fcbb53d409b253f6bad8a28ce",
+      "rev_count": 883951,
+      "rev_date": "2025-10-25T06:24:58Z",
+      "scrape_date": "2025-10-27T02:19:00.114086Z",
+      "stabilities": [
+        "unstable"
+      ],
+      "unfree": true,
+      "version": "1.115.3",
+      "outputs_to_install": [
+        "out"
+      ],
+      "outputs": {
+        "out": "/nix/store/33pmwlsdvd2h7dz2x5f4wmh2yk540gxb-n8n-1.115.3"
+      },
+      "system": "aarch64-linux",
+      "group": "toplevel",
+      "priority": 5
+    },
+    {
+      "attr_path": "n8n",
+      "broken": false,
+      "derivation": "/nix/store/wwp4423kzy106fnin3rrlmnxdnlrvf3x-n8n-1.115.3.drv",
+      "description": "Free and source-available fair-code licensed workflow automation tool",
+      "install_id": "n8n",
+      "license": "SUL-1.0",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=6a08e6bb4e46ff7fcbb53d409b253f6bad8a28ce",
+      "name": "n8n-1.115.3",
+      "pname": "n8n",
+      "rev": "6a08e6bb4e46ff7fcbb53d409b253f6bad8a28ce",
+      "rev_count": 883951,
+      "rev_date": "2025-10-25T06:24:58Z",
+      "scrape_date": "2025-10-27T02:29:42.004848Z",
+      "stabilities": [
+        "unstable"
+      ],
+      "unfree": true,
+      "version": "1.115.3",
+      "outputs_to_install": [
+        "out"
+      ],
+      "outputs": {
+        "out": "/nix/store/9j51rbk7095id8zvxawphqh9dzk9m5sy-n8n-1.115.3"
+      },
+      "system": "x86_64-darwin",
+      "group": "toplevel",
+      "priority": 5
+    },
+    {
+      "attr_path": "n8n",
+      "broken": false,
+      "derivation": "/nix/store/giv6i59qmf1vkbzc2zg8qm59fd5xkg5k-n8n-1.115.3.drv",
+      "description": "Free and source-available fair-code licensed workflow automation tool",
+      "install_id": "n8n",
+      "license": "SUL-1.0",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=6a08e6bb4e46ff7fcbb53d409b253f6bad8a28ce",
+      "name": "n8n-1.115.3",
+      "pname": "n8n",
+      "rev": "6a08e6bb4e46ff7fcbb53d409b253f6bad8a28ce",
+      "rev_count": 883951,
+      "rev_date": "2025-10-25T06:24:58Z",
+      "scrape_date": "2025-10-27T03:01:32.257798Z",
+      "stabilities": [
+        "unstable"
+      ],
+      "unfree": true,
+      "version": "1.115.3",
+      "outputs_to_install": [
+        "out"
+      ],
+      "outputs": {
+        "out": "/nix/store/kdhj8awph9177r9gjmaszk26y90awmq6-n8n-1.115.3"
+      },
+      "system": "x86_64-linux",
+      "group": "toplevel",
+      "priority": 5
     }
   ],
   "compose": {
@@ -858,6 +977,9 @@
         },
         "kubectl": {
           "pkg-path": "kubectl"
+        },
+        "n8n": {
+          "pkg-path": "n8n"
         }
       },
       "vars": {

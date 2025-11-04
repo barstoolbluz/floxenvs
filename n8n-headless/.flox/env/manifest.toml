@@ -1,0 +1,413 @@
+version = 1
+
+[install]
+n8n.pkg-path = "n8n"
+
+[include]
+environments = [
+  { remote = "barstoolbluz/postgres-headless" },
+  { remote = "barstoolbluz/redis-headless" },
+]
+
+[vars]
+# Base configuration paths (invariant)
+N8N_CONFIG_DIR = "$FLOX_ENV_CACHE/n8n-config"
+N8N_LOG_DIR = "$FLOX_ENV_CACHE/n8n-logs"
+N8N_DATA_DIR = "$FLOX_ENV_CACHE/n8n-data"
+
+[hook]
+on-activate = '''
+# Create required directories
+mkdir -p "$FLOX_ENV_CACHE/n8n-config"
+mkdir -p "$FLOX_ENV_CACHE/n8n-logs"
+mkdir -p "$FLOX_ENV_CACHE/n8n-data"
+
+# === DATABASE CONFIGURATION ===
+export DB_TYPE="${DB_TYPE:-postgresdb}"
+
+# PostgreSQL settings
+export DB_POSTGRESDB_HOST="${DB_POSTGRESDB_HOST:-localhost}"
+export DB_POSTGRESDB_PORT="${DB_POSTGRESDB_PORT:-5432}"
+export DB_POSTGRESDB_DATABASE="${DB_POSTGRESDB_DATABASE:-n8n}"
+export DB_POSTGRESDB_USER="${DB_POSTGRESDB_USER:-postgres}"
+export DB_POSTGRESDB_PASSWORD="${DB_POSTGRESDB_PASSWORD:-postgres}"
+export DB_POSTGRESDB_SCHEMA="${DB_POSTGRESDB_SCHEMA:-public}"
+
+# Database pool settings
+export DB_POSTGRESDB_POOL_SIZE="${DB_POSTGRESDB_POOL_SIZE:-2}"
+export DB_POSTGRESDB_SSL_ENABLED="${DB_POSTGRESDB_SSL_ENABLED:-false}"
+export DB_POSTGRESDB_SSL_REJECT_UNAUTHORIZED="${DB_POSTGRESDB_SSL_REJECT_UNAUTHORIZED:-true}"
+
+# === EXECUTION MODE ===
+export EXECUTIONS_MODE="${EXECUTIONS_MODE:-regular}"
+
+# === QUEUE MODE (Redis) ===
+export QUEUE_BULL_REDIS_HOST="${QUEUE_BULL_REDIS_HOST:-127.0.0.1}"
+export QUEUE_BULL_REDIS_PORT="${QUEUE_BULL_REDIS_PORT:-16379}"
+export QUEUE_BULL_REDIS_DB="${QUEUE_BULL_REDIS_DB:-0}"
+export QUEUE_BULL_REDIS_PASSWORD="${QUEUE_BULL_REDIS_PASSWORD:-}"
+export QUEUE_BULL_REDIS_TIMEOUT_THRESHOLD="${QUEUE_BULL_REDIS_TIMEOUT_THRESHOLD:-10000}"
+export QUEUE_HEALTH_CHECK_ACTIVE="${QUEUE_HEALTH_CHECK_ACTIVE:-true}"
+
+# Worker concurrency (per worker)
+export EXECUTIONS_WORKER_CONCURRENCY="${EXECUTIONS_WORKER_CONCURRENCY:-10}"
+
+# === n8n SERVER CONFIGURATION ===
+export N8N_HOST="${N8N_HOST:-localhost}"
+export N8N_PORT="${N8N_PORT:-5678}"
+export N8N_PROTOCOL="${N8N_PROTOCOL:-http}"
+export N8N_LISTEN_ADDRESS="${N8N_LISTEN_ADDRESS:-0.0.0.0}"
+
+# === AUTHENTICATION ===
+export N8N_BASIC_AUTH_ACTIVE="${N8N_BASIC_AUTH_ACTIVE:-true}"
+export N8N_BASIC_AUTH_USER="${N8N_BASIC_AUTH_USER:-admin}"
+export N8N_BASIC_AUTH_PASSWORD="${N8N_BASIC_AUTH_PASSWORD:-admin}"
+
+# === ENCRYPTION (CRITICAL) ===
+ensure_encryption_key() {
+    local KEY_FILE="$FLOX_ENV_CACHE/n8n-encryption.key"
+
+    if [ -f "$KEY_FILE" ]; then
+        export N8N_ENCRYPTION_KEY=$(cat "$KEY_FILE")
+    else
+        export N8N_ENCRYPTION_KEY=$(openssl rand -hex 32)
+        echo "$N8N_ENCRYPTION_KEY" > "$KEY_FILE"
+        chmod 600 "$KEY_FILE"
+        echo "⚠️  Encryption key generated and saved to: $KEY_FILE"
+        echo "🔒 CRITICAL: Back up this file - credentials unrecoverable without it!"
+    fi
+}
+
+# Allow user to override via env var
+if [ -n "$N8N_ENCRYPTION_KEY" ]; then
+    export N8N_ENCRYPTION_KEY
+else
+    ensure_encryption_key
+fi
+
+# === WEBHOOKS ===
+export WEBHOOK_URL="${WEBHOOK_URL:-}"
+export WEBHOOK_TUNNEL_URL="${WEBHOOK_TUNNEL_URL:-}"
+
+# === PATHS ===
+export N8N_USER_FOLDER="${N8N_USER_FOLDER:-$N8N_DATA_DIR}"
+export N8N_CUSTOM_EXTENSIONS="${N8N_CUSTOM_EXTENSIONS:-}"
+
+# === EXECUTION SETTINGS ===
+export EXECUTIONS_DATA_SAVE_ON_ERROR="${EXECUTIONS_DATA_SAVE_ON_ERROR:-all}"
+export EXECUTIONS_DATA_SAVE_ON_SUCCESS="${EXECUTIONS_DATA_SAVE_ON_SUCCESS:-all}"
+export EXECUTIONS_DATA_SAVE_ON_PROGRESS="${EXECUTIONS_DATA_SAVE_ON_PROGRESS:-false}"
+export EXECUTIONS_DATA_SAVE_MANUAL_EXECUTIONS="${EXECUTIONS_DATA_SAVE_MANUAL_EXECUTIONS:-true}"
+export EXECUTIONS_DATA_PRUNE="${EXECUTIONS_DATA_PRUNE:-true}"
+export EXECUTIONS_DATA_MAX_AGE="${EXECUTIONS_DATA_MAX_AGE:-336}"
+export EXECUTIONS_DATA_PRUNE_MAX_COUNT="${EXECUTIONS_DATA_PRUNE_MAX_COUNT:-10000}"
+
+# === WORKFLOW SETTINGS ===
+export WORKFLOWS_DEFAULT_NAME="${WORKFLOWS_DEFAULT_NAME:-My Workflow}"
+export WORKFLOW_CALLER_POLICY_DEFAULT_OPTION="${WORKFLOW_CALLER_POLICY_DEFAULT_OPTION:-workflowsFromSameOwner}"
+
+# === TIMEOUT SETTINGS ===
+export EXECUTIONS_TIMEOUT="${EXECUTIONS_TIMEOUT:-}"
+export EXECUTIONS_TIMEOUT_MAX="${EXECUTIONS_TIMEOUT_MAX:-3600}"
+
+# === LOGGING ===
+export N8N_LOG_LEVEL="${N8N_LOG_LEVEL:-info}"
+export N8N_LOG_OUTPUT="${N8N_LOG_OUTPUT:-console}"
+export N8N_LOG_FILE_LOCATION="${N8N_LOG_FILE_LOCATION:-$N8N_LOG_DIR/n8n.log}"
+
+# === EDITOR ===
+export N8N_EDITOR_BASE_URL="${N8N_EDITOR_BASE_URL:-}"
+export N8N_DISABLE_UI="${N8N_DISABLE_UI:-false}"
+
+# === SECURITY ===
+export N8N_SECURE_COOKIE="${N8N_SECURE_COOKIE:-}"
+export N8N_PERSONALIZATION_ENABLED="${N8N_PERSONALIZATION_ENABLED:-true}"
+export N8N_VERSION_NOTIFICATIONS_ENABLED="${N8N_VERSION_NOTIFICATIONS_ENABLED:-true}"
+export N8N_DIAGNOSTICS_ENABLED="${N8N_DIAGNOSTICS_ENABLED:-true}"
+export N8N_HIRING_BANNER_ENABLED="${N8N_HIRING_BANNER_ENABLED:-true}"
+
+# === SMTP (for notifications) ===
+export N8N_SMTP_HOST="${N8N_SMTP_HOST:-}"
+export N8N_SMTP_PORT="${N8N_SMTP_PORT:-465}"
+export N8N_SMTP_USER="${N8N_SMTP_USER:-}"
+export N8N_SMTP_PASS="${N8N_SMTP_PASS:-}"
+export N8N_SMTP_SENDER="${N8N_SMTP_SENDER:-}"
+export N8N_SMTP_SSL="${N8N_SMTP_SSL:-true}"
+
+# === NODES ===
+export NODES_EXCLUDE="${NODES_EXCLUDE:-}"
+export NODES_INCLUDE="${NODES_INCLUDE:-}"
+export NODE_FUNCTION_ALLOW_BUILTIN="${NODE_FUNCTION_ALLOW_BUILTIN:-}"
+export NODE_FUNCTION_ALLOW_EXTERNAL="${NODE_FUNCTION_ALLOW_EXTERNAL:-}"
+
+# === TIMEZONE ===
+export GENERIC_TIMEZONE="${GENERIC_TIMEZONE:-America/New_York}"
+export TZ="${TZ:-$GENERIC_TIMEZONE}"
+
+# Safety warnings
+if [ "$N8N_BASIC_AUTH_ACTIVE" = "false" ]; then
+    echo "⚠️  WARNING: Basic authentication disabled"
+fi
+
+if [ -z "$QUEUE_BULL_REDIS_PASSWORD" ] && [ "$EXECUTIONS_MODE" = "queue" ]; then
+    echo "⚠️  WARNING: Redis password not set"
+fi
+
+# Display info
+echo ""
+echo "✅ n8n environment ready (headless mode)"
+echo ""
+echo "Mode: $EXECUTIONS_MODE"
+echo "Database: $DB_TYPE ($DB_POSTGRESDB_HOST:$DB_POSTGRESDB_PORT/$DB_POSTGRESDB_DATABASE)"
+echo "n8n URL: $N8N_PROTOCOL://$N8N_HOST:$N8N_PORT"
+
+if [ "$N8N_BASIC_AUTH_ACTIVE" = "true" ]; then
+    echo "Username: $N8N_BASIC_AUTH_USER"
+    echo "Password: (set)"
+else
+    echo "⚠️  Authentication: Disabled"
+fi
+
+if [ "$EXECUTIONS_MODE" = "queue" ]; then
+    echo ""
+    echo "Queue Mode: Enabled"
+    echo "Redis: $QUEUE_BULL_REDIS_HOST:$QUEUE_BULL_REDIS_PORT"
+    echo "Workers: 4 (pre-configured)"
+fi
+
+if [ -n "$WEBHOOK_URL" ]; then
+    echo "Webhook URL: $WEBHOOK_URL"
+elif [ -n "$WEBHOOK_TUNNEL_URL" ]; then
+    echo "Webhook Tunnel: $WEBHOOK_TUNNEL_URL"
+fi
+
+echo ""
+echo "Commands:"
+echo "  flox activate -s     Start n8n services"
+echo "  n8n-info             Show configuration"
+echo ""
+'''
+
+[services]
+n8n-main.command = '''
+exec n8n start
+'''
+
+n8n-worker-1.command = '''
+if [ "$EXECUTIONS_MODE" = "queue" ]; then
+    exec n8n worker --concurrency="$EXECUTIONS_WORKER_CONCURRENCY"
+else
+    tail -f /dev/null
+fi
+'''
+
+n8n-worker-2.command = '''
+if [ "$EXECUTIONS_MODE" = "queue" ]; then
+    exec n8n worker --concurrency="$EXECUTIONS_WORKER_CONCURRENCY"
+else
+    tail -f /dev/null
+fi
+'''
+
+n8n-worker-3.command = '''
+if [ "$EXECUTIONS_MODE" = "queue" ]; then
+    exec n8n worker --concurrency="$EXECUTIONS_WORKER_CONCURRENCY"
+else
+    tail -f /dev/null
+fi
+'''
+
+n8n-worker-4.command = '''
+if [ "$EXECUTIONS_MODE" = "queue" ]; then
+    exec n8n worker --concurrency="$EXECUTIONS_WORKER_CONCURRENCY"
+else
+    tail -f /dev/null
+fi
+'''
+
+[profile]
+bash = '''
+n8n-info() {
+    echo "n8n Headless Environment Configuration"
+    echo ""
+    echo "Mode: $EXECUTIONS_MODE"
+    echo "Database: $DB_TYPE"
+    echo "  Host: $DB_POSTGRESDB_HOST:$DB_POSTGRESDB_PORT"
+    echo "  Database: $DB_POSTGRESDB_DATABASE"
+    echo "  Schema: $DB_POSTGRESDB_SCHEMA"
+    echo ""
+    echo "n8n URL: $N8N_PROTOCOL://$N8N_HOST:$N8N_PORT"
+    echo "Listen Address: $N8N_LISTEN_ADDRESS"
+    echo ""
+
+    if [ "$N8N_BASIC_AUTH_ACTIVE" = "true" ]; then
+        echo "Authentication: Enabled"
+        echo "  Username: $N8N_BASIC_AUTH_USER"
+        echo "  Password: (set)"
+    else
+        echo "⚠️  Authentication: Disabled"
+    fi
+
+    echo ""
+    if [ "$EXECUTIONS_MODE" = "queue" ]; then
+        echo "Queue Mode: Enabled"
+        echo "  Redis: $QUEUE_BULL_REDIS_HOST:$QUEUE_BULL_REDIS_PORT"
+        echo "  DB: $QUEUE_BULL_REDIS_DB"
+        echo "  Workers: 4 (pre-configured)"
+        echo "  Concurrency per worker: $EXECUTIONS_WORKER_CONCURRENCY"
+    else
+        echo "Queue Mode: Disabled (regular mode)"
+    fi
+
+    echo ""
+    echo "Paths:"
+    echo "  User Folder: $N8N_USER_FOLDER"
+    echo "  Logs: $N8N_LOG_DIR"
+    echo "  Encryption Key: $FLOX_ENV_CACHE/n8n-encryption.key"
+
+    if [ -n "$WEBHOOK_URL" ]; then
+        echo ""
+        echo "Webhook URL: $WEBHOOK_URL"
+    elif [ -n "$WEBHOOK_TUNNEL_URL" ]; then
+        echo ""
+        echo "Webhook Tunnel: $WEBHOOK_TUNNEL_URL"
+    fi
+
+    echo ""
+    echo "Execution Settings:"
+    echo "  Data Prune: $EXECUTIONS_DATA_PRUNE"
+    echo "  Max Age: $EXECUTIONS_DATA_MAX_AGE hours"
+    echo "  Max Count: $EXECUTIONS_DATA_PRUNE_MAX_COUNT"
+
+    echo ""
+    echo "Commands:"
+    echo "  flox services status            Check service status"
+    echo "  flox services logs n8n-main     View main process logs"
+    echo "  flox services logs n8n-worker-1 View worker logs"
+    echo "  flox services restart           Restart all services"
+    echo ""
+    echo "Configuration via Environment Variables:"
+    echo "  EXECUTIONS_MODE=queue flox activate -s     Enable queue mode"
+    echo "  N8N_BASIC_AUTH_ACTIVE=false flox activate  Disable auth"
+    echo "  DB_POSTGRESDB_HOST=... flox activate       Custom DB host"
+}
+export -f n8n-info
+'''
+
+zsh = '''
+n8n-info() {
+    echo "n8n Headless Environment Configuration"
+    echo ""
+    echo "Mode: $EXECUTIONS_MODE"
+    echo "Database: $DB_TYPE"
+    echo "  Host: $DB_POSTGRESDB_HOST:$DB_POSTGRESDB_PORT"
+    echo "  Database: $DB_POSTGRESDB_DATABASE"
+    echo "  Schema: $DB_POSTGRESDB_SCHEMA"
+    echo ""
+    echo "n8n URL: $N8N_PROTOCOL://$N8N_HOST:$N8N_PORT"
+    echo "Listen Address: $N8N_LISTEN_ADDRESS"
+    echo ""
+
+    if [ "$N8N_BASIC_AUTH_ACTIVE" = "true" ]; then
+        echo "Authentication: Enabled"
+        echo "  Username: $N8N_BASIC_AUTH_USER"
+        echo "  Password: (set)"
+    else
+        echo "⚠️  Authentication: Disabled"
+    fi
+
+    echo ""
+    if [ "$EXECUTIONS_MODE" = "queue" ]; then
+        echo "Queue Mode: Enabled"
+        echo "  Redis: $QUEUE_BULL_REDIS_HOST:$QUEUE_BULL_REDIS_PORT"
+        echo "  DB: $QUEUE_BULL_REDIS_DB"
+        echo "  Workers: 4 (pre-configured)"
+        echo "  Concurrency per worker: $EXECUTIONS_WORKER_CONCURRENCY"
+    else
+        echo "Queue Mode: Disabled (regular mode)"
+    fi
+
+    echo ""
+    echo "Paths:"
+    echo "  User Folder: $N8N_USER_FOLDER"
+    echo "  Logs: $N8N_LOG_DIR"
+    echo "  Encryption Key: $FLOX_ENV_CACHE/n8n-encryption.key"
+
+    if [ -n "$WEBHOOK_URL" ]; then
+        echo ""
+        echo "Webhook URL: $WEBHOOK_URL"
+    elif [ -n "$WEBHOOK_TUNNEL_URL" ]; then
+        echo ""
+        echo "Webhook Tunnel: $WEBHOOK_TUNNEL_URL"
+    fi
+
+    echo ""
+    echo "Commands:"
+    echo "  flox services status            Check service status"
+    echo "  flox services logs n8n-main     View main process logs"
+    echo "  flox services logs n8n-worker-1 View worker logs"
+}
+'''
+
+fish = '''
+function n8n-info
+    echo "n8n Headless Environment Configuration"
+    echo ""
+    echo "Mode: $EXECUTIONS_MODE"
+    echo "Database: $DB_TYPE"
+    echo "  Host: $DB_POSTGRESDB_HOST:$DB_POSTGRESDB_PORT"
+    echo "  Database: $DB_POSTGRESDB_DATABASE"
+    echo "  Schema: $DB_POSTGRESDB_SCHEMA"
+    echo ""
+    echo "n8n URL: $N8N_PROTOCOL://$N8N_HOST:$N8N_PORT"
+    echo "Listen Address: $N8N_LISTEN_ADDRESS"
+    echo ""
+
+    if test "$N8N_BASIC_AUTH_ACTIVE" = "true"
+        echo "Authentication: Enabled"
+        echo "  Username: $N8N_BASIC_AUTH_USER"
+        echo "  Password: (set)"
+    else
+        echo "⚠️  Authentication: Disabled"
+    end
+
+    echo ""
+    if test "$EXECUTIONS_MODE" = "queue"
+        echo "Queue Mode: Enabled"
+        echo "  Redis: $QUEUE_BULL_REDIS_HOST:$QUEUE_BULL_REDIS_PORT"
+        echo "  DB: $QUEUE_BULL_REDIS_DB"
+        echo "  Workers: 4 (pre-configured)"
+        echo "  Concurrency per worker: $EXECUTIONS_WORKER_CONCURRENCY"
+    else
+        echo "Queue Mode: Disabled (regular mode)"
+    end
+
+    echo ""
+    echo "Paths:"
+    echo "  User Folder: $N8N_USER_FOLDER"
+    echo "  Logs: $N8N_LOG_DIR"
+    echo "  Encryption Key: $FLOX_ENV_CACHE/n8n-encryption.key"
+
+    if test -n "$WEBHOOK_URL"
+        echo ""
+        echo "Webhook URL: $WEBHOOK_URL"
+    else if test -n "$WEBHOOK_TUNNEL_URL"
+        echo ""
+        echo "Webhook Tunnel: $WEBHOOK_TUNNEL_URL"
+    end
+
+    echo ""
+    echo "Commands:"
+    echo "  flox services status            Check service status"
+    echo "  flox services logs n8n-main     View main process logs"
+    echo "  flox services logs n8n-worker-1 View worker logs"
+end
+'''
+
+[options]
+systems = [
+  "aarch64-darwin",
+  "aarch64-linux",
+  "x86_64-darwin",
+  "x86_64-linux",
+]
