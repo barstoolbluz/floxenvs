@@ -1,0 +1,424 @@
+version = 1
+
+[install]
+# Airflow with kubernetes provider for testing
+airflow.pkg-path = "barstoolbluz/airflow-full-3-1-1"
+airflow.systems = ["x86_64-linux"]
+
+# Kubernetes tools
+kubectl.pkg-path = "kubectl"
+
+[include]
+environments = [
+  { remote = "barstoolbluz/kind-headless" },
+]
+
+[vars]
+# Base configuration paths (invariant)
+AIRFLOW_KUBE_CONFIG_DIR = "$FLOX_ENV_CACHE/k8s-config"
+AIRFLOW_KUBE_TEMPLATES_DIR = "$FLOX_ENV_CACHE/k8s-templates"
+AIRFLOW_KUBE_LOG_DIR = "$FLOX_ENV_CACHE/k8s-logs"
+
+[hook]
+on-activate = '''
+# Create required directories
+mkdir -p "$FLOX_ENV_CACHE/k8s-config"
+mkdir -p "$FLOX_ENV_CACHE/k8s-templates"
+mkdir -p "$FLOX_ENV_CACHE/k8s-logs"
+
+# === KUBERNETES CONNECTION ===
+export AIRFLOW_KUBE_NAMESPACE="${AIRFLOW_KUBE_NAMESPACE:-default}"
+export AIRFLOW_KUBE_CONFIG="${AIRFLOW_KUBE_CONFIG:-$KIND_KUBECONFIG}"
+export AIRFLOW_KUBE_IN_CLUSTER="${AIRFLOW_KUBE_IN_CLUSTER:-False}"
+
+# === POD CONFIGURATION ===
+export AIRFLOW_KUBE_IMAGE_PULL_POLICY="${AIRFLOW_KUBE_IMAGE_PULL_POLICY:-IfNotPresent}"
+export AIRFLOW_KUBE_DELETE_WORKER_PODS="${AIRFLOW_KUBE_DELETE_WORKER_PODS:-True}"
+export AIRFLOW_KUBE_DELETE_WORKER_PODS_ON_FAILURE="${AIRFLOW_KUBE_DELETE_WORKER_PODS_ON_FAILURE:-False}"
+export AIRFLOW_KUBE_WORKER_SERVICE_ACCOUNT="${AIRFLOW_KUBE_WORKER_SERVICE_ACCOUNT:-airflow}"
+
+# === RESOURCE LIMITS ===
+export AIRFLOW_KUBE_WORKER_CPU_REQUEST="${AIRFLOW_KUBE_WORKER_CPU_REQUEST:-100m}"
+export AIRFLOW_KUBE_WORKER_CPU_LIMIT="${AIRFLOW_KUBE_WORKER_CPU_LIMIT:-1000m}"
+export AIRFLOW_KUBE_WORKER_MEM_REQUEST="${AIRFLOW_KUBE_WORKER_MEM_REQUEST:-512Mi}"
+export AIRFLOW_KUBE_WORKER_MEM_LIMIT="${AIRFLOW_KUBE_WORKER_MEM_LIMIT:-2Gi}"
+
+# === DERIVED PATHS ===
+export AIRFLOW_KUBE_RBAC_CONFIG="$AIRFLOW_KUBE_CONFIG_DIR/rbac.yaml"
+export AIRFLOW_KUBE_POD_TEMPLATE="$AIRFLOW_KUBE_TEMPLATES_DIR/worker-pod-template.yaml"
+
+# === GENERATE RBAC CONFIGURATION ===
+generate_rbac_config() {
+    cat > "$AIRFLOW_KUBE_RBAC_CONFIG" << EOF
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: airflow
+  namespace: $AIRFLOW_KUBE_NAMESPACE
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: airflow-role
+  namespace: $AIRFLOW_KUBE_NAMESPACE
+rules:
+  - apiGroups: [""]
+    resources: ["pods", "pods/log", "pods/exec"]
+    verbs: ["get", "list", "watch", "create", "update", "delete", "patch"]
+  - apiGroups: [""]
+    resources: ["configmaps"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: [""]
+    resources: ["secrets"]
+    verbs: ["get", "list"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: airflow-role-binding
+  namespace: $AIRFLOW_KUBE_NAMESPACE
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: airflow-role
+subjects:
+  - kind: ServiceAccount
+    name: airflow
+    namespace: $AIRFLOW_KUBE_NAMESPACE
+EOF
+    chmod 644 "$AIRFLOW_KUBE_RBAC_CONFIG"
+    return 0
+}
+
+# === GENERATE POD TEMPLATE ===
+generate_pod_template() {
+    cat > "$AIRFLOW_KUBE_POD_TEMPLATE" << EOF
+apiVersion: v1
+kind: Pod
+metadata:
+  name: airflow-worker
+  namespace: $AIRFLOW_KUBE_NAMESPACE
+spec:
+  serviceAccountName: $AIRFLOW_KUBE_WORKER_SERVICE_ACCOUNT
+  containers:
+  - name: base
+    image: apache/airflow:3.1.1
+    imagePullPolicy: $AIRFLOW_KUBE_IMAGE_PULL_POLICY
+    resources:
+      requests:
+        cpu: "$AIRFLOW_KUBE_WORKER_CPU_REQUEST"
+        memory: "$AIRFLOW_KUBE_WORKER_MEM_REQUEST"
+      limits:
+        cpu: "$AIRFLOW_KUBE_WORKER_CPU_LIMIT"
+        memory: "$AIRFLOW_KUBE_WORKER_MEM_LIMIT"
+  restartPolicy: Never
+EOF
+    chmod 644 "$AIRFLOW_KUBE_POD_TEMPLATE"
+    return 0
+}
+
+# === VALIDATE KUBERNETES CONNECTION ===
+validate_k8s_connection() {
+    if [ ! -f "$AIRFLOW_KUBE_CONFIG" ]; then
+        echo "⚠️  Warning: Kubeconfig not found: $AIRFLOW_KUBE_CONFIG"
+        echo "Make sure KIND cluster is started with: flox activate -s"
+        return 1
+    fi
+
+    export KUBECONFIG="$AIRFLOW_KUBE_CONFIG"
+
+    if kubectl cluster-info > /dev/null 2>&1; then
+        return 0
+    else
+        echo "⚠️  Warning: Cannot connect to Kubernetes cluster"
+        echo "Make sure KIND cluster is running"
+        return 1
+    fi
+}
+
+# Generate configurations
+generate_rbac_config
+generate_pod_template
+
+# Validate connection (non-blocking)
+validate_k8s_connection
+
+# Display info
+echo ""
+echo "✅ Airflow Kubernetes Executor environment ready"
+echo ""
+echo "Namespace: $AIRFLOW_KUBE_NAMESPACE"
+echo "ServiceAccount: $AIRFLOW_KUBE_WORKER_SERVICE_ACCOUNT"
+echo ""
+echo "Resource Limits:"
+echo "  CPU Request: $AIRFLOW_KUBE_WORKER_CPU_REQUEST"
+echo "  CPU Limit: $AIRFLOW_KUBE_WORKER_CPU_LIMIT"
+echo "  Memory Request: $AIRFLOW_KUBE_WORKER_MEM_REQUEST"
+echo "  Memory Limit: $AIRFLOW_KUBE_WORKER_MEM_LIMIT"
+echo ""
+echo "Configuration Files:"
+echo "  RBAC: $AIRFLOW_KUBE_RBAC_CONFIG"
+echo "  Pod Template: $AIRFLOW_KUBE_POD_TEMPLATE"
+echo ""
+echo "Commands:"
+echo "  flox activate -s        Setup Kubernetes RBAC"
+echo "  k8s-airflow-info        Show configuration"
+echo "  k8s-test-pod            Test pod creation"
+echo ""
+'''
+
+[services]
+k8s-setup.command = '''
+export KUBECONFIG="$AIRFLOW_KUBE_CONFIG"
+
+echo "=== Kubernetes Setup Service ===" | tee "$AIRFLOW_KUBE_LOG_DIR/setup.log"
+echo "Starting at $(date)" | tee -a "$AIRFLOW_KUBE_LOG_DIR/setup.log"
+
+# Wait for cluster to be ready
+echo "Waiting for cluster to be ready..." | tee -a "$AIRFLOW_KUBE_LOG_DIR/setup.log"
+if ! kubectl wait --for=condition=Ready nodes --all --timeout=120s 2>&1 | tee -a "$AIRFLOW_KUBE_LOG_DIR/setup.log"; then
+    echo "❌ Cluster not ready" | tee -a "$AIRFLOW_KUBE_LOG_DIR/setup.log"
+    exit 1
+fi
+
+# Create namespace
+echo "Creating namespace '$AIRFLOW_KUBE_NAMESPACE'..." | tee -a "$AIRFLOW_KUBE_LOG_DIR/setup.log"
+kubectl create namespace "$AIRFLOW_KUBE_NAMESPACE" --dry-run=client -o yaml | kubectl apply -f - 2>&1 | tee -a "$AIRFLOW_KUBE_LOG_DIR/setup.log"
+
+# Apply RBAC
+echo "Applying RBAC configuration..." | tee -a "$AIRFLOW_KUBE_LOG_DIR/setup.log"
+if kubectl apply -f "$AIRFLOW_KUBE_RBAC_CONFIG" 2>&1 | tee -a "$AIRFLOW_KUBE_LOG_DIR/setup.log"; then
+    echo "✅ RBAC configured successfully" | tee -a "$AIRFLOW_KUBE_LOG_DIR/setup.log"
+else
+    echo "❌ Failed to apply RBAC" | tee -a "$AIRFLOW_KUBE_LOG_DIR/setup.log"
+    exit 1
+fi
+
+# Verify ServiceAccount
+echo "" | tee -a "$AIRFLOW_KUBE_LOG_DIR/setup.log"
+echo "ServiceAccount created:" | tee -a "$AIRFLOW_KUBE_LOG_DIR/setup.log"
+kubectl get serviceaccount airflow -n "$AIRFLOW_KUBE_NAMESPACE" 2>&1 | tee -a "$AIRFLOW_KUBE_LOG_DIR/setup.log"
+
+echo "" | tee -a "$AIRFLOW_KUBE_LOG_DIR/setup.log"
+echo "✅ Kubernetes executor environment ready" | tee -a "$AIRFLOW_KUBE_LOG_DIR/setup.log"
+echo "Pod template available at: $AIRFLOW_KUBE_POD_TEMPLATE" | tee -a "$AIRFLOW_KUBE_LOG_DIR/setup.log"
+
+# Keep service running
+tail -f /dev/null
+'''
+
+[profile]
+bash = '''
+k8s-airflow-info() {
+    export KUBECONFIG="$AIRFLOW_KUBE_CONFIG"
+
+    echo "Airflow Kubernetes Executor Environment"
+    echo ""
+    echo "Namespace: $AIRFLOW_KUBE_NAMESPACE"
+    echo "ServiceAccount: $AIRFLOW_KUBE_WORKER_SERVICE_ACCOUNT"
+    echo "Kubeconfig: $AIRFLOW_KUBE_CONFIG"
+    echo ""
+    echo "Resource Limits:"
+    echo "  CPU Request: $AIRFLOW_KUBE_WORKER_CPU_REQUEST"
+    echo "  CPU Limit: $AIRFLOW_KUBE_WORKER_CPU_LIMIT"
+    echo "  Memory Request: $AIRFLOW_KUBE_WORKER_MEM_REQUEST"
+    echo "  Memory Limit: $AIRFLOW_KUBE_WORKER_MEM_LIMIT"
+    echo ""
+    echo "Pod Configuration:"
+    echo "  Image Pull Policy: $AIRFLOW_KUBE_IMAGE_PULL_POLICY"
+    echo "  Delete Worker Pods: $AIRFLOW_KUBE_DELETE_WORKER_PODS"
+    echo "  Delete On Failure: $AIRFLOW_KUBE_DELETE_WORKER_PODS_ON_FAILURE"
+    echo ""
+    echo "Configuration Files:"
+    echo "  RBAC: $AIRFLOW_KUBE_RBAC_CONFIG"
+    echo "  Pod Template: $AIRFLOW_KUBE_POD_TEMPLATE"
+    echo ""
+    echo "Kubernetes Status:"
+    if kubectl cluster-info > /dev/null 2>&1; then
+        kubectl get nodes 2>/dev/null | head -n 5
+        echo ""
+        echo "ServiceAccount:"
+        kubectl get sa airflow -n "$AIRFLOW_KUBE_NAMESPACE" 2>/dev/null || echo "  (Not created yet - run: flox activate -s)"
+    else
+        echo "  ❌ Cannot connect to cluster"
+    fi
+    echo ""
+    echo "Commands:"
+    echo "  kubectl get pods -n $AIRFLOW_KUBE_NAMESPACE       View Airflow pods"
+    echo "  kubectl get sa airflow -n $AIRFLOW_KUBE_NAMESPACE View ServiceAccount"
+    echo "  kubectl logs <pod> -n $AIRFLOW_KUBE_NAMESPACE     View pod logs"
+    echo "  k8s-test-pod                                       Test pod creation"
+    echo "  flox services logs k8s-setup                       View setup logs"
+}
+export -f k8s-airflow-info
+
+k8s-test-pod() {
+    export KUBECONFIG="$AIRFLOW_KUBE_CONFIG"
+
+    echo "Testing Airflow pod creation in namespace: $AIRFLOW_KUBE_NAMESPACE"
+    echo ""
+
+    kubectl run test-airflow-pod \
+        --image=apache/airflow:3.1.1 \
+        --namespace="$AIRFLOW_KUBE_NAMESPACE" \
+        --serviceaccount=airflow \
+        --restart=Never \
+        --rm -it \
+        -- python --version
+
+    if [ $? -eq 0 ]; then
+        echo ""
+        echo "✅ Pod creation successful"
+    else
+        echo ""
+        echo "❌ Pod creation failed"
+        echo "Check RBAC with: kubectl get sa airflow -n $AIRFLOW_KUBE_NAMESPACE"
+    fi
+}
+export -f k8s-test-pod
+'''
+
+zsh = '''
+k8s-airflow-info() {
+    export KUBECONFIG="$AIRFLOW_KUBE_CONFIG"
+
+    echo "Airflow Kubernetes Executor Environment"
+    echo ""
+    echo "Namespace: $AIRFLOW_KUBE_NAMESPACE"
+    echo "ServiceAccount: $AIRFLOW_KUBE_WORKER_SERVICE_ACCOUNT"
+    echo "Kubeconfig: $AIRFLOW_KUBE_CONFIG"
+    echo ""
+    echo "Resource Limits:"
+    echo "  CPU Request: $AIRFLOW_KUBE_WORKER_CPU_REQUEST"
+    echo "  CPU Limit: $AIRFLOW_KUBE_WORKER_CPU_LIMIT"
+    echo "  Memory Request: $AIRFLOW_KUBE_WORKER_MEM_REQUEST"
+    echo "  Memory Limit: $AIRFLOW_KUBE_WORKER_MEM_LIMIT"
+    echo ""
+    echo "Pod Configuration:"
+    echo "  Image Pull Policy: $AIRFLOW_KUBE_IMAGE_PULL_POLICY"
+    echo "  Delete Worker Pods: $AIRFLOW_KUBE_DELETE_WORKER_PODS"
+    echo "  Delete On Failure: $AIRFLOW_KUBE_DELETE_WORKER_PODS_ON_FAILURE"
+    echo ""
+    echo "Configuration Files:"
+    echo "  RBAC: $AIRFLOW_KUBE_RBAC_CONFIG"
+    echo "  Pod Template: $AIRFLOW_KUBE_POD_TEMPLATE"
+    echo ""
+    echo "Kubernetes Status:"
+    if kubectl cluster-info > /dev/null 2>&1; then
+        kubectl get nodes 2>/dev/null | head -n 5
+        echo ""
+        echo "ServiceAccount:"
+        kubectl get sa airflow -n "$AIRFLOW_KUBE_NAMESPACE" 2>/dev/null || echo "  (Not created yet - run: flox activate -s)"
+    else
+        echo "  ❌ Cannot connect to cluster"
+    fi
+    echo ""
+    echo "Commands:"
+    echo "  kubectl get pods -n $AIRFLOW_KUBE_NAMESPACE       View Airflow pods"
+    echo "  kubectl get sa airflow -n $AIRFLOW_KUBE_NAMESPACE View ServiceAccount"
+    echo "  kubectl logs <pod> -n $AIRFLOW_KUBE_NAMESPACE     View pod logs"
+    echo "  k8s-test-pod                                       Test pod creation"
+    echo "  flox services logs k8s-setup                       View setup logs"
+}
+
+k8s-test-pod() {
+    export KUBECONFIG="$AIRFLOW_KUBE_CONFIG"
+
+    echo "Testing Airflow pod creation in namespace: $AIRFLOW_KUBE_NAMESPACE"
+    echo ""
+
+    kubectl run test-airflow-pod \
+        --image=apache/airflow:3.1.1 \
+        --namespace="$AIRFLOW_KUBE_NAMESPACE" \
+        --serviceaccount=airflow \
+        --restart=Never \
+        --rm -it \
+        -- python --version
+
+    if [ $? -eq 0 ]; then
+        echo ""
+        echo "✅ Pod creation successful"
+    else
+        echo ""
+        echo "❌ Pod creation failed"
+        echo "Check RBAC with: kubectl get sa airflow -n $AIRFLOW_KUBE_NAMESPACE"
+    fi
+}
+'''
+
+fish = '''
+function k8s-airflow-info
+    set -x KUBECONFIG "$AIRFLOW_KUBE_CONFIG"
+
+    echo "Airflow Kubernetes Executor Environment"
+    echo ""
+    echo "Namespace: $AIRFLOW_KUBE_NAMESPACE"
+    echo "ServiceAccount: $AIRFLOW_KUBE_WORKER_SERVICE_ACCOUNT"
+    echo "Kubeconfig: $AIRFLOW_KUBE_CONFIG"
+    echo ""
+    echo "Resource Limits:"
+    echo "  CPU Request: $AIRFLOW_KUBE_WORKER_CPU_REQUEST"
+    echo "  CPU Limit: $AIRFLOW_KUBE_WORKER_CPU_LIMIT"
+    echo "  Memory Request: $AIRFLOW_KUBE_WORKER_MEM_REQUEST"
+    echo "  Memory Limit: $AIRFLOW_KUBE_WORKER_MEM_LIMIT"
+    echo ""
+    echo "Pod Configuration:"
+    echo "  Image Pull Policy: $AIRFLOW_KUBE_IMAGE_PULL_POLICY"
+    echo "  Delete Worker Pods: $AIRFLOW_KUBE_DELETE_WORKER_PODS"
+    echo "  Delete On Failure: $AIRFLOW_KUBE_DELETE_WORKER_PODS_ON_FAILURE"
+    echo ""
+    echo "Configuration Files:"
+    echo "  RBAC: $AIRFLOW_KUBE_RBAC_CONFIG"
+    echo "  Pod Template: $AIRFLOW_KUBE_POD_TEMPLATE"
+    echo ""
+    echo "Kubernetes Status:"
+    if kubectl cluster-info > /dev/null 2>&1
+        kubectl get nodes 2>/dev/null | head -n 5
+        echo ""
+        echo "ServiceAccount:"
+        kubectl get sa airflow -n "$AIRFLOW_KUBE_NAMESPACE" 2>/dev/null; or echo "  (Not created yet - run: flox activate -s)"
+    else
+        echo "  ❌ Cannot connect to cluster"
+    end
+    echo ""
+    echo "Commands:"
+    echo "  kubectl get pods -n $AIRFLOW_KUBE_NAMESPACE       View Airflow pods"
+    echo "  kubectl get sa airflow -n $AIRFLOW_KUBE_NAMESPACE View ServiceAccount"
+    echo "  kubectl logs <pod> -n $AIRFLOW_KUBE_NAMESPACE     View pod logs"
+    echo "  k8s-test-pod                                       Test pod creation"
+    echo "  flox services logs k8s-setup                       View setup logs"
+end
+
+function k8s-test-pod
+    set -x KUBECONFIG "$AIRFLOW_KUBE_CONFIG"
+
+    echo "Testing Airflow pod creation in namespace: $AIRFLOW_KUBE_NAMESPACE"
+    echo ""
+
+    kubectl run test-airflow-pod \
+        --image=apache/airflow:3.1.1 \
+        --namespace="$AIRFLOW_KUBE_NAMESPACE" \
+        --serviceaccount=airflow \
+        --restart=Never \
+        --rm -it \
+        -- python --version
+
+    if test $status -eq 0
+        echo ""
+        echo "✅ Pod creation successful"
+    else
+        echo ""
+        echo "❌ Pod creation failed"
+        echo "Check RBAC with: kubectl get sa airflow -n $AIRFLOW_KUBE_NAMESPACE"
+    end
+end
+'''
+
+[options]
+systems = [
+  "aarch64-darwin",
+  "aarch64-linux",
+  "x86_64-darwin",
+  "x86_64-linux",
+]

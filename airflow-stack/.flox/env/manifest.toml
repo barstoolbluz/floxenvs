@@ -1,0 +1,235 @@
+version = 1
+
+[include]
+environments = [
+  # FloxHub Airflow environments
+  { remote = "barstoolbluz/airflow-local-dev" },
+  { remote = "barstoolbluz/airflow-k8s-executor" },
+
+  # Note: postgres-headless, redis-headless, and kind-headless
+  # are already included by the above environments
+]
+
+[hook]
+on-activate = '''
+# === ENTERPRISE-GRADE OVERRIDES ===
+
+# Force CeleryExecutor for distributed task execution
+export AIRFLOW_EXECUTOR="CeleryExecutor"
+
+# Production database name
+export AIRFLOW_POSTGRES_DB="airflow_prod"
+
+# === OVERRIDE POSTGRES FOR PRODUCTION ===
+export POSTGRES_MAX_CONNECTIONS="200"
+export POSTGRES_SHARED_BUFFERS="512MB"
+export POSTGRES_WORK_MEM="8MB"
+export POSTGRES_EFFECTIVE_CACHE_SIZE="8GB"
+export POSTGRES_FSYNC="on"  # Data safety - DO NOT DISABLE
+
+# === OVERRIDE REDIS FOR PRODUCTION ===
+export REDIS_MAXMEMORY="1gb"
+export REDIS_APPENDONLY="yes"  # Enable AOF persistence
+export REDIS_APPENDFSYNC="everysec"
+
+# === INCREASE CELERY WORKERS FOR PRODUCTION ===
+export AIRFLOW_CELERY_WORKERS="4"
+export AIRFLOW__CELERY__WORKER_CONCURRENCY="32"
+
+# === WEBSERVER CONFIGURATION ===
+export AIRFLOW_WEBSERVER_WORKERS="8"
+
+# Display enterprise stack info
+echo ""
+echo "╔════════════════════════════════════════════════════════╗"
+echo "║   🚀  Apache Airflow Enterprise Stack                  ║"
+echo "╚════════════════════════════════════════════════════════╝"
+echo ""
+echo "Services:"
+echo "  ✓ PostgreSQL (postgres-headless)"
+echo "  ✓ Redis (redis-headless)"
+echo "  ✓ KIND Cluster (kind-headless)"
+echo "  ✓ Airflow Webserver"
+echo "  ✓ Airflow Scheduler"
+echo "  ✓ Airflow Celery Workers ($AIRFLOW_CELERY_WORKERS)"
+echo ""
+echo "Configuration:"
+echo "  Executor: CeleryExecutor"
+echo "  Database: PostgreSQL ($POSTGRES_MAX_CONNECTIONS max connections)"
+echo "  Message Broker: Redis (${REDIS_MAXMEMORY}, AOF persistence)"
+echo "  Kubernetes: Enabled (KubernetesPodOperator available)"
+echo ""
+echo "Access:"
+echo "  Airflow UI: http://localhost:$AIRFLOW_WEBSERVER_PORT"
+echo "  Username: $AIRFLOW_ADMIN_USER"
+echo "  Password: $AIRFLOW_ADMIN_PASSWORD"
+echo ""
+echo "Commands:"
+echo "  flox activate -s        Start all services"
+echo "  enterprise-info         Show detailed configuration"
+echo "  airflow-info            Airflow configuration"
+echo "  postgres-info           PostgreSQL configuration"
+echo "  redis-info              Redis configuration"
+echo "  k8s-airflow-info        Kubernetes configuration"
+echo ""
+'''
+
+[profile]
+bash = '''
+enterprise-info() {
+    echo "╔════════════════════════════════════════════════════════╗"
+    echo "║   Apache Airflow Enterprise Stack                      ║"
+    echo "╚════════════════════════════════════════════════════════╝"
+    echo ""
+    echo "Executor: $AIRFLOW_EXECUTOR"
+    echo "Workers: $AIRFLOW_CELERY_WORKERS (concurrency: $AIRFLOW__CELERY__WORKER_CONCURRENCY)"
+    echo "Webserver Workers: $AIRFLOW_WEBSERVER_WORKERS"
+    echo ""
+    echo "═══ PostgreSQL Configuration ═══"
+    echo "  Host: $AIRFLOW_POSTGRES_HOST:$AIRFLOW_POSTGRES_PORT"
+    echo "  Database: $AIRFLOW_POSTGRES_DB"
+    echo "  Max connections: $POSTGRES_MAX_CONNECTIONS"
+    echo "  Shared buffers: $POSTGRES_SHARED_BUFFERS"
+    echo "  fsync: $POSTGRES_FSYNC (data safety)"
+    echo ""
+    echo "═══ Redis Configuration ═══"
+    echo "  Host: $AIRFLOW_REDIS_HOST:$AIRFLOW_REDIS_PORT"
+    echo "  Max memory: $REDIS_MAXMEMORY"
+    echo "  Persistence: AOF ($REDIS_APPENDFSYNC)"
+    echo ""
+    echo "═══ Kubernetes Configuration ═══"
+    echo "  Namespace: $AIRFLOW_KUBE_NAMESPACE"
+    echo "  ServiceAccount: $AIRFLOW_KUBE_WORKER_SERVICE_ACCOUNT"
+    echo "  Kubeconfig: $AIRFLOW_KUBE_CONFIG"
+    echo ""
+    echo "═══ Airflow Access ═══"
+    echo "  Web UI: http://localhost:$AIRFLOW_WEBSERVER_PORT"
+    echo "  Admin User: $AIRFLOW_ADMIN_USER"
+    echo "  Password: $AIRFLOW_ADMIN_PASSWORD"
+    echo ""
+    echo "═══ Component Info Commands ═══"
+    echo "  airflow-info         Airflow details"
+    echo "  postgres-info        PostgreSQL details"
+    echo "  redis-info           Redis details"
+    echo "  k8s-airflow-info     Kubernetes details"
+    echo ""
+    echo "═══ Service Management ═══"
+    echo "  flox services status                    Check all services"
+    echo "  flox services logs <service>            View logs"
+    echo "  flox services restart <service>         Restart service"
+    echo ""
+    echo "═══ Airflow Commands ═══"
+    echo "  airflow dags list                       List DAGs"
+    echo "  airflow dags trigger <dag_id>           Trigger a DAG"
+    echo "  airflow tasks test <dag> <task> <date>  Test a task"
+}
+export -f enterprise-info
+'''
+
+zsh = '''
+enterprise-info() {
+    echo "╔════════════════════════════════════════════════════════╗"
+    echo "║   Apache Airflow Enterprise Stack                      ║"
+    echo "╚════════════════════════════════════════════════════════╝"
+    echo ""
+    echo "Executor: $AIRFLOW_EXECUTOR"
+    echo "Workers: $AIRFLOW_CELERY_WORKERS (concurrency: $AIRFLOW__CELERY__WORKER_CONCURRENCY)"
+    echo "Webserver Workers: $AIRFLOW_WEBSERVER_WORKERS"
+    echo ""
+    echo "═══ PostgreSQL Configuration ═══"
+    echo "  Host: $AIRFLOW_POSTGRES_HOST:$AIRFLOW_POSTGRES_PORT"
+    echo "  Database: $AIRFLOW_POSTGRES_DB"
+    echo "  Max connections: $POSTGRES_MAX_CONNECTIONS"
+    echo "  Shared buffers: $POSTGRES_SHARED_BUFFERS"
+    echo "  fsync: $POSTGRES_FSYNC (data safety)"
+    echo ""
+    echo "═══ Redis Configuration ═══"
+    echo "  Host: $AIRFLOW_REDIS_HOST:$AIRFLOW_REDIS_PORT"
+    echo "  Max memory: $REDIS_MAXMEMORY"
+    echo "  Persistence: AOF ($REDIS_APPENDFSYNC)"
+    echo ""
+    echo "═══ Kubernetes Configuration ═══"
+    echo "  Namespace: $AIRFLOW_KUBE_NAMESPACE"
+    echo "  ServiceAccount: $AIRFLOW_KUBE_WORKER_SERVICE_ACCOUNT"
+    echo "  Kubeconfig: $AIRFLOW_KUBE_CONFIG"
+    echo ""
+    echo "═══ Airflow Access ═══"
+    echo "  Web UI: http://localhost:$AIRFLOW_WEBSERVER_PORT"
+    echo "  Admin User: $AIRFLOW_ADMIN_USER"
+    echo "  Password: $AIRFLOW_ADMIN_PASSWORD"
+    echo ""
+    echo "═══ Component Info Commands ═══"
+    echo "  airflow-info         Airflow details"
+    echo "  postgres-info        PostgreSQL details"
+    echo "  redis-info           Redis details"
+    echo "  k8s-airflow-info     Kubernetes details"
+    echo ""
+    echo "═══ Service Management ═══"
+    echo "  flox services status                    Check all services"
+    echo "  flox services logs <service>            View logs"
+    echo "  flox services restart <service>         Restart service"
+    echo ""
+    echo "═══ Airflow Commands ═══"
+    echo "  airflow dags list                       List DAGs"
+    echo "  airflow dags trigger <dag_id>           Trigger a DAG"
+    echo "  airflow tasks test <dag> <task> <date>  Test a task"
+}
+'''
+
+fish = '''
+function enterprise-info
+    echo "╔════════════════════════════════════════════════════════╗"
+    echo "║   Apache Airflow Enterprise Stack                      ║"
+    echo "╚════════════════════════════════════════════════════════╝"
+    echo ""
+    echo "Executor: $AIRFLOW_EXECUTOR"
+    echo "Workers: $AIRFLOW_CELERY_WORKERS (concurrency: $AIRFLOW__CELERY__WORKER_CONCURRENCY)"
+    echo "Webserver Workers: $AIRFLOW_WEBSERVER_WORKERS"
+    echo ""
+    echo "═══ PostgreSQL Configuration ═══"
+    echo "  Host: $AIRFLOW_POSTGRES_HOST:$AIRFLOW_POSTGRES_PORT"
+    echo "  Database: $AIRFLOW_POSTGRES_DB"
+    echo "  Max connections: $POSTGRES_MAX_CONNECTIONS"
+    echo "  Shared buffers: $POSTGRES_SHARED_BUFFERS"
+    echo "  fsync: $POSTGRES_FSYNC (data safety)"
+    echo ""
+    echo "═══ Redis Configuration ═══"
+    echo "  Host: $AIRFLOW_REDIS_HOST:$AIRFLOW_REDIS_PORT"
+    echo "  Max memory: $REDIS_MAXMEMORY"
+    echo "  Persistence: AOF ($REDIS_APPENDFSYNC)"
+    echo ""
+    echo "═══ Kubernetes Configuration ═══"
+    echo "  Namespace: $AIRFLOW_KUBE_NAMESPACE"
+    echo "  ServiceAccount: $AIRFLOW_KUBE_WORKER_SERVICE_ACCOUNT"
+    echo "  Kubeconfig: $AIRFLOW_KUBE_CONFIG"
+    echo ""
+    echo "═══ Airflow Access ═══"
+    echo "  Web UI: http://localhost:$AIRFLOW_WEBSERVER_PORT"
+    echo "  Admin User: $AIRFLOW_ADMIN_USER"
+    echo "  Password: $AIRFLOW_ADMIN_PASSWORD"
+    echo ""
+    echo "═══ Component Info Commands ═══"
+    echo "  airflow-info         Airflow details"
+    echo "  postgres-info        PostgreSQL details"
+    echo "  redis-info           Redis details"
+    echo "  k8s-airflow-info     Kubernetes details"
+    echo ""
+    echo "═══ Service Management ═══"
+    echo "  flox services status                    Check all services"
+    echo "  flox services logs <service>            View logs"
+    echo "  flox services restart <service>         Restart service"
+    echo ""
+    echo "═══ Airflow Commands ═══"
+    echo "  airflow dags list                       List DAGs"
+    echo "  airflow dags trigger <dag_id>           Trigger a DAG"
+    echo "  airflow tasks test <dag> <task> <date>  Test a task"
+end
+'''
+
+[options]
+systems = [
+  "aarch64-darwin",
+  "aarch64-linux",
+  "x86_64-darwin",
+  "x86_64-linux",
+]

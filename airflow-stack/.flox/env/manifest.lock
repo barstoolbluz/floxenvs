@@ -1,0 +1,1478 @@
+{
+  "lockfile-version": 1,
+  "manifest": {
+    "version": 1,
+    "install": {
+      "airflow": {
+        "pkg-path": "barstoolbluz/airflow-full-3-1-1",
+        "systems": [
+          "x86_64-linux"
+        ]
+      },
+      "bat": {
+        "pkg-path": "bat"
+      },
+      "coreutils": {
+        "pkg-path": "coreutils",
+        "pkg-group": "darwin-tools"
+      },
+      "curl": {
+        "pkg-path": "curl"
+      },
+      "jq": {
+        "pkg-path": "jq"
+      },
+      "kind": {
+        "pkg-path": "kind"
+      },
+      "kubectl": {
+        "pkg-path": "kubectl"
+      },
+      "postgis": {
+        "pkg-path": "postgresql16Packages.postgis"
+      },
+      "postgresql": {
+        "pkg-path": "postgresql_16"
+      },
+      "redis": {
+        "pkg-path": "redis"
+      }
+    },
+    "vars": {
+      "AIRFLOW_CONFIG_DIR": "$FLOX_ENV_CACHE/airflow-config",
+      "AIRFLOW_DAGS_DIR": "$FLOX_ENV_CACHE/airflow-dags",
+      "AIRFLOW_DATA_DIR": "$FLOX_ENV_CACHE/airflow-data",
+      "AIRFLOW_KUBE_CONFIG_DIR": "$FLOX_ENV_CACHE/k8s-config",
+      "AIRFLOW_KUBE_LOG_DIR": "$FLOX_ENV_CACHE/k8s-logs",
+      "AIRFLOW_KUBE_TEMPLATES_DIR": "$FLOX_ENV_CACHE/k8s-templates",
+      "AIRFLOW_LOG_DIR": "$FLOX_ENV_CACHE/airflow-logs",
+      "AIRFLOW_PLUGINS_DIR": "$FLOX_ENV_CACHE/airflow-plugins",
+      "KIND_CONFIG_DIR": "$FLOX_ENV_CACHE/kind-config",
+      "KIND_DATA_DIR": "$FLOX_ENV_CACHE/kind-data",
+      "KIND_LOG_DIR": "$FLOX_ENV_CACHE/kind-logs",
+      "POSTGRES_CONFIG_DIR": "$FLOX_ENV_CACHE/postgres-config",
+      "POSTGRES_DATA_DIR": "$FLOX_ENV_CACHE/postgres-data",
+      "POSTGRES_LOG_DIR": "$FLOX_ENV_CACHE/postgres-logs",
+      "POSTGRES_RUN_DIR": "$FLOX_ENV_CACHE/postgres-run",
+      "REDIS_CONFIG_DIR": "$FLOX_ENV_CACHE/redis-config",
+      "REDIS_DATA_DIR": "$FLOX_ENV_CACHE/redis-data",
+      "REDIS_LOG_DIR": "$FLOX_ENV_CACHE/redis-logs"
+    },
+    "hook": {
+      "on-activate": "# Create required directories\nmkdir -p \"$FLOX_ENV_CACHE/postgres-config\"\nmkdir -p \"$FLOX_ENV_CACHE/postgres-logs\"\nmkdir -p \"$FLOX_ENV_CACHE/postgres-data\"\nmkdir -p \"$FLOX_ENV_CACHE/postgres-run\"\n\n# === INIT-TIME VARIABLES ===\n# These affect initdb and cannot change without deleting PGDATA\nexport PGUSER=\"${PGUSER:-pguser}\"\nexport PGPASSWORD=\"${PGPASSWORD:-pgpass}\"\nexport POSTGRES_HOST_AUTH_METHOD=\"${POSTGRES_HOST_AUTH_METHOD:-md5}\"\nexport POSTGRES_ENCODING=\"${POSTGRES_ENCODING:-UTF8}\"\nexport POSTGRES_LOCALE=\"${POSTGRES_LOCALE:-C}\"\nexport POSTGRES_DATA_CHECKSUMS=\"${POSTGRES_DATA_CHECKSUMS:-}\"\nexport POSTGRES_INITDB_ARGS=\"${POSTGRES_INITDB_ARGS:-}\"\n\n# === RUNTIME VARIABLES - Connection ===\n# These can be changed by restarting the service\nexport PGHOSTADDR=\"${PGHOSTADDR:-127.0.0.1}\"\nexport PGPORT=\"${PGPORT:-15432}\"\nexport PGHOST=\"${PGHOST:-}\"\nexport PGDATABASE=\"${PGDATABASE:-postgres}\"\n\n# === RUNTIME VARIABLES - Performance ===\nexport POSTGRES_MAX_CONNECTIONS=\"${POSTGRES_MAX_CONNECTIONS:-100}\"\nexport POSTGRES_SHARED_BUFFERS=\"${POSTGRES_SHARED_BUFFERS:-128MB}\"\nexport POSTGRES_WORK_MEM=\"${POSTGRES_WORK_MEM:-4MB}\"\nexport POSTGRES_EFFECTIVE_CACHE_SIZE=\"${POSTGRES_EFFECTIVE_CACHE_SIZE:-4GB}\"\nexport POSTGRES_FSYNC=\"${POSTGRES_FSYNC:-on}\"\nexport POSTGRES_SYNCHRONOUS_COMMIT=\"${POSTGRES_SYNCHRONOUS_COMMIT:-on}\"\nexport POSTGRES_FULL_PAGE_WRITES=\"${POSTGRES_FULL_PAGE_WRITES:-on}\"\n\n# === RUNTIME VARIABLES - WAL ===\nexport POSTGRES_MAX_WAL_SIZE=\"${POSTGRES_MAX_WAL_SIZE:-1GB}\"\nexport POSTGRES_MIN_WAL_SIZE=\"${POSTGRES_MIN_WAL_SIZE:-80MB}\"\nexport POSTGRES_CHECKPOINT_TIMEOUT=\"${POSTGRES_CHECKPOINT_TIMEOUT:-5min}\"\n\n# === RUNTIME VARIABLES - Logging ===\nexport POSTGRES_LOG_STATEMENT=\"${POSTGRES_LOG_STATEMENT:-none}\"\nexport POSTGRES_LOG_DURATION=\"${POSTGRES_LOG_DURATION:-off}\"\nexport POSTGRES_LOG_MIN_DURATION=\"${POSTGRES_LOG_MIN_DURATION:-}\"\nexport POSTGRES_LOG_CONNECTIONS=\"${POSTGRES_LOG_CONNECTIONS:-off}\"\nexport POSTGRES_LOG_DISCONNECTIONS=\"${POSTGRES_LOG_DISCONNECTIONS:-off}\"\n\n# === FLEXIBILITY ===\nexport POSTGRES_EXTRA_OPTS=\"${POSTGRES_EXTRA_OPTS:-}\"\n\n# === DERIVED VARIABLES ===\nexport POSTGRES_DIR=\"${POSTGRES_DIR:-$FLOX_ENV_CACHE/postgres-data}\"\nexport PGDATA=\"$POSTGRES_DIR/data\"\nexport PGHOST_SOCKET=\"$POSTGRES_DIR/run\"\n\n# PGHOST logic: If empty or unset, use Unix socket\nif [ -z \"$PGHOST\" ]; then\n    export PGHOST=\"$PGHOST_SOCKET\"\n    export DATABASE_URL=\"postgresql:///$PGDATABASE?host=$PGHOST&port=$PGPORT\"\nelse\n    # User specified host for TCP\n    export DATABASE_URL=\"postgresql://$PGUSER:$PGPASSWORD@$PGHOST:$PGPORT/$PGDATABASE\"\nfi\n\n# === INITIALIZATION FUNCTION ===\ninitialize_postgres() {\n    # Check if already initialized\n    if [ -f \"$PGDATA/PG_VERSION\" ]; then\n        return 0\n    fi\n\n    # Create directories with proper permissions\n    mkdir -p \"$PGDATA\" \"$PGHOST_SOCKET\"\n    chmod 700 \"$PGDATA\" \"$PGHOST_SOCKET\"\n\n    # Initialize PostgreSQL with direct execution\n    echo \"Initializing PostgreSQL database...\"\n    initdb \"$PGDATA\" \\\n        --username=\"$PGUSER\" \\\n        --pwfile=<(echo \"$PGPASSWORD\") \\\n        --encoding=\"$POSTGRES_ENCODING\" \\\n        --locale=\"$POSTGRES_LOCALE\" \\\n        --auth=\"$POSTGRES_HOST_AUTH_METHOD\" \\\n        $([ -n \"$POSTGRES_DATA_CHECKSUMS\" ] && echo \"--data-checksums\") \\\n        $POSTGRES_INITDB_ARGS \\\n        > /dev/null 2>&1\n\n    if [ $? -ne 0 ]; then\n        echo \"❌ Failed to initialize PostgreSQL\"\n        return 1\n    fi\n\n    # Create database if not \"postgres\"\n    if [ \"$PGDATABASE\" != \"postgres\" ]; then\n        echo \"Creating database '$PGDATABASE'...\"\n\n        # Start postgres temporarily\n        postgres -D \"$PGDATA\" \\\n            -c listen_addresses='' \\\n            -c unix_socket_directories=\"$PGHOST_SOCKET\" \\\n            -p \"$PGPORT\" \\\n            > /dev/null 2>&1 &\n        PG_PID=$!\n\n        sleep 3  # Wait for startup\n\n        # Create database\n        createdb \"$PGDATABASE\" > /dev/null 2>&1 || true\n\n        # Stop postgres\n        pg_ctl stop -D \"$PGDATA\" -m fast -w > /dev/null 2>&1\n    fi\n\n    echo \"✅ PostgreSQL initialized successfully\"\n    return 0\n}\n\n# Run initialization\ninitialize_postgres\n\n# Display info with safety warnings\necho \"\"\necho \"✅ PostgreSQL environment ready (headless mode)\"\necho \"\"\n\n# Safety warnings\nif [ \"$POSTGRES_FSYNC\" = \"off\" ]; then\n    echo \"⚠️  WARNING: fsync disabled - DATA LOSS RISK if crash occurs\"\nfi\nif [ \"$POSTGRES_HOST_AUTH_METHOD\" = \"trust\" ]; then\n    echo \"⚠️  WARNING: Authentication disabled - NO PASSWORD REQUIRED\"\nfi\nif [ \"$PGHOSTADDR\" = \"0.0.0.0\" ]; then\n    echo \"⚠️  WARNING: Listening on all interfaces - NETWORK EXPOSED\"\nfi\n[ \"$POSTGRES_FSYNC\" = \"off\" ] || [ \"$POSTGRES_HOST_AUTH_METHOD\" = \"trust\" ] || [ \"$PGHOSTADDR\" = \"0.0.0.0\" ] && echo \"\"\n\necho \"Connection:\"\necho \"  Listen address: ${PGHOSTADDR}:${PGPORT}\"\necho \"  Client connects to: ${PGHOST}\"\necho \"  Database: ${PGDATABASE}\"\necho \"  User: ${PGUSER}\"\necho \"\"\necho \"Performance:\"\necho \"  Max connections: ${POSTGRES_MAX_CONNECTIONS}\"\necho \"  Shared buffers: ${POSTGRES_SHARED_BUFFERS}\"\necho \"  fsync: ${POSTGRES_FSYNC}\"\necho \"\"\necho \"Commands:\"\necho \"  flox activate -s        Start PostgreSQL\"\necho \"  psql                    Connect to database\"\necho \"  postgres-info           Show configuration\"\necho \"\"\n\n# Create required directories\nmkdir -p \"$FLOX_ENV_CACHE/redis-config\"\nmkdir -p \"$FLOX_ENV_CACHE/redis-logs\"\nmkdir -p \"$FLOX_ENV_CACHE/redis-data\"\n\n# === RUNTIME VARIABLES - Connection ===\nexport REDIS_HOST=\"${REDIS_HOST:-127.0.0.1}\"\nexport REDIS_PORT=\"${REDIS_PORT:-16379}\"\nexport REDIS_PASSWORD=\"${REDIS_PASSWORD:-}\"\n\n# === RUNTIME VARIABLES - Memory Management ===\nexport REDIS_MAXMEMORY=\"${REDIS_MAXMEMORY:-256mb}\"\nexport REDIS_MAXMEMORY_POLICY=\"${REDIS_MAXMEMORY_POLICY:-noeviction}\"\nexport REDIS_MAXMEMORY_SAMPLES=\"${REDIS_MAXMEMORY_SAMPLES:-5}\"\n\n# === RUNTIME VARIABLES - Persistence (RDB) ===\nexport REDIS_SAVE_RDB=\"${REDIS_SAVE_RDB:-yes}\"\nexport REDIS_SAVE_900=\"${REDIS_SAVE_900:-1}\"\nexport REDIS_SAVE_300=\"${REDIS_SAVE_300:-10}\"\nexport REDIS_SAVE_60=\"${REDIS_SAVE_60:-10000}\"\nexport REDIS_RDB_COMPRESSION=\"${REDIS_RDB_COMPRESSION:-yes}\"\nexport REDIS_RDB_CHECKSUM=\"${REDIS_RDB_CHECKSUM:-yes}\"\n\n# === RUNTIME VARIABLES - Persistence (AOF) ===\nexport REDIS_APPENDONLY=\"${REDIS_APPENDONLY:-no}\"\nexport REDIS_APPENDFSYNC=\"${REDIS_APPENDFSYNC:-everysec}\"\nexport REDIS_AOF_REWRITE_PERCENTAGE=\"${REDIS_AOF_REWRITE_PERCENTAGE:-100}\"\nexport REDIS_AOF_REWRITE_MIN_SIZE=\"${REDIS_AOF_REWRITE_MIN_SIZE:-64mb}\"\n\n# === RUNTIME VARIABLES - Performance ===\nexport REDIS_DATABASES=\"${REDIS_DATABASES:-16}\"\nexport REDIS_TCP_BACKLOG=\"${REDIS_TCP_BACKLOG:-511}\"\nexport REDIS_TIMEOUT=\"${REDIS_TIMEOUT:-0}\"\nexport REDIS_TCP_KEEPALIVE=\"${REDIS_TCP_KEEPALIVE:-300}\"\nexport REDIS_MAXCLIENTS=\"${REDIS_MAXCLIENTS:-10000}\"\n\n# === RUNTIME VARIABLES - Slow Log ===\nexport REDIS_SLOWLOG_LOG_SLOWER_THAN=\"${REDIS_SLOWLOG_LOG_SLOWER_THAN:-10000}\"\nexport REDIS_SLOWLOG_MAX_LEN=\"${REDIS_SLOWLOG_MAX_LEN:-128}\"\n\n# === RUNTIME VARIABLES - Latency Monitor ===\nexport REDIS_LATENCY_MONITOR_THRESHOLD=\"${REDIS_LATENCY_MONITOR_THRESHOLD:-0}\"\n\n# === RUNTIME VARIABLES - Security ===\nexport REDIS_PROTECTED_MODE=\"${REDIS_PROTECTED_MODE:-yes}\"\nexport REDIS_RENAME_COMMANDS=\"${REDIS_RENAME_COMMANDS:-}\"\n\n# === FLEXIBILITY ===\nexport REDIS_EXTRA_OPTS=\"${REDIS_EXTRA_OPTS:-}\"\n\n# === DERIVED VARIABLES ===\nexport REDIS_DIR=\"${REDIS_DIR:-$FLOX_ENV_CACHE/redis-data}\"\nexport REDIS_CONF_FILE=\"$REDIS_CONFIG_DIR/redis.conf\"\nexport REDIS_LOG_FILE=\"$REDIS_LOG_DIR/redis.log\"\n\n# === CONFIGURATION GENERATION ===\ngenerate_redis_config() {\n    # Ensure directories exist\n    mkdir -p \"$REDIS_DIR\" \"$REDIS_CONFIG_DIR\" \"$REDIS_LOG_DIR\"\n    chmod 700 \"$REDIS_DIR\" \"$REDIS_CONFIG_DIR\"\n\n    cat > \"$REDIS_CONF_FILE\" << EOF\n# Redis configuration generated by Flox (headless mode)\n# Connection\nbind $REDIS_HOST\nport $REDIS_PORT\nprotected-mode $REDIS_PROTECTED_MODE\n\n# General\ndaemonize no\ndir $REDIS_DIR\nlogfile $REDIS_LOG_FILE\ndatabases $REDIS_DATABASES\n\n# Network\ntcp-backlog $REDIS_TCP_BACKLOG\ntimeout $REDIS_TIMEOUT\ntcp-keepalive $REDIS_TCP_KEEPALIVE\n\n# Clients\nmaxclients $REDIS_MAXCLIENTS\n\n# Memory Management\nmaxmemory $REDIS_MAXMEMORY\nmaxmemory-policy $REDIS_MAXMEMORY_POLICY\nmaxmemory-samples $REDIS_MAXMEMORY_SAMPLES\n\nEOF\n\n    # Add password if set\n    if [ -n \"$REDIS_PASSWORD\" ]; then\n        echo \"# Security\" >> \"$REDIS_CONF_FILE\"\n        echo \"requirepass $REDIS_PASSWORD\" >> \"$REDIS_CONF_FILE\"\n        echo \"\" >> \"$REDIS_CONF_FILE\"\n    fi\n\n    # Add command renaming if set\n    if [ -n \"$REDIS_RENAME_COMMANDS\" ]; then\n        echo \"# Command renaming\" >> \"$REDIS_CONF_FILE\"\n        # Format: \"FLUSHDB,FLUSHALL,CONFIG\" -> rename-command FLUSHDB \"\", rename-command FLUSHALL \"\"\n        IFS=',' read -ra CMDS <<< \"$REDIS_RENAME_COMMANDS\"\n        for cmd in \"${CMDS[@]}\"; do\n            echo \"rename-command $cmd \\\"\\\"\" >> \"$REDIS_CONF_FILE\"\n        done\n        echo \"\" >> \"$REDIS_CONF_FILE\"\n    fi\n\n    # RDB Persistence\n    echo \"# RDB Persistence\" >> \"$REDIS_CONF_FILE\"\n    if [ \"$REDIS_SAVE_RDB\" = \"yes\" ]; then\n        echo \"save 900 $REDIS_SAVE_900\" >> \"$REDIS_CONF_FILE\"\n        echo \"save 300 $REDIS_SAVE_300\" >> \"$REDIS_CONF_FILE\"\n        echo \"save 60 $REDIS_SAVE_60\" >> \"$REDIS_CONF_FILE\"\n        echo \"rdbcompression $REDIS_RDB_COMPRESSION\" >> \"$REDIS_CONF_FILE\"\n        echo \"rdbchecksum $REDIS_RDB_CHECKSUM\" >> \"$REDIS_CONF_FILE\"\n    else\n        echo \"save \\\"\\\"\" >> \"$REDIS_CONF_FILE\"\n    fi\n    echo \"\" >> \"$REDIS_CONF_FILE\"\n\n    # AOF Persistence\n    echo \"# AOF Persistence\" >> \"$REDIS_CONF_FILE\"\n    echo \"appendonly $REDIS_APPENDONLY\" >> \"$REDIS_CONF_FILE\"\n    if [ \"$REDIS_APPENDONLY\" = \"yes\" ]; then\n        echo \"appendfsync $REDIS_APPENDFSYNC\" >> \"$REDIS_CONF_FILE\"\n        echo \"auto-aof-rewrite-percentage $REDIS_AOF_REWRITE_PERCENTAGE\" >> \"$REDIS_CONF_FILE\"\n        echo \"auto-aof-rewrite-min-size $REDIS_AOF_REWRITE_MIN_SIZE\" >> \"$REDIS_CONF_FILE\"\n    fi\n    echo \"\" >> \"$REDIS_CONF_FILE\"\n\n    # Slow Log\n    echo \"# Slow Log\" >> \"$REDIS_CONF_FILE\"\n    echo \"slowlog-log-slower-than $REDIS_SLOWLOG_LOG_SLOWER_THAN\" >> \"$REDIS_CONF_FILE\"\n    echo \"slowlog-max-len $REDIS_SLOWLOG_MAX_LEN\" >> \"$REDIS_CONF_FILE\"\n    echo \"\" >> \"$REDIS_CONF_FILE\"\n\n    # Latency Monitor\n    echo \"# Latency Monitor\" >> \"$REDIS_CONF_FILE\"\n    echo \"latency-monitor-threshold $REDIS_LATENCY_MONITOR_THRESHOLD\" >> \"$REDIS_CONF_FILE\"\n\n    chmod 644 \"$REDIS_CONF_FILE\"\n    return 0\n}\n\n# Generate configuration on activation\ngenerate_redis_config\n\n# Display info with safety warnings\necho \"\"\necho \"✅ Redis environment ready (headless mode)\"\necho \"\"\n\n# Safety warnings\nif [ \"$REDIS_PROTECTED_MODE\" = \"no\" ]; then\n    echo \"⚠️  WARNING: Protected mode disabled - EXPOSED TO NETWORK\"\nfi\nif [ -z \"$REDIS_PASSWORD\" ]; then\n    echo \"⚠️  WARNING: No password set - UNAUTHENTICATED ACCESS\"\nfi\nif [ \"$REDIS_HOST\" = \"0.0.0.0\" ]; then\n    echo \"⚠️  WARNING: Listening on all interfaces - NETWORK EXPOSED\"\nfi\nif [ \"$REDIS_APPENDONLY\" = \"no\" ] && [ \"$REDIS_SAVE_RDB\" = \"no\" ]; then\n    echo \"⚠️  WARNING: All persistence disabled - DATA LOSS ON RESTART\"\nfi\n[ \"$REDIS_PROTECTED_MODE\" = \"no\" ] || [ -z \"$REDIS_PASSWORD\" ] || [ \"$REDIS_HOST\" = \"0.0.0.0\" ] || [ \"$REDIS_APPENDONLY\" = \"no\" -a \"$REDIS_SAVE_RDB\" = \"no\" ] && echo \"\"\n\necho \"Connection:\"\necho \"  Host: ${REDIS_HOST}:${REDIS_PORT}\"\nif [ -n \"$REDIS_PASSWORD\" ]; then\n    echo \"  Password: ***\"\nelse\n    echo \"  Password: (none)\"\nfi\necho \"\"\necho \"Memory:\"\necho \"  Max memory: ${REDIS_MAXMEMORY}\"\necho \"  Eviction policy: ${REDIS_MAXMEMORY_POLICY}\"\necho \"\"\necho \"Persistence:\"\necho \"  RDB snapshots: ${REDIS_SAVE_RDB}\"\necho \"  AOF logging: ${REDIS_APPENDONLY}\"\necho \"\"\necho \"Commands:\"\necho \"  flox activate -s        Start Redis\"\necho \"  redis-cli               Connect to Redis\"\necho \"  redis-info              Show configuration\"\necho \"\"\n\n# Create required directories\nmkdir -p \"$FLOX_ENV_CACHE/airflow-config\"\nmkdir -p \"$FLOX_ENV_CACHE/airflow-logs\"\nmkdir -p \"$FLOX_ENV_CACHE/airflow-data\"\nmkdir -p \"$FLOX_ENV_CACHE/airflow-dags\"\nmkdir -p \"$FLOX_ENV_CACHE/airflow-plugins\"\n\n# === EXECUTOR SELECTION ===\nexport AIRFLOW_EXECUTOR=\"${AIRFLOW_EXECUTOR:-LocalExecutor}\"\n\n# === AIRFLOW HOME ===\nexport AIRFLOW_HOME=\"${AIRFLOW_HOME:-$FLOX_ENV_CACHE/airflow-data}\"\nexport AIRFLOW__CORE__DAGS_FOLDER=\"$AIRFLOW_DAGS_DIR\"\nexport AIRFLOW__CORE__PLUGINS_FOLDER=\"$AIRFLOW_PLUGINS_DIR\"\nexport AIRFLOW__LOGGING__BASE_LOG_FOLDER=\"$AIRFLOW_LOG_DIR\"\n\n# === DATABASE CONNECTION (from postgres-headless) ===\nexport AIRFLOW_POSTGRES_HOST=\"${AIRFLOW_POSTGRES_HOST:-127.0.0.1}\"\nexport AIRFLOW_POSTGRES_PORT=\"${AIRFLOW_POSTGRES_PORT:-15432}\"\nexport AIRFLOW_POSTGRES_USER=\"${AIRFLOW_POSTGRES_USER:-pguser}\"\nexport AIRFLOW_POSTGRES_PASSWORD=\"${AIRFLOW_POSTGRES_PASSWORD:-pgpass}\"\nexport AIRFLOW_POSTGRES_DB=\"${AIRFLOW_POSTGRES_DB:-airflow}\"\n\n# === REDIS CONNECTION (from redis-headless, for CeleryExecutor) ===\nexport AIRFLOW_REDIS_HOST=\"${AIRFLOW_REDIS_HOST:-127.0.0.1}\"\nexport AIRFLOW_REDIS_PORT=\"${AIRFLOW_REDIS_PORT:-16379}\"\nexport AIRFLOW_REDIS_PASSWORD=\"${AIRFLOW_REDIS_PASSWORD:-}\"\nexport AIRFLOW_REDIS_DB=\"${AIRFLOW_REDIS_DB:-0}\"\n\n# === WEBSERVER CONFIGURATION ===\nexport AIRFLOW_WEBSERVER_HOST=\"${AIRFLOW_WEBSERVER_HOST:-0.0.0.0}\"\nexport AIRFLOW_WEBSERVER_PORT=\"${AIRFLOW_WEBSERVER_PORT:-8080}\"\nexport AIRFLOW_WEBSERVER_WORKERS=\"${AIRFLOW_WEBSERVER_WORKERS:-4}\"\nexport AIRFLOW__WEBSERVER__SECRET_KEY=\"${AIRFLOW__WEBSERVER__SECRET_KEY:-$(openssl rand -hex 32 2>/dev/null || echo 'change-this-secret-key')}\"\n\n# === SCHEDULER CONFIGURATION ===\nexport AIRFLOW__SCHEDULER__MIN_FILE_PROCESS_INTERVAL=\"${AIRFLOW__SCHEDULER__MIN_FILE_PROCESS_INTERVAL:-30}\"\nexport AIRFLOW__SCHEDULER__DAG_DIR_LIST_INTERVAL=\"${AIRFLOW__SCHEDULER__DAG_DIR_LIST_INTERVAL:-300}\"\n\n# === CELERY CONFIGURATION (if executor=CeleryExecutor) ===\nexport AIRFLOW_CELERY_WORKERS=\"${AIRFLOW_CELERY_WORKERS:-1}\"\nexport AIRFLOW__CELERY__WORKER_CONCURRENCY=\"${AIRFLOW__CELERY__WORKER_CONCURRENCY:-16}\"\n\n# === KUBERNETES CONFIGURATION (if executor=KubernetesExecutor) ===\nexport AIRFLOW__KUBERNETES__NAMESPACE=\"${AIRFLOW__KUBERNETES__NAMESPACE:-default}\"\nexport AIRFLOW__KUBERNETES__KUBE_CONFIG=\"${AIRFLOW__KUBERNETES__KUBE_CONFIG:-$HOME/.kube/config}\"\nexport AIRFLOW__KUBERNETES__IN_CLUSTER=\"${AIRFLOW__KUBERNETES__IN_CLUSTER:-False}\"\n\n# === AUTHENTICATION ===\nexport AIRFLOW_ADMIN_USER=\"${AIRFLOW_ADMIN_USER:-admin}\"\nexport AIRFLOW_ADMIN_PASSWORD=\"${AIRFLOW_ADMIN_PASSWORD:-admin}\"\nexport AIRFLOW_ADMIN_EMAIL=\"${AIRFLOW_ADMIN_EMAIL:-admin@example.com}\"\n\n# === LOGGING ===\nexport AIRFLOW__LOGGING__LOGGING_LEVEL=\"${AIRFLOW__LOGGING__LOGGING_LEVEL:-INFO}\"\nexport AIRFLOW__LOGGING__FAB_LOGGING_LEVEL=\"${AIRFLOW__LOGGING__FAB_LOGGING_LEVEL:-WARNING}\"\n\n# === DERIVED VARIABLES ===\n# SQL Alchemy connection string\nexport AIRFLOW__DATABASE__SQL_ALCHEMY_CONN=\"postgresql+psycopg2://${AIRFLOW_POSTGRES_USER}:${AIRFLOW_POSTGRES_PASSWORD}@${AIRFLOW_POSTGRES_HOST}:${AIRFLOW_POSTGRES_PORT}/${AIRFLOW_POSTGRES_DB}\"\n\n# Celery broker and result backend (if CeleryExecutor)\nif [ -n \"$AIRFLOW_REDIS_PASSWORD\" ]; then\n    export AIRFLOW__CELERY__BROKER_URL=\"redis://:${AIRFLOW_REDIS_PASSWORD}@${AIRFLOW_REDIS_HOST}:${AIRFLOW_REDIS_PORT}/${AIRFLOW_REDIS_DB}\"\n    export AIRFLOW__CELERY__RESULT_BACKEND=\"db+postgresql://${AIRFLOW_POSTGRES_USER}:${AIRFLOW_POSTGRES_PASSWORD}@${AIRFLOW_POSTGRES_HOST}:${AIRFLOW_POSTGRES_PORT}/${AIRFLOW_POSTGRES_DB}\"\nelse\n    export AIRFLOW__CELERY__BROKER_URL=\"redis://${AIRFLOW_REDIS_HOST}:${AIRFLOW_REDIS_PORT}/${AIRFLOW_REDIS_DB}\"\n    export AIRFLOW__CELERY__RESULT_BACKEND=\"db+postgresql://${AIRFLOW_POSTGRES_USER}:${AIRFLOW_POSTGRES_PASSWORD}@${AIRFLOW_POSTGRES_HOST}:${AIRFLOW_POSTGRES_PORT}/${AIRFLOW_POSTGRES_DB}\"\nfi\n\n# Set executor\nexport AIRFLOW__CORE__EXECUTOR=\"$AIRFLOW_EXECUTOR\"\n\n# === INITIALIZATION FUNCTION ===\ninitialize_airflow() {\n    # Check if already initialized\n    if [ -f \"$AIRFLOW_HOME/airflow-initialized\" ]; then\n        return 0\n    fi\n\n    echo \"Initializing Airflow database...\"\n\n    # Initialize database\n    airflow db migrate > \"$AIRFLOW_LOG_DIR/db-init.log\" 2>&1\n\n    if [ $? -ne 0 ]; then\n        echo \"❌ Failed to initialize Airflow database\"\n        echo \"Check logs: $AIRFLOW_LOG_DIR/db-init.log\"\n        return 1\n    fi\n\n    # Create admin user\n    airflow users create \\\n        --username \"$AIRFLOW_ADMIN_USER\" \\\n        --password \"$AIRFLOW_ADMIN_PASSWORD\" \\\n        --firstname Admin \\\n        --lastname User \\\n        --role Admin \\\n        --email \"$AIRFLOW_ADMIN_EMAIL\" \\\n        > \"$AIRFLOW_LOG_DIR/user-create.log\" 2>&1\n\n    if [ $? -ne 0 ]; then\n        echo \"⚠️  Warning: Failed to create admin user (may already exist)\"\n    fi\n\n    touch \"$AIRFLOW_HOME/airflow-initialized\"\n    echo \"✅ Airflow initialized successfully\"\n    return 0\n}\n\n# === CREATE EXAMPLE DAGS ===\ncreate_example_dags() {\n    # Only create if DAGs directory is empty\n    if [ -n \"$(ls -A \"$AIRFLOW_DAGS_DIR\" 2>/dev/null)\" ]; then\n        return 0\n    fi\n\n    # Example 1: LocalExecutor DAG\n    cat > \"$AIRFLOW_DAGS_DIR/example_local_executor.py\" << 'EOF'\nfrom datetime import datetime, timedelta\nfrom airflow import DAG\nfrom airflow.operators.python import PythonOperator\n\ndefault_args = {\n    'owner': 'airflow',\n    'depends_on_past': False,\n    'start_date': datetime(2024, 1, 1),\n    'retries': 1,\n    'retry_delay': timedelta(minutes=5),\n}\n\ndef print_hello():\n    print(\"Hello from LocalExecutor!\")\n    return \"Task completed\"\n\nwith DAG(\n    'example_local_executor',\n    default_args=default_args,\n    description='Example DAG for LocalExecutor',\n    schedule=timedelta(days=1),\n    catchup=False,\n) as dag:\n\n    task = PythonOperator(\n        task_id='print_hello',\n        python_callable=print_hello,\n    )\nEOF\n\n    # Example 2: CeleryExecutor DAG\n    cat > \"$AIRFLOW_DAGS_DIR/example_celery_executor.py\" << 'EOF'\nfrom datetime import datetime, timedelta\nfrom airflow import DAG\nfrom airflow.operators.python import PythonOperator\n\ndefault_args = {\n    'owner': 'airflow',\n    'depends_on_past': False,\n    'start_date': datetime(2024, 1, 1),\n    'retries': 1,\n    'retry_delay': timedelta(minutes=5),\n}\n\ndef process_data(task_number):\n    print(f\"Processing task {task_number} on Celery worker\")\n    return f\"Task {task_number} completed\"\n\nwith DAG(\n    'example_celery_executor',\n    default_args=default_args,\n    description='Example DAG for CeleryExecutor with parallel tasks',\n    schedule=timedelta(days=1),\n    catchup=False,\n) as dag:\n\n    tasks = []\n    for i in range(5):\n        task = PythonOperator(\n            task_id=f'process_task_{i}',\n            python_callable=process_data,\n            op_kwargs={'task_number': i},\n        )\n        tasks.append(task)\nEOF\n\n    # Example 3: KubernetesPodOperator DAG\n    cat > \"$AIRFLOW_DAGS_DIR/example_kubernetes_pod.py\" << 'EOF'\nfrom datetime import datetime, timedelta\nfrom airflow import DAG\nfrom airflow.providers.cncf.kubernetes.operators.pod import KubernetesPodOperator\n\ndefault_args = {\n    'owner': 'airflow',\n    'depends_on_past': False,\n    'start_date': datetime(2024, 1, 1),\n    'retries': 1,\n    'retry_delay': timedelta(minutes=5),\n}\n\nwith DAG(\n    'example_kubernetes_pod',\n    default_args=default_args,\n    description='Example DAG using KubernetesPodOperator',\n    schedule=timedelta(days=1),\n    catchup=False,\n) as dag:\n\n    k8s_task = KubernetesPodOperator(\n        task_id='run_python_in_pod',\n        name='airflow-test-pod',\n        namespace='default',\n        image='python:3.11-slim',\n        cmds=['python', '-c'],\n        arguments=['print(\"Hello from Kubernetes Pod!\")'],\n        is_delete_operator_pod=True,\n        get_logs=True,\n    )\nEOF\n\n    chmod 644 \"$AIRFLOW_DAGS_DIR\"/*.py\n}\n\n# Run initialization\ninitialize_airflow\n\n# Create example DAGs\ncreate_example_dags\n\n# Display info\necho \"\"\necho \"✅ Airflow Local Development environment ready\"\necho \"\"\necho \"Executor: $AIRFLOW_EXECUTOR\"\necho \"Webserver: http://$AIRFLOW_WEBSERVER_HOST:$AIRFLOW_WEBSERVER_PORT\"\necho \"\"\necho \"Database:\"\necho \"  Host: $AIRFLOW_POSTGRES_HOST:$AIRFLOW_POSTGRES_PORT\"\necho \"  Database: $AIRFLOW_POSTGRES_DB\"\necho \"  User: $AIRFLOW_POSTGRES_USER\"\necho \"\"\n\nif [ \"$AIRFLOW_EXECUTOR\" = \"CeleryExecutor\" ]; then\n    echo \"Redis (Celery):\"\n    echo \"  Host: $AIRFLOW_REDIS_HOST:$AIRFLOW_REDIS_PORT\"\n    echo \"  Database: $AIRFLOW_REDIS_DB\"\n    echo \"\"\nfi\n\nif [ \"$AIRFLOW_EXECUTOR\" = \"KubernetesExecutor\" ]; then\n    echo \"Kubernetes:\"\n    echo \"  Namespace: $AIRFLOW__KUBERNETES__NAMESPACE\"\n    echo \"  Config: $AIRFLOW__KUBERNETES__KUBE_CONFIG\"\n    echo \"\"\nfi\n\necho \"Admin User:\"\necho \"  Username: $AIRFLOW_ADMIN_USER\"\necho \"  Password: $AIRFLOW_ADMIN_PASSWORD\"\necho \"\"\necho \"Commands:\"\necho \"  flox activate -s        Start Airflow services\"\necho \"  airflow-info            Show configuration\"\necho \"  airflow dags list       List DAGs\"\necho \"\"\n\n# Create required directories\nmkdir -p \"$FLOX_ENV_CACHE/kind-config\"\nmkdir -p \"$FLOX_ENV_CACHE/kind-logs\"\nmkdir -p \"$FLOX_ENV_CACHE/kind-data\"\n\n# Runtime-configurable variables with defaults\nexport KIND_CLUSTER_NAME=\"${KIND_CLUSTER_NAME:-kind}\"\nexport KIND_CONFIG_FILE=\"${KIND_CONFIG_FILE:-$KIND_CONFIG_DIR/cluster.yaml}\"\nexport KIND_KUBECONFIG=\"${KIND_KUBECONFIG:-$KIND_DATA_DIR/kubeconfig}\"\nexport KIND_IMAGE=\"${KIND_IMAGE:-}\"\n\n# Generate default KIND config if not exists\nif [ ! -f \"$KIND_CONFIG_FILE\" ]; then\n    cat > \"$KIND_CONFIG_FILE\" << 'EOF'\nkind: Cluster\napiVersion: kind.x-k8s.io/v1alpha4\nnodes:\n- role: control-plane\n- role: worker\nEOF\nfi\n\n# Display minimal info\necho \"\"\necho \"✅ KIND environment ready (headless mode)\"\necho \"\"\necho \"Cluster Name: $KIND_CLUSTER_NAME\"\necho \"Config File:  $KIND_CONFIG_FILE\"\necho \"\"\necho \"Start cluster: flox activate -s\"\necho \"Check status:  flox services status\"\necho \"Show info:     kind-info\"\necho \"\"\n\n# Create required directories\nmkdir -p \"$FLOX_ENV_CACHE/k8s-config\"\nmkdir -p \"$FLOX_ENV_CACHE/k8s-templates\"\nmkdir -p \"$FLOX_ENV_CACHE/k8s-logs\"\n\n# === KUBERNETES CONNECTION ===\nexport AIRFLOW_KUBE_NAMESPACE=\"${AIRFLOW_KUBE_NAMESPACE:-default}\"\nexport AIRFLOW_KUBE_CONFIG=\"${AIRFLOW_KUBE_CONFIG:-$KIND_KUBECONFIG}\"\nexport AIRFLOW_KUBE_IN_CLUSTER=\"${AIRFLOW_KUBE_IN_CLUSTER:-False}\"\n\n# === POD CONFIGURATION ===\nexport AIRFLOW_KUBE_IMAGE_PULL_POLICY=\"${AIRFLOW_KUBE_IMAGE_PULL_POLICY:-IfNotPresent}\"\nexport AIRFLOW_KUBE_DELETE_WORKER_PODS=\"${AIRFLOW_KUBE_DELETE_WORKER_PODS:-True}\"\nexport AIRFLOW_KUBE_DELETE_WORKER_PODS_ON_FAILURE=\"${AIRFLOW_KUBE_DELETE_WORKER_PODS_ON_FAILURE:-False}\"\nexport AIRFLOW_KUBE_WORKER_SERVICE_ACCOUNT=\"${AIRFLOW_KUBE_WORKER_SERVICE_ACCOUNT:-airflow}\"\n\n# === RESOURCE LIMITS ===\nexport AIRFLOW_KUBE_WORKER_CPU_REQUEST=\"${AIRFLOW_KUBE_WORKER_CPU_REQUEST:-100m}\"\nexport AIRFLOW_KUBE_WORKER_CPU_LIMIT=\"${AIRFLOW_KUBE_WORKER_CPU_LIMIT:-1000m}\"\nexport AIRFLOW_KUBE_WORKER_MEM_REQUEST=\"${AIRFLOW_KUBE_WORKER_MEM_REQUEST:-512Mi}\"\nexport AIRFLOW_KUBE_WORKER_MEM_LIMIT=\"${AIRFLOW_KUBE_WORKER_MEM_LIMIT:-2Gi}\"\n\n# === DERIVED PATHS ===\nexport AIRFLOW_KUBE_RBAC_CONFIG=\"$AIRFLOW_KUBE_CONFIG_DIR/rbac.yaml\"\nexport AIRFLOW_KUBE_POD_TEMPLATE=\"$AIRFLOW_KUBE_TEMPLATES_DIR/worker-pod-template.yaml\"\n\n# === GENERATE RBAC CONFIGURATION ===\ngenerate_rbac_config() {\n    cat > \"$AIRFLOW_KUBE_RBAC_CONFIG\" << EOF\n---\napiVersion: v1\nkind: ServiceAccount\nmetadata:\n  name: airflow\n  namespace: $AIRFLOW_KUBE_NAMESPACE\n---\napiVersion: rbac.authorization.k8s.io/v1\nkind: Role\nmetadata:\n  name: airflow-role\n  namespace: $AIRFLOW_KUBE_NAMESPACE\nrules:\n  - apiGroups: [\"\"]\n    resources: [\"pods\", \"pods/log\", \"pods/exec\"]\n    verbs: [\"get\", \"list\", \"watch\", \"create\", \"update\", \"delete\", \"patch\"]\n  - apiGroups: [\"\"]\n    resources: [\"configmaps\"]\n    verbs: [\"get\", \"list\", \"watch\"]\n  - apiGroups: [\"\"]\n    resources: [\"secrets\"]\n    verbs: [\"get\", \"list\"]\n---\napiVersion: rbac.authorization.k8s.io/v1\nkind: RoleBinding\nmetadata:\n  name: airflow-role-binding\n  namespace: $AIRFLOW_KUBE_NAMESPACE\nroleRef:\n  apiGroup: rbac.authorization.k8s.io\n  kind: Role\n  name: airflow-role\nsubjects:\n  - kind: ServiceAccount\n    name: airflow\n    namespace: $AIRFLOW_KUBE_NAMESPACE\nEOF\n    chmod 644 \"$AIRFLOW_KUBE_RBAC_CONFIG\"\n    return 0\n}\n\n# === GENERATE POD TEMPLATE ===\ngenerate_pod_template() {\n    cat > \"$AIRFLOW_KUBE_POD_TEMPLATE\" << EOF\napiVersion: v1\nkind: Pod\nmetadata:\n  name: airflow-worker\n  namespace: $AIRFLOW_KUBE_NAMESPACE\nspec:\n  serviceAccountName: $AIRFLOW_KUBE_WORKER_SERVICE_ACCOUNT\n  containers:\n  - name: base\n    image: apache/airflow:3.1.1\n    imagePullPolicy: $AIRFLOW_KUBE_IMAGE_PULL_POLICY\n    resources:\n      requests:\n        cpu: \"$AIRFLOW_KUBE_WORKER_CPU_REQUEST\"\n        memory: \"$AIRFLOW_KUBE_WORKER_MEM_REQUEST\"\n      limits:\n        cpu: \"$AIRFLOW_KUBE_WORKER_CPU_LIMIT\"\n        memory: \"$AIRFLOW_KUBE_WORKER_MEM_LIMIT\"\n  restartPolicy: Never\nEOF\n    chmod 644 \"$AIRFLOW_KUBE_POD_TEMPLATE\"\n    return 0\n}\n\n# === VALIDATE KUBERNETES CONNECTION ===\nvalidate_k8s_connection() {\n    if [ ! -f \"$AIRFLOW_KUBE_CONFIG\" ]; then\n        echo \"⚠️  Warning: Kubeconfig not found: $AIRFLOW_KUBE_CONFIG\"\n        echo \"Make sure KIND cluster is started with: flox activate -s\"\n        return 1\n    fi\n\n    export KUBECONFIG=\"$AIRFLOW_KUBE_CONFIG\"\n\n    if kubectl cluster-info > /dev/null 2>&1; then\n        return 0\n    else\n        echo \"⚠️  Warning: Cannot connect to Kubernetes cluster\"\n        echo \"Make sure KIND cluster is running\"\n        return 1\n    fi\n}\n\n# Generate configurations\ngenerate_rbac_config\ngenerate_pod_template\n\n# Validate connection (non-blocking)\nvalidate_k8s_connection\n\n# Display info\necho \"\"\necho \"✅ Airflow Kubernetes Executor environment ready\"\necho \"\"\necho \"Namespace: $AIRFLOW_KUBE_NAMESPACE\"\necho \"ServiceAccount: $AIRFLOW_KUBE_WORKER_SERVICE_ACCOUNT\"\necho \"\"\necho \"Resource Limits:\"\necho \"  CPU Request: $AIRFLOW_KUBE_WORKER_CPU_REQUEST\"\necho \"  CPU Limit: $AIRFLOW_KUBE_WORKER_CPU_LIMIT\"\necho \"  Memory Request: $AIRFLOW_KUBE_WORKER_MEM_REQUEST\"\necho \"  Memory Limit: $AIRFLOW_KUBE_WORKER_MEM_LIMIT\"\necho \"\"\necho \"Configuration Files:\"\necho \"  RBAC: $AIRFLOW_KUBE_RBAC_CONFIG\"\necho \"  Pod Template: $AIRFLOW_KUBE_POD_TEMPLATE\"\necho \"\"\necho \"Commands:\"\necho \"  flox activate -s        Setup Kubernetes RBAC\"\necho \"  k8s-airflow-info        Show configuration\"\necho \"  k8s-test-pod            Test pod creation\"\necho \"\"\n\n# === ENTERPRISE-GRADE OVERRIDES ===\n\n# Force CeleryExecutor for distributed task execution\nexport AIRFLOW_EXECUTOR=\"CeleryExecutor\"\n\n# Production database name\nexport AIRFLOW_POSTGRES_DB=\"airflow_prod\"\n\n# === OVERRIDE POSTGRES FOR PRODUCTION ===\nexport POSTGRES_MAX_CONNECTIONS=\"200\"\nexport POSTGRES_SHARED_BUFFERS=\"512MB\"\nexport POSTGRES_WORK_MEM=\"8MB\"\nexport POSTGRES_EFFECTIVE_CACHE_SIZE=\"8GB\"\nexport POSTGRES_FSYNC=\"on\"  # Data safety - DO NOT DISABLE\n\n# === OVERRIDE REDIS FOR PRODUCTION ===\nexport REDIS_MAXMEMORY=\"1gb\"\nexport REDIS_APPENDONLY=\"yes\"  # Enable AOF persistence\nexport REDIS_APPENDFSYNC=\"everysec\"\n\n# === INCREASE CELERY WORKERS FOR PRODUCTION ===\nexport AIRFLOW_CELERY_WORKERS=\"4\"\nexport AIRFLOW__CELERY__WORKER_CONCURRENCY=\"32\"\n\n# === WEBSERVER CONFIGURATION ===\nexport AIRFLOW_WEBSERVER_WORKERS=\"8\"\n\n# Display enterprise stack info\necho \"\"\necho \"╔════════════════════════════════════════════════════════╗\"\necho \"║   🚀  Apache Airflow Enterprise Stack                  ║\"\necho \"╚════════════════════════════════════════════════════════╝\"\necho \"\"\necho \"Services:\"\necho \"  ✓ PostgreSQL (postgres-headless)\"\necho \"  ✓ Redis (redis-headless)\"\necho \"  ✓ KIND Cluster (kind-headless)\"\necho \"  ✓ Airflow Webserver\"\necho \"  ✓ Airflow Scheduler\"\necho \"  ✓ Airflow Celery Workers ($AIRFLOW_CELERY_WORKERS)\"\necho \"\"\necho \"Configuration:\"\necho \"  Executor: CeleryExecutor\"\necho \"  Database: PostgreSQL ($POSTGRES_MAX_CONNECTIONS max connections)\"\necho \"  Message Broker: Redis (${REDIS_MAXMEMORY}, AOF persistence)\"\necho \"  Kubernetes: Enabled (KubernetesPodOperator available)\"\necho \"\"\necho \"Access:\"\necho \"  Airflow UI: http://localhost:$AIRFLOW_WEBSERVER_PORT\"\necho \"  Username: $AIRFLOW_ADMIN_USER\"\necho \"  Password: $AIRFLOW_ADMIN_PASSWORD\"\necho \"\"\necho \"Commands:\"\necho \"  flox activate -s        Start all services\"\necho \"  enterprise-info         Show detailed configuration\"\necho \"  airflow-info            Airflow configuration\"\necho \"  postgres-info           PostgreSQL configuration\"\necho \"  redis-info              Redis configuration\"\necho \"  k8s-airflow-info        Kubernetes configuration\"\necho \"\"\n"
+    },
+    "profile": {
+      "bash": "postgres-info() {\n    echo \"PostgreSQL (Headless Mode) - Configuration\"\n    echo \"\"\n    echo \"Connection:\"\n    echo \"  Listen address: ${PGHOSTADDR}:${PGPORT}\"\n    echo \"  Client connects to: ${PGHOST}\"\n    echo \"  Database: ${PGDATABASE}\"\n    echo \"  User: ${PGUSER}\"\n    echo \"  Auth method: ${POSTGRES_HOST_AUTH_METHOD}\"\n    echo \"\"\n    echo \"Performance:\"\n    echo \"  Max connections: ${POSTGRES_MAX_CONNECTIONS}\"\n    echo \"  Shared buffers: ${POSTGRES_SHARED_BUFFERS}\"\n    echo \"  Work mem: ${POSTGRES_WORK_MEM}\"\n    echo \"  Effective cache size: ${POSTGRES_EFFECTIVE_CACHE_SIZE}\"\n    echo \"  fsync: ${POSTGRES_FSYNC}\"\n    echo \"  Synchronous commit: ${POSTGRES_SYNCHRONOUS_COMMIT}\"\n    echo \"\"\n    echo \"WAL:\"\n    echo \"  Max WAL size: ${POSTGRES_MAX_WAL_SIZE}\"\n    echo \"  Min WAL size: ${POSTGRES_MIN_WAL_SIZE}\"\n    echo \"  Checkpoint timeout: ${POSTGRES_CHECKPOINT_TIMEOUT}\"\n    echo \"\"\n    echo \"Logging:\"\n    echo \"  Statement logging: ${POSTGRES_LOG_STATEMENT}\"\n    echo \"  Duration logging: ${POSTGRES_LOG_DURATION}\"\n    echo \"  Connection logging: ${POSTGRES_LOG_CONNECTIONS}\"\n    echo \"\"\n    echo \"Data Directory: ${PGDATA}\"\n    echo \"\"\n    echo \"Commands:\"\n    echo \"  psql                        Connect to database\"\n    echo \"  flox activate -s            Start PostgreSQL service\"\n    echo \"  flox services status        Check service status\"\n    echo \"  flox services logs postgres View service logs\"\n    echo \"  flox services restart postgres Restart with new settings\"\n}\nexport -f postgres-info\n\nredis-info() {\n    echo \"Redis (Headless Mode) - Configuration\"\n    echo \"\"\n    echo \"Connection:\"\n    echo \"  Host: ${REDIS_HOST}:${REDIS_PORT}\"\n    if [ -n \"$REDIS_PASSWORD\" ]; then\n        echo \"  Password: ***\"\n    else\n        echo \"  Password: (none)\"\n    fi\n    echo \"  Protected mode: ${REDIS_PROTECTED_MODE}\"\n    echo \"\"\n    echo \"Memory:\"\n    echo \"  Max memory: ${REDIS_MAXMEMORY}\"\n    echo \"  Eviction policy: ${REDIS_MAXMEMORY_POLICY}\"\n    echo \"  Eviction samples: ${REDIS_MAXMEMORY_SAMPLES}\"\n    echo \"\"\n    echo \"Persistence (RDB):\"\n    echo \"  Enabled: ${REDIS_SAVE_RDB}\"\n    if [ \"$REDIS_SAVE_RDB\" = \"yes\" ]; then\n        echo \"  Save after 900s if ${REDIS_SAVE_900}+ changes\"\n        echo \"  Save after 300s if ${REDIS_SAVE_300}+ changes\"\n        echo \"  Save after 60s if ${REDIS_SAVE_60}+ changes\"\n        echo \"  Compression: ${REDIS_RDB_COMPRESSION}\"\n        echo \"  Checksum: ${REDIS_RDB_CHECKSUM}\"\n    fi\n    echo \"\"\n    echo \"Persistence (AOF):\"\n    echo \"  Enabled: ${REDIS_APPENDONLY}\"\n    if [ \"$REDIS_APPENDONLY\" = \"yes\" ]; then\n        echo \"  Fsync policy: ${REDIS_APPENDFSYNC}\"\n        echo \"  Rewrite percentage: ${REDIS_AOF_REWRITE_PERCENTAGE}\"\n        echo \"  Rewrite min size: ${REDIS_AOF_REWRITE_MIN_SIZE}\"\n    fi\n    echo \"\"\n    echo \"Performance:\"\n    echo \"  Databases: ${REDIS_DATABASES}\"\n    echo \"  Max clients: ${REDIS_MAXCLIENTS}\"\n    echo \"  TCP backlog: ${REDIS_TCP_BACKLOG}\"\n    echo \"  Timeout: ${REDIS_TIMEOUT}s\"\n    echo \"  TCP keepalive: ${REDIS_TCP_KEEPALIVE}s\"\n    echo \"\"\n    echo \"Monitoring:\"\n    echo \"  Slow log threshold: ${REDIS_SLOWLOG_LOG_SLOWER_THAN}μs\"\n    echo \"  Slow log max length: ${REDIS_SLOWLOG_MAX_LEN}\"\n    echo \"  Latency monitor threshold: ${REDIS_LATENCY_MONITOR_THRESHOLD}ms\"\n    echo \"\"\n    echo \"Data Directory: ${REDIS_DIR}\"\n    echo \"Config File: ${REDIS_CONF_FILE}\"\n    echo \"\"\n    echo \"Commands:\"\n    echo \"  redis-cli                       Connect to Redis\"\n    echo \"  flox activate -s                Start Redis service\"\n    echo \"  flox services status            Check service status\"\n    echo \"  flox services logs redis        View service logs\"\n    echo \"  flox services restart redis     Restart with new settings\"\n}\nexport -f redis-info\n\nairflow-info() {\n    echo \"Airflow Local Development Environment\"\n    echo \"\"\n    echo \"Executor: $AIRFLOW_EXECUTOR\"\n    echo \"Webserver: http://$AIRFLOW_WEBSERVER_HOST:$AIRFLOW_WEBSERVER_PORT\"\n    echo \"\"\n    echo \"Admin User:\"\n    echo \"  Username: $AIRFLOW_ADMIN_USER\"\n    echo \"  Password: $AIRFLOW_ADMIN_PASSWORD\"\n    echo \"\"\n    echo \"Database:\"\n    echo \"  Host: $AIRFLOW_POSTGRES_HOST:$AIRFLOW_POSTGRES_PORT\"\n    echo \"  Database: $AIRFLOW_POSTGRES_DB\"\n    echo \"  User: $AIRFLOW_POSTGRES_USER\"\n    echo \"\"\n    if [ \"$AIRFLOW_EXECUTOR\" = \"CeleryExecutor\" ]; then\n        echo \"Redis (Celery):\"\n        echo \"  Host: $AIRFLOW_REDIS_HOST:$AIRFLOW_REDIS_PORT\"\n        echo \"  Database: $AIRFLOW_REDIS_DB\"\n        echo \"\"\n    fi\n    if [ \"$AIRFLOW_EXECUTOR\" = \"KubernetesExecutor\" ]; then\n        echo \"Kubernetes:\"\n        echo \"  Namespace: $AIRFLOW__KUBERNETES__NAMESPACE\"\n        echo \"  Config: $AIRFLOW__KUBERNETES__KUBE_CONFIG\"\n        echo \"\"\n    fi\n    echo \"Directories:\"\n    echo \"  Home: $AIRFLOW_HOME\"\n    echo \"  DAGs: $AIRFLOW_DAGS_DIR\"\n    echo \"  Logs: $AIRFLOW_LOG_DIR\"\n    echo \"  Plugins: $AIRFLOW_PLUGINS_DIR\"\n    echo \"\"\n    echo \"Commands:\"\n    echo \"  flox activate -s                    Start all services\"\n    echo \"  flox services status                Check service status\"\n    echo \"  flox services logs airflow-webserver View webserver logs\"\n    echo \"  flox services logs airflow-scheduler View scheduler logs\"\n    echo \"  airflow dags list                   List DAGs\"\n    echo \"  airflow dags trigger <dag_id>       Trigger a DAG\"\n    echo \"\"\n    echo \"Change Executor:\"\n    echo \"  AIRFLOW_EXECUTOR=CeleryExecutor flox activate -s\"\n    echo \"  AIRFLOW_EXECUTOR=KubernetesExecutor flox activate -s\"\n}\nexport -f airflow-info\n\nkind-info() {\n    echo \"KIND Cluster (Headless Mode)\"\n    echo \"\"\n    echo \"Cluster Name: $KIND_CLUSTER_NAME\"\n    echo \"Config File:  $KIND_CONFIG_FILE\"\n    echo \"Kubeconfig:   $KIND_KUBECONFIG\"\n    echo \"\"\n    echo \"Commands:\"\n    echo \"  flox activate -s        Start KIND cluster service\"\n    echo \"  flox services status    Check service status\"\n    echo \"  flox services logs kind View service logs\"\n    echo \"  kubectl cluster-info    Show cluster information\"\n    echo \"  kind get clusters       List KIND clusters\"\n    echo \"\"\n    echo \"Runtime Configuration:\"\n    echo \"  KIND_CLUSTER_NAME       Default: $KIND_CLUSTER_NAME\"\n    echo \"  KIND_CONFIG_FILE        Default: $KIND_CONFIG_FILE\"\n    echo \"  KIND_KUBECONFIG         Default: $KIND_KUBECONFIG\"\n    echo \"  KIND_IMAGE              Default: (latest)\"\n    echo \"\"\n    echo \"Example:\"\n    echo \"  KIND_CLUSTER_NAME=dev KIND_CONFIG_FILE=./my-config.yaml flox activate -s\"\n}\n\nreadme() {\n  local readme_path=\"$FLOX_ENV_PROJECT/README.md\"\n  if [[ \"$1\" == \"--refresh\" ]] || [ ! -s \"$readme_path\" ]; then\n    curl -sL \"https://raw.githubusercontent.com/barstoolbluz/floxenvs/main/kind-basic/README.md\" > \"$readme_path\" 2>/dev/null\n  fi\n  if command -v bat &>/dev/null; then\n    bat --language markdown \"$readme_path\" 2>/dev/null\n  else\n    cat \"$readme_path\" 2>/dev/null\n  fi\n}\n\nk8s-airflow-info() {\n    export KUBECONFIG=\"$AIRFLOW_KUBE_CONFIG\"\n\n    echo \"Airflow Kubernetes Executor Environment\"\n    echo \"\"\n    echo \"Namespace: $AIRFLOW_KUBE_NAMESPACE\"\n    echo \"ServiceAccount: $AIRFLOW_KUBE_WORKER_SERVICE_ACCOUNT\"\n    echo \"Kubeconfig: $AIRFLOW_KUBE_CONFIG\"\n    echo \"\"\n    echo \"Resource Limits:\"\n    echo \"  CPU Request: $AIRFLOW_KUBE_WORKER_CPU_REQUEST\"\n    echo \"  CPU Limit: $AIRFLOW_KUBE_WORKER_CPU_LIMIT\"\n    echo \"  Memory Request: $AIRFLOW_KUBE_WORKER_MEM_REQUEST\"\n    echo \"  Memory Limit: $AIRFLOW_KUBE_WORKER_MEM_LIMIT\"\n    echo \"\"\n    echo \"Pod Configuration:\"\n    echo \"  Image Pull Policy: $AIRFLOW_KUBE_IMAGE_PULL_POLICY\"\n    echo \"  Delete Worker Pods: $AIRFLOW_KUBE_DELETE_WORKER_PODS\"\n    echo \"  Delete On Failure: $AIRFLOW_KUBE_DELETE_WORKER_PODS_ON_FAILURE\"\n    echo \"\"\n    echo \"Configuration Files:\"\n    echo \"  RBAC: $AIRFLOW_KUBE_RBAC_CONFIG\"\n    echo \"  Pod Template: $AIRFLOW_KUBE_POD_TEMPLATE\"\n    echo \"\"\n    echo \"Kubernetes Status:\"\n    if kubectl cluster-info > /dev/null 2>&1; then\n        kubectl get nodes 2>/dev/null | head -n 5\n        echo \"\"\n        echo \"ServiceAccount:\"\n        kubectl get sa airflow -n \"$AIRFLOW_KUBE_NAMESPACE\" 2>/dev/null || echo \"  (Not created yet - run: flox activate -s)\"\n    else\n        echo \"  ❌ Cannot connect to cluster\"\n    fi\n    echo \"\"\n    echo \"Commands:\"\n    echo \"  kubectl get pods -n $AIRFLOW_KUBE_NAMESPACE       View Airflow pods\"\n    echo \"  kubectl get sa airflow -n $AIRFLOW_KUBE_NAMESPACE View ServiceAccount\"\n    echo \"  kubectl logs <pod> -n $AIRFLOW_KUBE_NAMESPACE     View pod logs\"\n    echo \"  k8s-test-pod                                       Test pod creation\"\n    echo \"  flox services logs k8s-setup                       View setup logs\"\n}\nexport -f k8s-airflow-info\n\nk8s-test-pod() {\n    export KUBECONFIG=\"$AIRFLOW_KUBE_CONFIG\"\n\n    echo \"Testing Airflow pod creation in namespace: $AIRFLOW_KUBE_NAMESPACE\"\n    echo \"\"\n\n    kubectl run test-airflow-pod \\\n        --image=apache/airflow:3.1.1 \\\n        --namespace=\"$AIRFLOW_KUBE_NAMESPACE\" \\\n        --serviceaccount=airflow \\\n        --restart=Never \\\n        --rm -it \\\n        -- python --version\n\n    if [ $? -eq 0 ]; then\n        echo \"\"\n        echo \"✅ Pod creation successful\"\n    else\n        echo \"\"\n        echo \"❌ Pod creation failed\"\n        echo \"Check RBAC with: kubectl get sa airflow -n $AIRFLOW_KUBE_NAMESPACE\"\n    fi\n}\nexport -f k8s-test-pod\n\nenterprise-info() {\n    echo \"╔════════════════════════════════════════════════════════╗\"\n    echo \"║   Apache Airflow Enterprise Stack                      ║\"\n    echo \"╚════════════════════════════════════════════════════════╝\"\n    echo \"\"\n    echo \"Executor: $AIRFLOW_EXECUTOR\"\n    echo \"Workers: $AIRFLOW_CELERY_WORKERS (concurrency: $AIRFLOW__CELERY__WORKER_CONCURRENCY)\"\n    echo \"Webserver Workers: $AIRFLOW_WEBSERVER_WORKERS\"\n    echo \"\"\n    echo \"═══ PostgreSQL Configuration ═══\"\n    echo \"  Host: $AIRFLOW_POSTGRES_HOST:$AIRFLOW_POSTGRES_PORT\"\n    echo \"  Database: $AIRFLOW_POSTGRES_DB\"\n    echo \"  Max connections: $POSTGRES_MAX_CONNECTIONS\"\n    echo \"  Shared buffers: $POSTGRES_SHARED_BUFFERS\"\n    echo \"  fsync: $POSTGRES_FSYNC (data safety)\"\n    echo \"\"\n    echo \"═══ Redis Configuration ═══\"\n    echo \"  Host: $AIRFLOW_REDIS_HOST:$AIRFLOW_REDIS_PORT\"\n    echo \"  Max memory: $REDIS_MAXMEMORY\"\n    echo \"  Persistence: AOF ($REDIS_APPENDFSYNC)\"\n    echo \"\"\n    echo \"═══ Kubernetes Configuration ═══\"\n    echo \"  Namespace: $AIRFLOW_KUBE_NAMESPACE\"\n    echo \"  ServiceAccount: $AIRFLOW_KUBE_WORKER_SERVICE_ACCOUNT\"\n    echo \"  Kubeconfig: $AIRFLOW_KUBE_CONFIG\"\n    echo \"\"\n    echo \"═══ Airflow Access ═══\"\n    echo \"  Web UI: http://localhost:$AIRFLOW_WEBSERVER_PORT\"\n    echo \"  Admin User: $AIRFLOW_ADMIN_USER\"\n    echo \"  Password: $AIRFLOW_ADMIN_PASSWORD\"\n    echo \"\"\n    echo \"═══ Component Info Commands ═══\"\n    echo \"  airflow-info         Airflow details\"\n    echo \"  postgres-info        PostgreSQL details\"\n    echo \"  redis-info           Redis details\"\n    echo \"  k8s-airflow-info     Kubernetes details\"\n    echo \"\"\n    echo \"═══ Service Management ═══\"\n    echo \"  flox services status                    Check all services\"\n    echo \"  flox services logs <service>            View logs\"\n    echo \"  flox services restart <service>         Restart service\"\n    echo \"\"\n    echo \"═══ Airflow Commands ═══\"\n    echo \"  airflow dags list                       List DAGs\"\n    echo \"  airflow dags trigger <dag_id>           Trigger a DAG\"\n    echo \"  airflow tasks test <dag> <task> <date>  Test a task\"\n}\nexport -f enterprise-info\n",
+      "zsh": "postgres-info() {\n    echo \"PostgreSQL (Headless Mode) - Configuration\"\n    echo \"\"\n    echo \"Connection:\"\n    echo \"  Listen address: ${PGHOSTADDR}:${PGPORT}\"\n    echo \"  Client connects to: ${PGHOST}\"\n    echo \"  Database: ${PGDATABASE}\"\n    echo \"  User: ${PGUSER}\"\n    echo \"  Auth method: ${POSTGRES_HOST_AUTH_METHOD}\"\n    echo \"\"\n    echo \"Performance:\"\n    echo \"  Max connections: ${POSTGRES_MAX_CONNECTIONS}\"\n    echo \"  Shared buffers: ${POSTGRES_SHARED_BUFFERS}\"\n    echo \"  Work mem: ${POSTGRES_WORK_MEM}\"\n    echo \"  Effective cache size: ${POSTGRES_EFFECTIVE_CACHE_SIZE}\"\n    echo \"  fsync: ${POSTGRES_FSYNC}\"\n    echo \"  Synchronous commit: ${POSTGRES_SYNCHRONOUS_COMMIT}\"\n    echo \"\"\n    echo \"WAL:\"\n    echo \"  Max WAL size: ${POSTGRES_MAX_WAL_SIZE}\"\n    echo \"  Min WAL size: ${POSTGRES_MIN_WAL_SIZE}\"\n    echo \"  Checkpoint timeout: ${POSTGRES_CHECKPOINT_TIMEOUT}\"\n    echo \"\"\n    echo \"Logging:\"\n    echo \"  Statement logging: ${POSTGRES_LOG_STATEMENT}\"\n    echo \"  Duration logging: ${POSTGRES_LOG_DURATION}\"\n    echo \"  Connection logging: ${POSTGRES_LOG_CONNECTIONS}\"\n    echo \"\"\n    echo \"Data Directory: ${PGDATA}\"\n    echo \"\"\n    echo \"Commands:\"\n    echo \"  psql                        Connect to database\"\n    echo \"  flox activate -s            Start PostgreSQL service\"\n    echo \"  flox services status        Check service status\"\n    echo \"  flox services logs postgres View service logs\"\n    echo \"  flox services restart postgres Restart with new settings\"\n}\n\nredis-info() {\n    echo \"Redis (Headless Mode) - Configuration\"\n    echo \"\"\n    echo \"Connection:\"\n    echo \"  Host: ${REDIS_HOST}:${REDIS_PORT}\"\n    if [ -n \"$REDIS_PASSWORD\" ]; then\n        echo \"  Password: ***\"\n    else\n        echo \"  Password: (none)\"\n    fi\n    echo \"  Protected mode: ${REDIS_PROTECTED_MODE}\"\n    echo \"\"\n    echo \"Memory:\"\n    echo \"  Max memory: ${REDIS_MAXMEMORY}\"\n    echo \"  Eviction policy: ${REDIS_MAXMEMORY_POLICY}\"\n    echo \"  Eviction samples: ${REDIS_MAXMEMORY_SAMPLES}\"\n    echo \"\"\n    echo \"Persistence (RDB):\"\n    echo \"  Enabled: ${REDIS_SAVE_RDB}\"\n    if [ \"$REDIS_SAVE_RDB\" = \"yes\" ]; then\n        echo \"  Save after 900s if ${REDIS_SAVE_900}+ changes\"\n        echo \"  Save after 300s if ${REDIS_SAVE_300}+ changes\"\n        echo \"  Save after 60s if ${REDIS_SAVE_60}+ changes\"\n        echo \"  Compression: ${REDIS_RDB_COMPRESSION}\"\n        echo \"  Checksum: ${REDIS_RDB_CHECKSUM}\"\n    fi\n    echo \"\"\n    echo \"Persistence (AOF):\"\n    echo \"  Enabled: ${REDIS_APPENDONLY}\"\n    if [ \"$REDIS_APPENDONLY\" = \"yes\" ]; then\n        echo \"  Fsync policy: ${REDIS_APPENDFSYNC}\"\n        echo \"  Rewrite percentage: ${REDIS_AOF_REWRITE_PERCENTAGE}\"\n        echo \"  Rewrite min size: ${REDIS_AOF_REWRITE_MIN_SIZE}\"\n    fi\n    echo \"\"\n    echo \"Performance:\"\n    echo \"  Databases: ${REDIS_DATABASES}\"\n    echo \"  Max clients: ${REDIS_MAXCLIENTS}\"\n    echo \"  TCP backlog: ${REDIS_TCP_BACKLOG}\"\n    echo \"  Timeout: ${REDIS_TIMEOUT}s\"\n    echo \"  TCP keepalive: ${REDIS_TCP_KEEPALIVE}s\"\n    echo \"\"\n    echo \"Monitoring:\"\n    echo \"  Slow log threshold: ${REDIS_SLOWLOG_LOG_SLOWER_THAN}μs\"\n    echo \"  Slow log max length: ${REDIS_SLOWLOG_MAX_LEN}\"\n    echo \"  Latency monitor threshold: ${REDIS_LATENCY_MONITOR_THRESHOLD}ms\"\n    echo \"\"\n    echo \"Data Directory: ${REDIS_DIR}\"\n    echo \"Config File: ${REDIS_CONF_FILE}\"\n    echo \"\"\n    echo \"Commands:\"\n    echo \"  redis-cli                       Connect to Redis\"\n    echo \"  flox activate -s                Start Redis service\"\n    echo \"  flox services status            Check service status\"\n    echo \"  flox services logs redis        View service logs\"\n    echo \"  flox services restart redis     Restart with new settings\"\n}\n\nairflow-info() {\n    echo \"Airflow Local Development Environment\"\n    echo \"\"\n    echo \"Executor: $AIRFLOW_EXECUTOR\"\n    echo \"Webserver: http://$AIRFLOW_WEBSERVER_HOST:$AIRFLOW_WEBSERVER_PORT\"\n    echo \"\"\n    echo \"Admin User:\"\n    echo \"  Username: $AIRFLOW_ADMIN_USER\"\n    echo \"  Password: $AIRFLOW_ADMIN_PASSWORD\"\n    echo \"\"\n    echo \"Database:\"\n    echo \"  Host: $AIRFLOW_POSTGRES_HOST:$AIRFLOW_POSTGRES_PORT\"\n    echo \"  Database: $AIRFLOW_POSTGRES_DB\"\n    echo \"  User: $AIRFLOW_POSTGRES_USER\"\n    echo \"\"\n    if [ \"$AIRFLOW_EXECUTOR\" = \"CeleryExecutor\" ]; then\n        echo \"Redis (Celery):\"\n        echo \"  Host: $AIRFLOW_REDIS_HOST:$AIRFLOW_REDIS_PORT\"\n        echo \"  Database: $AIRFLOW_REDIS_DB\"\n        echo \"\"\n    fi\n    if [ \"$AIRFLOW_EXECUTOR\" = \"KubernetesExecutor\" ]; then\n        echo \"Kubernetes:\"\n        echo \"  Namespace: $AIRFLOW__KUBERNETES__NAMESPACE\"\n        echo \"  Config: $AIRFLOW__KUBERNETES__KUBE_CONFIG\"\n        echo \"\"\n    fi\n    echo \"Directories:\"\n    echo \"  Home: $AIRFLOW_HOME\"\n    echo \"  DAGs: $AIRFLOW_DAGS_DIR\"\n    echo \"  Logs: $AIRFLOW_LOG_DIR\"\n    echo \"  Plugins: $AIRFLOW_PLUGINS_DIR\"\n    echo \"\"\n    echo \"Commands:\"\n    echo \"  flox activate -s                    Start all services\"\n    echo \"  flox services status                Check service status\"\n    echo \"  flox services logs airflow-webserver View webserver logs\"\n    echo \"  flox services logs airflow-scheduler View scheduler logs\"\n    echo \"  airflow dags list                   List DAGs\"\n    echo \"  airflow dags trigger <dag_id>       Trigger a DAG\"\n    echo \"\"\n    echo \"Change Executor:\"\n    echo \"  AIRFLOW_EXECUTOR=CeleryExecutor flox activate -s\"\n    echo \"  AIRFLOW_EXECUTOR=KubernetesExecutor flox activate -s\"\n}\n\nkind-info() {\n    echo \"KIND Cluster (Headless Mode)\"\n    echo \"\"\n    echo \"Cluster Name: $KIND_CLUSTER_NAME\"\n    echo \"Config File:  $KIND_CONFIG_FILE\"\n    echo \"Kubeconfig:   $KIND_KUBECONFIG\"\n    echo \"\"\n    echo \"Commands:\"\n    echo \"  flox activate -s        Start KIND cluster service\"\n    echo \"  flox services status    Check service status\"\n    echo \"  flox services logs kind View service logs\"\n    echo \"  kubectl cluster-info    Show cluster information\"\n    echo \"  kind get clusters       List KIND clusters\"\n    echo \"\"\n    echo \"Runtime Configuration:\"\n    echo \"  KIND_CLUSTER_NAME       Default: $KIND_CLUSTER_NAME\"\n    echo \"  KIND_CONFIG_FILE        Default: $KIND_CONFIG_FILE\"\n    echo \"  KIND_KUBECONFIG         Default: $KIND_KUBECONFIG\"\n    echo \"  KIND_IMAGE              Default: (latest)\"\n    echo \"\"\n    echo \"Example:\"\n    echo \"  KIND_CLUSTER_NAME=dev KIND_CONFIG_FILE=./my-config.yaml flox activate -s\"\n}\n\nreadme() {\n  local readme_path=\"$FLOX_ENV_PROJECT/README.md\"\n  if [[ \"$1\" == \"--refresh\" ]] || [ ! -s \"$readme_path\" ]; then\n    curl -sL \"https://raw.githubusercontent.com/barstoolbluz/floxenvs/main/kind-basic/README.md\" > \"$readme_path\" 2>/dev/null\n  fi\n  if command -v bat &>/dev/null; then\n    bat --language markdown \"$readme_path\" 2>/dev/null\n  else\n    cat \"$readme_path\" 2>/dev/null\n  fi\n}\n\nk8s-airflow-info() {\n    export KUBECONFIG=\"$AIRFLOW_KUBE_CONFIG\"\n\n    echo \"Airflow Kubernetes Executor Environment\"\n    echo \"\"\n    echo \"Namespace: $AIRFLOW_KUBE_NAMESPACE\"\n    echo \"ServiceAccount: $AIRFLOW_KUBE_WORKER_SERVICE_ACCOUNT\"\n    echo \"Kubeconfig: $AIRFLOW_KUBE_CONFIG\"\n    echo \"\"\n    echo \"Resource Limits:\"\n    echo \"  CPU Request: $AIRFLOW_KUBE_WORKER_CPU_REQUEST\"\n    echo \"  CPU Limit: $AIRFLOW_KUBE_WORKER_CPU_LIMIT\"\n    echo \"  Memory Request: $AIRFLOW_KUBE_WORKER_MEM_REQUEST\"\n    echo \"  Memory Limit: $AIRFLOW_KUBE_WORKER_MEM_LIMIT\"\n    echo \"\"\n    echo \"Pod Configuration:\"\n    echo \"  Image Pull Policy: $AIRFLOW_KUBE_IMAGE_PULL_POLICY\"\n    echo \"  Delete Worker Pods: $AIRFLOW_KUBE_DELETE_WORKER_PODS\"\n    echo \"  Delete On Failure: $AIRFLOW_KUBE_DELETE_WORKER_PODS_ON_FAILURE\"\n    echo \"\"\n    echo \"Configuration Files:\"\n    echo \"  RBAC: $AIRFLOW_KUBE_RBAC_CONFIG\"\n    echo \"  Pod Template: $AIRFLOW_KUBE_POD_TEMPLATE\"\n    echo \"\"\n    echo \"Kubernetes Status:\"\n    if kubectl cluster-info > /dev/null 2>&1; then\n        kubectl get nodes 2>/dev/null | head -n 5\n        echo \"\"\n        echo \"ServiceAccount:\"\n        kubectl get sa airflow -n \"$AIRFLOW_KUBE_NAMESPACE\" 2>/dev/null || echo \"  (Not created yet - run: flox activate -s)\"\n    else\n        echo \"  ❌ Cannot connect to cluster\"\n    fi\n    echo \"\"\n    echo \"Commands:\"\n    echo \"  kubectl get pods -n $AIRFLOW_KUBE_NAMESPACE       View Airflow pods\"\n    echo \"  kubectl get sa airflow -n $AIRFLOW_KUBE_NAMESPACE View ServiceAccount\"\n    echo \"  kubectl logs <pod> -n $AIRFLOW_KUBE_NAMESPACE     View pod logs\"\n    echo \"  k8s-test-pod                                       Test pod creation\"\n    echo \"  flox services logs k8s-setup                       View setup logs\"\n}\n\nk8s-test-pod() {\n    export KUBECONFIG=\"$AIRFLOW_KUBE_CONFIG\"\n\n    echo \"Testing Airflow pod creation in namespace: $AIRFLOW_KUBE_NAMESPACE\"\n    echo \"\"\n\n    kubectl run test-airflow-pod \\\n        --image=apache/airflow:3.1.1 \\\n        --namespace=\"$AIRFLOW_KUBE_NAMESPACE\" \\\n        --serviceaccount=airflow \\\n        --restart=Never \\\n        --rm -it \\\n        -- python --version\n\n    if [ $? -eq 0 ]; then\n        echo \"\"\n        echo \"✅ Pod creation successful\"\n    else\n        echo \"\"\n        echo \"❌ Pod creation failed\"\n        echo \"Check RBAC with: kubectl get sa airflow -n $AIRFLOW_KUBE_NAMESPACE\"\n    fi\n}\n\nenterprise-info() {\n    echo \"╔════════════════════════════════════════════════════════╗\"\n    echo \"║   Apache Airflow Enterprise Stack                      ║\"\n    echo \"╚════════════════════════════════════════════════════════╝\"\n    echo \"\"\n    echo \"Executor: $AIRFLOW_EXECUTOR\"\n    echo \"Workers: $AIRFLOW_CELERY_WORKERS (concurrency: $AIRFLOW__CELERY__WORKER_CONCURRENCY)\"\n    echo \"Webserver Workers: $AIRFLOW_WEBSERVER_WORKERS\"\n    echo \"\"\n    echo \"═══ PostgreSQL Configuration ═══\"\n    echo \"  Host: $AIRFLOW_POSTGRES_HOST:$AIRFLOW_POSTGRES_PORT\"\n    echo \"  Database: $AIRFLOW_POSTGRES_DB\"\n    echo \"  Max connections: $POSTGRES_MAX_CONNECTIONS\"\n    echo \"  Shared buffers: $POSTGRES_SHARED_BUFFERS\"\n    echo \"  fsync: $POSTGRES_FSYNC (data safety)\"\n    echo \"\"\n    echo \"═══ Redis Configuration ═══\"\n    echo \"  Host: $AIRFLOW_REDIS_HOST:$AIRFLOW_REDIS_PORT\"\n    echo \"  Max memory: $REDIS_MAXMEMORY\"\n    echo \"  Persistence: AOF ($REDIS_APPENDFSYNC)\"\n    echo \"\"\n    echo \"═══ Kubernetes Configuration ═══\"\n    echo \"  Namespace: $AIRFLOW_KUBE_NAMESPACE\"\n    echo \"  ServiceAccount: $AIRFLOW_KUBE_WORKER_SERVICE_ACCOUNT\"\n    echo \"  Kubeconfig: $AIRFLOW_KUBE_CONFIG\"\n    echo \"\"\n    echo \"═══ Airflow Access ═══\"\n    echo \"  Web UI: http://localhost:$AIRFLOW_WEBSERVER_PORT\"\n    echo \"  Admin User: $AIRFLOW_ADMIN_USER\"\n    echo \"  Password: $AIRFLOW_ADMIN_PASSWORD\"\n    echo \"\"\n    echo \"═══ Component Info Commands ═══\"\n    echo \"  airflow-info         Airflow details\"\n    echo \"  postgres-info        PostgreSQL details\"\n    echo \"  redis-info           Redis details\"\n    echo \"  k8s-airflow-info     Kubernetes details\"\n    echo \"\"\n    echo \"═══ Service Management ═══\"\n    echo \"  flox services status                    Check all services\"\n    echo \"  flox services logs <service>            View logs\"\n    echo \"  flox services restart <service>         Restart service\"\n    echo \"\"\n    echo \"═══ Airflow Commands ═══\"\n    echo \"  airflow dags list                       List DAGs\"\n    echo \"  airflow dags trigger <dag_id>           Trigger a DAG\"\n    echo \"  airflow tasks test <dag> <task> <date>  Test a task\"\n}\n",
+      "fish": "function postgres-info\n    echo \"PostgreSQL (Headless Mode) - Configuration\"\n    echo \"\"\n    echo \"Connection:\"\n    echo \"  Listen address: $PGHOSTADDR:$PGPORT\"\n    echo \"  Client connects to: $PGHOST\"\n    echo \"  Database: $PGDATABASE\"\n    echo \"  User: $PGUSER\"\n    echo \"  Auth method: $POSTGRES_HOST_AUTH_METHOD\"\n    echo \"\"\n    echo \"Performance:\"\n    echo \"  Max connections: $POSTGRES_MAX_CONNECTIONS\"\n    echo \"  Shared buffers: $POSTGRES_SHARED_BUFFERS\"\n    echo \"  Work mem: $POSTGRES_WORK_MEM\"\n    echo \"  Effective cache size: $POSTGRES_EFFECTIVE_CACHE_SIZE\"\n    echo \"  fsync: $POSTGRES_FSYNC\"\n    echo \"  Synchronous commit: $POSTGRES_SYNCHRONOUS_COMMIT\"\n    echo \"\"\n    echo \"WAL:\"\n    echo \"  Max WAL size: $POSTGRES_MAX_WAL_SIZE\"\n    echo \"  Min WAL size: $POSTGRES_MIN_WAL_SIZE\"\n    echo \"  Checkpoint timeout: $POSTGRES_CHECKPOINT_TIMEOUT\"\n    echo \"\"\n    echo \"Logging:\"\n    echo \"  Statement logging: $POSTGRES_LOG_STATEMENT\"\n    echo \"  Duration logging: $POSTGRES_LOG_DURATION\"\n    echo \"  Connection logging: $POSTGRES_LOG_CONNECTIONS\"\n    echo \"\"\n    echo \"Data Directory: $PGDATA\"\n    echo \"\"\n    echo \"Commands:\"\n    echo \"  psql                        Connect to database\"\n    echo \"  flox activate -s            Start PostgreSQL service\"\n    echo \"  flox services status        Check service status\"\n    echo \"  flox services logs postgres View service logs\"\n    echo \"  flox services restart postgres Restart with new settings\"\nend\n\nfunction redis-info\n    echo \"Redis (Headless Mode) - Configuration\"\n    echo \"\"\n    echo \"Connection:\"\n    echo \"  Host: $REDIS_HOST:$REDIS_PORT\"\n    if test -n \"$REDIS_PASSWORD\"\n        echo \"  Password: ***\"\n    else\n        echo \"  Password: (none)\"\n    end\n    echo \"  Protected mode: $REDIS_PROTECTED_MODE\"\n    echo \"\"\n    echo \"Memory:\"\n    echo \"  Max memory: $REDIS_MAXMEMORY\"\n    echo \"  Eviction policy: $REDIS_MAXMEMORY_POLICY\"\n    echo \"  Eviction samples: $REDIS_MAXMEMORY_SAMPLES\"\n    echo \"\"\n    echo \"Persistence (RDB):\"\n    echo \"  Enabled: $REDIS_SAVE_RDB\"\n    if test \"$REDIS_SAVE_RDB\" = \"yes\"\n        echo \"  Save after 900s if $REDIS_SAVE_900+ changes\"\n        echo \"  Save after 300s if $REDIS_SAVE_300+ changes\"\n        echo \"  Save after 60s if $REDIS_SAVE_60+ changes\"\n        echo \"  Compression: $REDIS_RDB_COMPRESSION\"\n        echo \"  Checksum: $REDIS_RDB_CHECKSUM\"\n    end\n    echo \"\"\n    echo \"Persistence (AOF):\"\n    echo \"  Enabled: $REDIS_APPENDONLY\"\n    if test \"$REDIS_APPENDONLY\" = \"yes\"\n        echo \"  Fsync policy: $REDIS_APPENDFSYNC\"\n        echo \"  Rewrite percentage: $REDIS_AOF_REWRITE_PERCENTAGE\"\n        echo \"  Rewrite min size: $REDIS_AOF_REWRITE_MIN_SIZE\"\n    end\n    echo \"\"\n    echo \"Performance:\"\n    echo \"  Databases: $REDIS_DATABASES\"\n    echo \"  Max clients: $REDIS_MAXCLIENTS\"\n    echo \"  TCP backlog: $REDIS_TCP_BACKLOG\"\n    echo \"  Timeout: $REDIS_TIMEOUT\"s\n    echo \"  TCP keepalive: $REDIS_TCP_KEEPALIVE\"s\n    echo \"\"\n    echo \"Monitoring:\"\n    echo \"  Slow log threshold: $REDIS_SLOWLOG_LOG_SLOWER_THAN\"μs\n    echo \"  Slow log max length: $REDIS_SLOWLOG_MAX_LEN\"\n    echo \"  Latency monitor threshold: $REDIS_LATENCY_MONITOR_THRESHOLD\"ms\n    echo \"\"\n    echo \"Data Directory: $REDIS_DIR\"\n    echo \"Config File: $REDIS_CONF_FILE\"\n    echo \"\"\n    echo \"Commands:\"\n    echo \"  redis-cli                       Connect to Redis\"\n    echo \"  flox activate -s                Start Redis service\"\n    echo \"  flox services status            Check service status\"\n    echo \"  flox services logs redis        View service logs\"\n    echo \"  flox services restart redis     Restart with new settings\"\nend\n\nfunction airflow-info\n    echo \"Airflow Local Development Environment\"\n    echo \"\"\n    echo \"Executor: $AIRFLOW_EXECUTOR\"\n    echo \"Webserver: http://$AIRFLOW_WEBSERVER_HOST:$AIRFLOW_WEBSERVER_PORT\"\n    echo \"\"\n    echo \"Admin User:\"\n    echo \"  Username: $AIRFLOW_ADMIN_USER\"\n    echo \"  Password: $AIRFLOW_ADMIN_PASSWORD\"\n    echo \"\"\n    echo \"Database:\"\n    echo \"  Host: $AIRFLOW_POSTGRES_HOST:$AIRFLOW_POSTGRES_PORT\"\n    echo \"  Database: $AIRFLOW_POSTGRES_DB\"\n    echo \"  User: $AIRFLOW_POSTGRES_USER\"\n    echo \"\"\n    if test \"$AIRFLOW_EXECUTOR\" = \"CeleryExecutor\"\n        echo \"Redis (Celery):\"\n        echo \"  Host: $AIRFLOW_REDIS_HOST:$AIRFLOW_REDIS_PORT\"\n        echo \"  Database: $AIRFLOW_REDIS_DB\"\n        echo \"\"\n    end\n    if test \"$AIRFLOW_EXECUTOR\" = \"KubernetesExecutor\"\n        echo \"Kubernetes:\"\n        echo \"  Namespace: $AIRFLOW__KUBERNETES__NAMESPACE\"\n        echo \"  Config: $AIRFLOW__KUBERNETES__KUBE_CONFIG\"\n        echo \"\"\n    end\n    echo \"Directories:\"\n    echo \"  Home: $AIRFLOW_HOME\"\n    echo \"  DAGs: $AIRFLOW_DAGS_DIR\"\n    echo \"  Logs: $AIRFLOW_LOG_DIR\"\n    echo \"  Plugins: $AIRFLOW_PLUGINS_DIR\"\n    echo \"\"\n    echo \"Commands:\"\n    echo \"  flox activate -s                    Start all services\"\n    echo \"  flox services status                Check service status\"\n    echo \"  flox services logs airflow-webserver View webserver logs\"\n    echo \"  flox services logs airflow-scheduler View scheduler logs\"\n    echo \"  airflow dags list                   List DAGs\"\n    echo \"  airflow dags trigger <dag_id>       Trigger a DAG\"\n    echo \"\"\n    echo \"Change Executor:\"\n    echo \"  AIRFLOW_EXECUTOR=CeleryExecutor flox activate -s\"\n    echo \"  AIRFLOW_EXECUTOR=KubernetesExecutor flox activate -s\"\nend\n\nfunction kind-info\n    echo \"KIND Cluster (Headless Mode)\"\n    echo \"\"\n    echo \"Cluster Name: $KIND_CLUSTER_NAME\"\n    echo \"Config File:  $KIND_CONFIG_FILE\"\n    echo \"Kubeconfig:   $KIND_KUBECONFIG\"\n    echo \"\"\n    echo \"Commands:\"\n    echo \"  flox activate -s        Start KIND cluster service\"\n    echo \"  flox services status    Check service status\"\n    echo \"  flox services logs kind View service logs\"\n    echo \"  kubectl cluster-info    Show cluster information\"\n    echo \"  kind get clusters       List KIND clusters\"\n    echo \"\"\n    echo \"Runtime Configuration:\"\n    echo \"  KIND_CLUSTER_NAME       Default: $KIND_CLUSTER_NAME\"\n    echo \"  KIND_CONFIG_FILE        Default: $KIND_CONFIG_FILE\"\n    echo \"  KIND_KUBECONFIG         Default: $KIND_KUBECONFIG\"\n    echo \"  KIND_IMAGE              Default: (latest)\"\n    echo \"\"\n    echo \"Example:\"\n    echo \"  KIND_CLUSTER_NAME=dev KIND_CONFIG_FILE=./my-config.yaml flox activate -s\"\nend\n\nfunction readme\n  set readme_path \"$FLOX_ENV_PROJECT/README.md\"\n  if test \"$argv[1]\" = \"--refresh\"; or test ! -s \"$readme_path\"\n    curl -sL \"https://raw.githubusercontent.com/barstoolbluz/floxenvs/main/kind-basic/README.md\" > \"$readme_path\" 2>/dev/null\n  end\n  if command -v bat >/dev/null 2>&1\n    bat --language markdown \"$readme_path\" 2>/dev/null\n  else\n    cat \"$readme_path\" 2>/dev/null\n  end\nend\n\nfunction k8s-airflow-info\n    set -x KUBECONFIG \"$AIRFLOW_KUBE_CONFIG\"\n\n    echo \"Airflow Kubernetes Executor Environment\"\n    echo \"\"\n    echo \"Namespace: $AIRFLOW_KUBE_NAMESPACE\"\n    echo \"ServiceAccount: $AIRFLOW_KUBE_WORKER_SERVICE_ACCOUNT\"\n    echo \"Kubeconfig: $AIRFLOW_KUBE_CONFIG\"\n    echo \"\"\n    echo \"Resource Limits:\"\n    echo \"  CPU Request: $AIRFLOW_KUBE_WORKER_CPU_REQUEST\"\n    echo \"  CPU Limit: $AIRFLOW_KUBE_WORKER_CPU_LIMIT\"\n    echo \"  Memory Request: $AIRFLOW_KUBE_WORKER_MEM_REQUEST\"\n    echo \"  Memory Limit: $AIRFLOW_KUBE_WORKER_MEM_LIMIT\"\n    echo \"\"\n    echo \"Pod Configuration:\"\n    echo \"  Image Pull Policy: $AIRFLOW_KUBE_IMAGE_PULL_POLICY\"\n    echo \"  Delete Worker Pods: $AIRFLOW_KUBE_DELETE_WORKER_PODS\"\n    echo \"  Delete On Failure: $AIRFLOW_KUBE_DELETE_WORKER_PODS_ON_FAILURE\"\n    echo \"\"\n    echo \"Configuration Files:\"\n    echo \"  RBAC: $AIRFLOW_KUBE_RBAC_CONFIG\"\n    echo \"  Pod Template: $AIRFLOW_KUBE_POD_TEMPLATE\"\n    echo \"\"\n    echo \"Kubernetes Status:\"\n    if kubectl cluster-info > /dev/null 2>&1\n        kubectl get nodes 2>/dev/null | head -n 5\n        echo \"\"\n        echo \"ServiceAccount:\"\n        kubectl get sa airflow -n \"$AIRFLOW_KUBE_NAMESPACE\" 2>/dev/null; or echo \"  (Not created yet - run: flox activate -s)\"\n    else\n        echo \"  ❌ Cannot connect to cluster\"\n    end\n    echo \"\"\n    echo \"Commands:\"\n    echo \"  kubectl get pods -n $AIRFLOW_KUBE_NAMESPACE       View Airflow pods\"\n    echo \"  kubectl get sa airflow -n $AIRFLOW_KUBE_NAMESPACE View ServiceAccount\"\n    echo \"  kubectl logs <pod> -n $AIRFLOW_KUBE_NAMESPACE     View pod logs\"\n    echo \"  k8s-test-pod                                       Test pod creation\"\n    echo \"  flox services logs k8s-setup                       View setup logs\"\nend\n\nfunction k8s-test-pod\n    set -x KUBECONFIG \"$AIRFLOW_KUBE_CONFIG\"\n\n    echo \"Testing Airflow pod creation in namespace: $AIRFLOW_KUBE_NAMESPACE\"\n    echo \"\"\n\n    kubectl run test-airflow-pod \\\n        --image=apache/airflow:3.1.1 \\\n        --namespace=\"$AIRFLOW_KUBE_NAMESPACE\" \\\n        --serviceaccount=airflow \\\n        --restart=Never \\\n        --rm -it \\\n        -- python --version\n\n    if test $status -eq 0\n        echo \"\"\n        echo \"✅ Pod creation successful\"\n    else\n        echo \"\"\n        echo \"❌ Pod creation failed\"\n        echo \"Check RBAC with: kubectl get sa airflow -n $AIRFLOW_KUBE_NAMESPACE\"\n    end\nend\n\nfunction enterprise-info\n    echo \"╔════════════════════════════════════════════════════════╗\"\n    echo \"║   Apache Airflow Enterprise Stack                      ║\"\n    echo \"╚════════════════════════════════════════════════════════╝\"\n    echo \"\"\n    echo \"Executor: $AIRFLOW_EXECUTOR\"\n    echo \"Workers: $AIRFLOW_CELERY_WORKERS (concurrency: $AIRFLOW__CELERY__WORKER_CONCURRENCY)\"\n    echo \"Webserver Workers: $AIRFLOW_WEBSERVER_WORKERS\"\n    echo \"\"\n    echo \"═══ PostgreSQL Configuration ═══\"\n    echo \"  Host: $AIRFLOW_POSTGRES_HOST:$AIRFLOW_POSTGRES_PORT\"\n    echo \"  Database: $AIRFLOW_POSTGRES_DB\"\n    echo \"  Max connections: $POSTGRES_MAX_CONNECTIONS\"\n    echo \"  Shared buffers: $POSTGRES_SHARED_BUFFERS\"\n    echo \"  fsync: $POSTGRES_FSYNC (data safety)\"\n    echo \"\"\n    echo \"═══ Redis Configuration ═══\"\n    echo \"  Host: $AIRFLOW_REDIS_HOST:$AIRFLOW_REDIS_PORT\"\n    echo \"  Max memory: $REDIS_MAXMEMORY\"\n    echo \"  Persistence: AOF ($REDIS_APPENDFSYNC)\"\n    echo \"\"\n    echo \"═══ Kubernetes Configuration ═══\"\n    echo \"  Namespace: $AIRFLOW_KUBE_NAMESPACE\"\n    echo \"  ServiceAccount: $AIRFLOW_KUBE_WORKER_SERVICE_ACCOUNT\"\n    echo \"  Kubeconfig: $AIRFLOW_KUBE_CONFIG\"\n    echo \"\"\n    echo \"═══ Airflow Access ═══\"\n    echo \"  Web UI: http://localhost:$AIRFLOW_WEBSERVER_PORT\"\n    echo \"  Admin User: $AIRFLOW_ADMIN_USER\"\n    echo \"  Password: $AIRFLOW_ADMIN_PASSWORD\"\n    echo \"\"\n    echo \"═══ Component Info Commands ═══\"\n    echo \"  airflow-info         Airflow details\"\n    echo \"  postgres-info        PostgreSQL details\"\n    echo \"  redis-info           Redis details\"\n    echo \"  k8s-airflow-info     Kubernetes details\"\n    echo \"\"\n    echo \"═══ Service Management ═══\"\n    echo \"  flox services status                    Check all services\"\n    echo \"  flox services logs <service>            View logs\"\n    echo \"  flox services restart <service>         Restart service\"\n    echo \"\"\n    echo \"═══ Airflow Commands ═══\"\n    echo \"  airflow dags list                       List DAGs\"\n    echo \"  airflow dags trigger <dag_id>           Trigger a DAG\"\n    echo \"  airflow tasks test <dag> <task> <date>  Test a task\"\nend\n"
+    },
+    "options": {
+      "systems": [
+        "aarch64-darwin",
+        "aarch64-linux",
+        "x86_64-darwin",
+        "x86_64-linux"
+      ]
+    },
+    "services": {
+      "airflow-scheduler": {
+        "command": "exec airflow scheduler\n"
+      },
+      "airflow-webserver": {
+        "command": "exec airflow webserver \\\n    --port \"$AIRFLOW_WEBSERVER_PORT\" \\\n    --hostname \"$AIRFLOW_WEBSERVER_HOST\" \\\n    --workers \"$AIRFLOW_WEBSERVER_WORKERS\"\n"
+      },
+      "airflow-worker": {
+        "command": "if [ \"$AIRFLOW_EXECUTOR\" = \"CeleryExecutor\" ]; then\n    exec airflow celery worker \\\n        --concurrency \"$AIRFLOW__CELERY__WORKER_CONCURRENCY\"\nelse\n    # Not needed for LocalExecutor or KubernetesExecutor\n    tail -f /dev/null\nfi\n"
+      },
+      "k8s-setup": {
+        "command": "export KUBECONFIG=\"$AIRFLOW_KUBE_CONFIG\"\n\necho \"=== Kubernetes Setup Service ===\" | tee \"$AIRFLOW_KUBE_LOG_DIR/setup.log\"\necho \"Starting at $(date)\" | tee -a \"$AIRFLOW_KUBE_LOG_DIR/setup.log\"\n\n# Wait for cluster to be ready\necho \"Waiting for cluster to be ready...\" | tee -a \"$AIRFLOW_KUBE_LOG_DIR/setup.log\"\nif ! kubectl wait --for=condition=Ready nodes --all --timeout=120s 2>&1 | tee -a \"$AIRFLOW_KUBE_LOG_DIR/setup.log\"; then\n    echo \"❌ Cluster not ready\" | tee -a \"$AIRFLOW_KUBE_LOG_DIR/setup.log\"\n    exit 1\nfi\n\n# Create namespace\necho \"Creating namespace '$AIRFLOW_KUBE_NAMESPACE'...\" | tee -a \"$AIRFLOW_KUBE_LOG_DIR/setup.log\"\nkubectl create namespace \"$AIRFLOW_KUBE_NAMESPACE\" --dry-run=client -o yaml | kubectl apply -f - 2>&1 | tee -a \"$AIRFLOW_KUBE_LOG_DIR/setup.log\"\n\n# Apply RBAC\necho \"Applying RBAC configuration...\" | tee -a \"$AIRFLOW_KUBE_LOG_DIR/setup.log\"\nif kubectl apply -f \"$AIRFLOW_KUBE_RBAC_CONFIG\" 2>&1 | tee -a \"$AIRFLOW_KUBE_LOG_DIR/setup.log\"; then\n    echo \"✅ RBAC configured successfully\" | tee -a \"$AIRFLOW_KUBE_LOG_DIR/setup.log\"\nelse\n    echo \"❌ Failed to apply RBAC\" | tee -a \"$AIRFLOW_KUBE_LOG_DIR/setup.log\"\n    exit 1\nfi\n\n# Verify ServiceAccount\necho \"\" | tee -a \"$AIRFLOW_KUBE_LOG_DIR/setup.log\"\necho \"ServiceAccount created:\" | tee -a \"$AIRFLOW_KUBE_LOG_DIR/setup.log\"\nkubectl get serviceaccount airflow -n \"$AIRFLOW_KUBE_NAMESPACE\" 2>&1 | tee -a \"$AIRFLOW_KUBE_LOG_DIR/setup.log\"\n\necho \"\" | tee -a \"$AIRFLOW_KUBE_LOG_DIR/setup.log\"\necho \"✅ Kubernetes executor environment ready\" | tee -a \"$AIRFLOW_KUBE_LOG_DIR/setup.log\"\necho \"Pod template available at: $AIRFLOW_KUBE_POD_TEMPLATE\" | tee -a \"$AIRFLOW_KUBE_LOG_DIR/setup.log\"\n\n# Keep service running\ntail -f /dev/null\n"
+      },
+      "kind": {
+        "command": "mkdir -p \"$KIND_LOG_DIR\"\nmkdir -p \"$KIND_DATA_DIR\"\n\n# Log startup\necho \"=== KIND Service Startup ===\" > \"$KIND_LOG_DIR/service.log\"\necho \"Starting at $(date)\" >> \"$KIND_LOG_DIR/service.log\"\necho \"KIND_CLUSTER_NAME = $KIND_CLUSTER_NAME\" >> \"$KIND_LOG_DIR/service.log\"\necho \"KIND_CONFIG_FILE = $KIND_CONFIG_FILE\" >> \"$KIND_LOG_DIR/service.log\"\n\n# Check if cluster already exists\nif kind get clusters 2>/dev/null | grep -q \"^${KIND_CLUSTER_NAME}$\"; then\n    echo \"Cluster '$KIND_CLUSTER_NAME' already exists\" | tee -a \"$KIND_LOG_DIR/service.log\"\nelse\n    echo \"Creating KIND cluster '$KIND_CLUSTER_NAME'...\" | tee -a \"$KIND_LOG_DIR/service.log\"\n\n    # Build kind create command\n    KIND_CMD=\"kind create cluster --name $KIND_CLUSTER_NAME\"\n\n    # Add config file if it exists\n    if [ -f \"$KIND_CONFIG_FILE\" ]; then\n        KIND_CMD=\"$KIND_CMD --config $KIND_CONFIG_FILE\"\n    fi\n\n    # Add image if specified\n    if [ -n \"$KIND_IMAGE\" ]; then\n        KIND_CMD=\"$KIND_CMD --image $KIND_IMAGE\"\n    fi\n\n    # Add kubeconfig location\n    KIND_CMD=\"$KIND_CMD --kubeconfig $KIND_KUBECONFIG\"\n\n    # Create cluster\n    echo \"Running: $KIND_CMD\" >> \"$KIND_LOG_DIR/service.log\"\n    if eval \"$KIND_CMD\" 2>&1 | tee -a \"$KIND_LOG_DIR/service.log\"; then\n        echo \"✓ Cluster created successfully\" | tee -a \"$KIND_LOG_DIR/service.log\"\n\n        # Set KUBECONFIG for kubectl\n        export KUBECONFIG=\"$KIND_KUBECONFIG\"\n\n        # Wait for cluster to be ready\n        echo \"Waiting for cluster to be ready...\" | tee -a \"$KIND_LOG_DIR/service.log\"\n        kubectl wait --for=condition=Ready nodes --all --timeout=300s 2>&1 | tee -a \"$KIND_LOG_DIR/service.log\"\n\n        echo \"✓ Cluster is ready\" | tee -a \"$KIND_LOG_DIR/service.log\"\n        echo \"\" | tee -a \"$KIND_LOG_DIR/service.log\"\n        kubectl cluster-info 2>&1 | tee -a \"$KIND_LOG_DIR/service.log\"\n    else\n        echo \"✗ Failed to create cluster\" | tee -a \"$KIND_LOG_DIR/service.log\"\n        exit 1\n    fi\nfi\n\n# Keep service running\ntail -f /dev/null\n"
+      },
+      "postgres": {
+        "command": "# Ensure socket directory exists\nmkdir -p \"$PGHOST_SOCKET\"\nchmod 700 \"$PGHOST_SOCKET\"\n\n# Start PostgreSQL with all runtime configuration\nexec postgres -D \"$PGDATA\" \\\n  -c listen_addresses=\"$PGHOSTADDR\" \\\n  -p \"$PGPORT\" \\\n  -c unix_socket_directories=\"$PGHOST_SOCKET\" \\\n  -c unix_socket_permissions=0700 \\\n  ${POSTGRES_MAX_CONNECTIONS:+-c max_connections=\"$POSTGRES_MAX_CONNECTIONS\"} \\\n  ${POSTGRES_SHARED_BUFFERS:+-c shared_buffers=\"$POSTGRES_SHARED_BUFFERS\"} \\\n  ${POSTGRES_WORK_MEM:+-c work_mem=\"$POSTGRES_WORK_MEM\"} \\\n  ${POSTGRES_EFFECTIVE_CACHE_SIZE:+-c effective_cache_size=\"$POSTGRES_EFFECTIVE_CACHE_SIZE\"} \\\n  $([ \"$POSTGRES_FSYNC\" = \"off\" ] && echo \"-c fsync=off\") \\\n  ${POSTGRES_SYNCHRONOUS_COMMIT:+-c synchronous_commit=\"$POSTGRES_SYNCHRONOUS_COMMIT\"} \\\n  ${POSTGRES_FULL_PAGE_WRITES:+-c full_page_writes=\"$POSTGRES_FULL_PAGE_WRITES\"} \\\n  ${POSTGRES_MAX_WAL_SIZE:+-c max_wal_size=\"$POSTGRES_MAX_WAL_SIZE\"} \\\n  ${POSTGRES_MIN_WAL_SIZE:+-c min_wal_size=\"$POSTGRES_MIN_WAL_SIZE\"} \\\n  ${POSTGRES_CHECKPOINT_TIMEOUT:+-c checkpoint_timeout=\"$POSTGRES_CHECKPOINT_TIMEOUT\"} \\\n  ${POSTGRES_LOG_STATEMENT:+-c log_statement=\"$POSTGRES_LOG_STATEMENT\"} \\\n  ${POSTGRES_LOG_DURATION:+-c log_duration=\"$POSTGRES_LOG_DURATION\"} \\\n  ${POSTGRES_LOG_MIN_DURATION:+-c log_min_duration_statement=\"$POSTGRES_LOG_MIN_DURATION\"} \\\n  ${POSTGRES_LOG_CONNECTIONS:+-c log_connections=\"$POSTGRES_LOG_CONNECTIONS\"} \\\n  ${POSTGRES_LOG_DISCONNECTIONS:+-c log_disconnections=\"$POSTGRES_LOG_DISCONNECTIONS\"} \\\n  $POSTGRES_EXTRA_OPTS\n"
+      },
+      "redis": {
+        "command": "redis-server $REDIS_CONF_FILE"
+      }
+    }
+  },
+  "packages": [
+    {
+      "attr_path": "coreutils",
+      "broken": false,
+      "derivation": "/nix/store/8v93k1i80z2y93mj93rsbdhslnhcb2g1-coreutils-9.8.drv",
+      "description": "GNU Core Utilities",
+      "install_id": "coreutils",
+      "license": "GPL-3.0-or-later",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=6a08e6bb4e46ff7fcbb53d409b253f6bad8a28ce",
+      "name": "coreutils-9.8",
+      "pname": "coreutils",
+      "rev": "6a08e6bb4e46ff7fcbb53d409b253f6bad8a28ce",
+      "rev_count": 883951,
+      "rev_date": "2025-10-25T06:24:58Z",
+      "scrape_date": "2025-10-27T02:08:15.048857Z",
+      "stabilities": [
+        "unstable"
+      ],
+      "unfree": false,
+      "version": "9.8",
+      "outputs_to_install": [
+        "out"
+      ],
+      "outputs": {
+        "info": "/nix/store/hwhpjxflkbf3r1z836ipapcfz6n7h6wi-coreutils-9.8-info",
+        "out": "/nix/store/xpxisjpwldh5f8y8xniizja9fxvbsqln-coreutils-9.8"
+      },
+      "system": "aarch64-darwin",
+      "group": "darwin-tools",
+      "priority": 5
+    },
+    {
+      "attr_path": "coreutils",
+      "broken": false,
+      "derivation": "/nix/store/9ca92mpckwfgmah2nzbi0pdwapx74ys9-coreutils-9.8.drv",
+      "description": "GNU Core Utilities",
+      "install_id": "coreutils",
+      "license": "GPL-3.0-or-later",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=6a08e6bb4e46ff7fcbb53d409b253f6bad8a28ce",
+      "name": "coreutils-9.8",
+      "pname": "coreutils",
+      "rev": "6a08e6bb4e46ff7fcbb53d409b253f6bad8a28ce",
+      "rev_count": 883951,
+      "rev_date": "2025-10-25T06:24:58Z",
+      "scrape_date": "2025-10-27T02:18:26.274826Z",
+      "stabilities": [
+        "unstable"
+      ],
+      "unfree": false,
+      "version": "9.8",
+      "outputs_to_install": [
+        "out"
+      ],
+      "outputs": {
+        "debug": "/nix/store/8mxdv3zkfd2bfhljny13rsxhn5j6psy5-coreutils-9.8-debug",
+        "info": "/nix/store/24hcz4v2685kj2yfvd5mwnxd7f5iy3n7-coreutils-9.8-info",
+        "out": "/nix/store/kmssz33v44ms58zc9v2gv2x019rh4s6h-coreutils-9.8"
+      },
+      "system": "aarch64-linux",
+      "group": "darwin-tools",
+      "priority": 5
+    },
+    {
+      "attr_path": "coreutils",
+      "broken": false,
+      "derivation": "/nix/store/f0c37w0qlfdra5cfg0b6sj8my49f7a1j-coreutils-9.8.drv",
+      "description": "GNU Core Utilities",
+      "install_id": "coreutils",
+      "license": "GPL-3.0-or-later",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=6a08e6bb4e46ff7fcbb53d409b253f6bad8a28ce",
+      "name": "coreutils-9.8",
+      "pname": "coreutils",
+      "rev": "6a08e6bb4e46ff7fcbb53d409b253f6bad8a28ce",
+      "rev_count": 883951,
+      "rev_date": "2025-10-25T06:24:58Z",
+      "scrape_date": "2025-10-27T02:29:21.635256Z",
+      "stabilities": [
+        "unstable"
+      ],
+      "unfree": false,
+      "version": "9.8",
+      "outputs_to_install": [
+        "out"
+      ],
+      "outputs": {
+        "info": "/nix/store/ad47w3v8846x80kz9sbva6z24z48sx1g-coreutils-9.8-info",
+        "out": "/nix/store/js4wzwhm6wv09mxv7lb2zrb25x4ai89g-coreutils-9.8"
+      },
+      "system": "x86_64-darwin",
+      "group": "darwin-tools",
+      "priority": 5
+    },
+    {
+      "attr_path": "coreutils",
+      "broken": false,
+      "derivation": "/nix/store/qabf8kc1wl566y6vqgys523359nshnv3-coreutils-9.8.drv",
+      "description": "GNU Core Utilities",
+      "install_id": "coreutils",
+      "license": "GPL-3.0-or-later",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=6a08e6bb4e46ff7fcbb53d409b253f6bad8a28ce",
+      "name": "coreutils-9.8",
+      "pname": "coreutils",
+      "rev": "6a08e6bb4e46ff7fcbb53d409b253f6bad8a28ce",
+      "rev_count": 883951,
+      "rev_date": "2025-10-25T06:24:58Z",
+      "scrape_date": "2025-10-27T03:00:54.459715Z",
+      "stabilities": [
+        "unstable"
+      ],
+      "unfree": false,
+      "version": "9.8",
+      "outputs_to_install": [
+        "out"
+      ],
+      "outputs": {
+        "debug": "/nix/store/ypxgf9nwy3494f25isg2hpgwf506iy7p-coreutils-9.8-debug",
+        "info": "/nix/store/skcdvhfcdq8wghkiw44j4jalzqi6y56g-coreutils-9.8-info",
+        "out": "/nix/store/xs8scz9w9jp4hpqycx3n3bah5y07ymgj-coreutils-9.8"
+      },
+      "system": "x86_64-linux",
+      "group": "darwin-tools",
+      "priority": 5
+    },
+    {
+      "attr_path": "airflow-full-3-1-1",
+      "derivation": "/nix/store/16vl6k059wghhizb20fjpnq01dny45xw-airflow-full-3-1-1-3.1.1.drv",
+      "description": "Apache Airflow 3.1.1 with multiple providers (Active Support, Python 3.9-3.12)",
+      "install_id": "airflow",
+      "locked_url": "https://github.com/barstoolbluz/airflow-nix-builds.git?rev=4be998207d41bdfb9dcea1c4107f5891a08b7c85",
+      "name": "airflow-full-3-1-1-3.1.1",
+      "pname": "airflow-full-3-1-1",
+      "rev": "4be998207d41bdfb9dcea1c4107f5891a08b7c85",
+      "rev_count": 9,
+      "rev_date": "2025-11-04T02:16:53Z",
+      "scrape_date": "2025-11-04T17:25:21.959159861Z",
+      "stabilities": [
+        "unstable"
+      ],
+      "version": "3.1.1",
+      "outputs_to_install": [
+        "out"
+      ],
+      "outputs": {
+        "out": "/nix/store/ph0xcid58q3qx08izvkpiii6l27cmckj-airflow-full-3-1-1-3.1.1"
+      },
+      "system": "x86_64-linux",
+      "group": "toplevel",
+      "priority": 5
+    },
+    {
+      "attr_path": "bat",
+      "broken": false,
+      "derivation": "/nix/store/g61bbk9rk22w1ax1p18zv5wfb675ws29-bat-0.26.0.drv",
+      "description": "Cat(1) clone with syntax highlighting and Git integration",
+      "install_id": "bat",
+      "license": "[ Apache-2.0, MIT ]",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=6a08e6bb4e46ff7fcbb53d409b253f6bad8a28ce",
+      "name": "bat-0.26.0",
+      "pname": "bat",
+      "rev": "6a08e6bb4e46ff7fcbb53d409b253f6bad8a28ce",
+      "rev_count": 883951,
+      "rev_date": "2025-10-25T06:24:58Z",
+      "scrape_date": "2025-10-27T02:08:14.700296Z",
+      "stabilities": [
+        "unstable"
+      ],
+      "unfree": false,
+      "version": "0.26.0",
+      "outputs_to_install": [
+        "out"
+      ],
+      "outputs": {
+        "out": "/nix/store/m1s1wqd7nswi7jnlg146g0m3rsvsg9a7-bat-0.26.0"
+      },
+      "system": "aarch64-darwin",
+      "group": "toplevel",
+      "priority": 5
+    },
+    {
+      "attr_path": "bat",
+      "broken": false,
+      "derivation": "/nix/store/6rh4yfkz53zgzzg2yl09x69w9c9qd8b2-bat-0.26.0.drv",
+      "description": "Cat(1) clone with syntax highlighting and Git integration",
+      "install_id": "bat",
+      "license": "[ Apache-2.0, MIT ]",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=6a08e6bb4e46ff7fcbb53d409b253f6bad8a28ce",
+      "name": "bat-0.26.0",
+      "pname": "bat",
+      "rev": "6a08e6bb4e46ff7fcbb53d409b253f6bad8a28ce",
+      "rev_count": 883951,
+      "rev_date": "2025-10-25T06:24:58Z",
+      "scrape_date": "2025-10-27T02:18:25.817515Z",
+      "stabilities": [
+        "unstable"
+      ],
+      "unfree": false,
+      "version": "0.26.0",
+      "outputs_to_install": [
+        "out"
+      ],
+      "outputs": {
+        "out": "/nix/store/0am602vqa4zyl5m75na8gl47dk66zzid-bat-0.26.0"
+      },
+      "system": "aarch64-linux",
+      "group": "toplevel",
+      "priority": 5
+    },
+    {
+      "attr_path": "bat",
+      "broken": false,
+      "derivation": "/nix/store/0jmi4m11dp8sdwn47cbhifzs518cf7fr-bat-0.26.0.drv",
+      "description": "Cat(1) clone with syntax highlighting and Git integration",
+      "install_id": "bat",
+      "license": "[ Apache-2.0, MIT ]",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=6a08e6bb4e46ff7fcbb53d409b253f6bad8a28ce",
+      "name": "bat-0.26.0",
+      "pname": "bat",
+      "rev": "6a08e6bb4e46ff7fcbb53d409b253f6bad8a28ce",
+      "rev_count": 883951,
+      "rev_date": "2025-10-25T06:24:58Z",
+      "scrape_date": "2025-10-27T02:29:21.295854Z",
+      "stabilities": [
+        "unstable"
+      ],
+      "unfree": false,
+      "version": "0.26.0",
+      "outputs_to_install": [
+        "out"
+      ],
+      "outputs": {
+        "out": "/nix/store/7f6piwxyq7g8lw0d61bzy9nvmq1lsxv7-bat-0.26.0"
+      },
+      "system": "x86_64-darwin",
+      "group": "toplevel",
+      "priority": 5
+    },
+    {
+      "attr_path": "bat",
+      "broken": false,
+      "derivation": "/nix/store/dcxwgk3d8jlh0yxhlarnyn0dbhmsn6ai-bat-0.26.0.drv",
+      "description": "Cat(1) clone with syntax highlighting and Git integration",
+      "install_id": "bat",
+      "license": "[ Apache-2.0, MIT ]",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=6a08e6bb4e46ff7fcbb53d409b253f6bad8a28ce",
+      "name": "bat-0.26.0",
+      "pname": "bat",
+      "rev": "6a08e6bb4e46ff7fcbb53d409b253f6bad8a28ce",
+      "rev_count": 883951,
+      "rev_date": "2025-10-25T06:24:58Z",
+      "scrape_date": "2025-10-27T03:00:53.952554Z",
+      "stabilities": [
+        "unstable"
+      ],
+      "unfree": false,
+      "version": "0.26.0",
+      "outputs_to_install": [
+        "out"
+      ],
+      "outputs": {
+        "out": "/nix/store/vsih714glpw1gdr86yrif87pf0cvj9ha-bat-0.26.0"
+      },
+      "system": "x86_64-linux",
+      "group": "toplevel",
+      "priority": 5
+    },
+    {
+      "attr_path": "curl",
+      "broken": false,
+      "derivation": "/nix/store/g9b4bixj0n0bv1vf9bz0kakq86hh24h4-curl-8.16.0.drv",
+      "description": "Command line tool for transferring files with URL syntax",
+      "install_id": "curl",
+      "license": "curl",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=6a08e6bb4e46ff7fcbb53d409b253f6bad8a28ce",
+      "name": "curl-8.16.0",
+      "pname": "curl",
+      "rev": "6a08e6bb4e46ff7fcbb53d409b253f6bad8a28ce",
+      "rev_count": 883951,
+      "rev_date": "2025-10-25T06:24:58Z",
+      "scrape_date": "2025-10-27T02:08:15.120034Z",
+      "stabilities": [
+        "unstable"
+      ],
+      "unfree": false,
+      "version": "8.16.0",
+      "outputs_to_install": [
+        "bin",
+        "man"
+      ],
+      "outputs": {
+        "bin": "/nix/store/982cq6ga80yn9nghx479fbqqwf7kf8n1-curl-8.16.0-bin",
+        "dev": "/nix/store/qxzi15y4apihsg2infxn66b6hz5lws3h-curl-8.16.0-dev",
+        "devdoc": "/nix/store/bz1ap1ahksz62gz79h8anfhsyz1ir0jw-curl-8.16.0-devdoc",
+        "man": "/nix/store/rsdippinyvz3myz505vi6sgx8vmh30px-curl-8.16.0-man",
+        "out": "/nix/store/8fgfydjv40m1pw8bpwm30kxw24284fvg-curl-8.16.0"
+      },
+      "system": "aarch64-darwin",
+      "group": "toplevel",
+      "priority": 5
+    },
+    {
+      "attr_path": "curl",
+      "broken": false,
+      "derivation": "/nix/store/iij2ckwkfzzc50q6yr4jrqxc4kqiyrz6-curl-8.16.0.drv",
+      "description": "Command line tool for transferring files with URL syntax",
+      "install_id": "curl",
+      "license": "curl",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=6a08e6bb4e46ff7fcbb53d409b253f6bad8a28ce",
+      "name": "curl-8.16.0",
+      "pname": "curl",
+      "rev": "6a08e6bb4e46ff7fcbb53d409b253f6bad8a28ce",
+      "rev_count": 883951,
+      "rev_date": "2025-10-25T06:24:58Z",
+      "scrape_date": "2025-10-27T02:18:26.359385Z",
+      "stabilities": [
+        "unstable"
+      ],
+      "unfree": false,
+      "version": "8.16.0",
+      "outputs_to_install": [
+        "bin",
+        "man"
+      ],
+      "outputs": {
+        "bin": "/nix/store/qnakzidljavpz27az7gjkyydb7ckjg6r-curl-8.16.0-bin",
+        "debug": "/nix/store/zxlv6n85qw1lzmx4xblgc0lz1vv0hg1f-curl-8.16.0-debug",
+        "dev": "/nix/store/aypq6najvfyhzx4k80a1vy329qmqj9zb-curl-8.16.0-dev",
+        "devdoc": "/nix/store/b7w1516fx1mywmkl9dqsm1rnjmpvz7a3-curl-8.16.0-devdoc",
+        "man": "/nix/store/dfgh660rbbj8s3l3xvy8klmkks4pkg3w-curl-8.16.0-man",
+        "out": "/nix/store/pl917hpmpx64fisdisv2zjmk09grvm4g-curl-8.16.0"
+      },
+      "system": "aarch64-linux",
+      "group": "toplevel",
+      "priority": 5
+    },
+    {
+      "attr_path": "curl",
+      "broken": false,
+      "derivation": "/nix/store/1ln4jpjmml6ndr42f2rbv21j8racgiik-curl-8.16.0.drv",
+      "description": "Command line tool for transferring files with URL syntax",
+      "install_id": "curl",
+      "license": "curl",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=6a08e6bb4e46ff7fcbb53d409b253f6bad8a28ce",
+      "name": "curl-8.16.0",
+      "pname": "curl",
+      "rev": "6a08e6bb4e46ff7fcbb53d409b253f6bad8a28ce",
+      "rev_count": 883951,
+      "rev_date": "2025-10-25T06:24:58Z",
+      "scrape_date": "2025-10-27T02:29:21.679404Z",
+      "stabilities": [
+        "unstable"
+      ],
+      "unfree": false,
+      "version": "8.16.0",
+      "outputs_to_install": [
+        "bin",
+        "man"
+      ],
+      "outputs": {
+        "bin": "/nix/store/irf7vpckgi9128jh7by1438ns3qgvfqz-curl-8.16.0-bin",
+        "dev": "/nix/store/sv8p7spya9zf0163xb454wvl7jbmws57-curl-8.16.0-dev",
+        "devdoc": "/nix/store/85fm556955nskhdr8q66ny2fk4fggzh1-curl-8.16.0-devdoc",
+        "man": "/nix/store/a6znnvphjwyzhxjq8vbkr35ng6xglbfb-curl-8.16.0-man",
+        "out": "/nix/store/sfr307vn71cyfnfmgckhwggq251rnrfr-curl-8.16.0"
+      },
+      "system": "x86_64-darwin",
+      "group": "toplevel",
+      "priority": 5
+    },
+    {
+      "attr_path": "curl",
+      "broken": false,
+      "derivation": "/nix/store/yh73y300l9r1csw9zghd7im341rrp106-curl-8.16.0.drv",
+      "description": "Command line tool for transferring files with URL syntax",
+      "install_id": "curl",
+      "license": "curl",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=6a08e6bb4e46ff7fcbb53d409b253f6bad8a28ce",
+      "name": "curl-8.16.0",
+      "pname": "curl",
+      "rev": "6a08e6bb4e46ff7fcbb53d409b253f6bad8a28ce",
+      "rev_count": 883951,
+      "rev_date": "2025-10-25T06:24:58Z",
+      "scrape_date": "2025-10-27T03:00:54.560041Z",
+      "stabilities": [
+        "unstable"
+      ],
+      "unfree": false,
+      "version": "8.16.0",
+      "outputs_to_install": [
+        "bin",
+        "man"
+      ],
+      "outputs": {
+        "bin": "/nix/store/xvh4bi0cc2cw18lpn6ax9m4zwnn1s9lj-curl-8.16.0-bin",
+        "debug": "/nix/store/33lwk5v78214pmlnhphbijpvbh8gjbbq-curl-8.16.0-debug",
+        "dev": "/nix/store/b65dj8iryqd1bss2qlg5ipxqndngcl9n-curl-8.16.0-dev",
+        "devdoc": "/nix/store/bz67f9xwj2i7zanwkrxb6dy9bbm2283d-curl-8.16.0-devdoc",
+        "man": "/nix/store/q4jbdyq7f0zks4i9xhfyx2pj6x92g9dj-curl-8.16.0-man",
+        "out": "/nix/store/8np9zvwqmwsnbkbrwm8x7jq4ygdkjz5g-curl-8.16.0"
+      },
+      "system": "x86_64-linux",
+      "group": "toplevel",
+      "priority": 5
+    },
+    {
+      "attr_path": "jq",
+      "broken": false,
+      "derivation": "/nix/store/x0hycn9knfcq79i5habjgyz5akx7m7nr-jq-1.8.1.drv",
+      "description": "Lightweight and flexible command-line JSON processor",
+      "install_id": "jq",
+      "license": "MIT",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=6a08e6bb4e46ff7fcbb53d409b253f6bad8a28ce",
+      "name": "jq-1.8.1",
+      "pname": "jq",
+      "rev": "6a08e6bb4e46ff7fcbb53d409b253f6bad8a28ce",
+      "rev_count": 883951,
+      "rev_date": "2025-10-25T06:24:58Z",
+      "scrape_date": "2025-10-27T02:08:30.388549Z",
+      "stabilities": [
+        "unstable"
+      ],
+      "unfree": false,
+      "version": "1.8.1",
+      "outputs_to_install": [
+        "bin",
+        "man"
+      ],
+      "outputs": {
+        "bin": "/nix/store/vh3xibzhaz3nl5m97ka2i5sxivv59sgn-jq-1.8.1-bin",
+        "dev": "/nix/store/ni42jbsfngy5l81p2lz9v5wcl4kwl9nf-jq-1.8.1-dev",
+        "doc": "/nix/store/hy9hxygqscjkz0faz5xlxwkj7sn6v74i-jq-1.8.1-doc",
+        "man": "/nix/store/k9swya8a42jsa59jd2xcw0pvacj0xxyn-jq-1.8.1-man",
+        "out": "/nix/store/qabxprfzl0lygph7yg3kq6b8si410syd-jq-1.8.1"
+      },
+      "system": "aarch64-darwin",
+      "group": "toplevel",
+      "priority": 5
+    },
+    {
+      "attr_path": "jq",
+      "broken": false,
+      "derivation": "/nix/store/f2yda9q3f7miq3md0r47d25cbbwqwacw-jq-1.8.1.drv",
+      "description": "Lightweight and flexible command-line JSON processor",
+      "install_id": "jq",
+      "license": "MIT",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=6a08e6bb4e46ff7fcbb53d409b253f6bad8a28ce",
+      "name": "jq-1.8.1",
+      "pname": "jq",
+      "rev": "6a08e6bb4e46ff7fcbb53d409b253f6bad8a28ce",
+      "rev_count": 883951,
+      "rev_date": "2025-10-25T06:24:58Z",
+      "scrape_date": "2025-10-27T02:18:46.543569Z",
+      "stabilities": [
+        "unstable"
+      ],
+      "unfree": false,
+      "version": "1.8.1",
+      "outputs_to_install": [
+        "bin",
+        "man"
+      ],
+      "outputs": {
+        "bin": "/nix/store/pqr9gww8fksrllfr38k9jvl7k5q5awf7-jq-1.8.1-bin",
+        "dev": "/nix/store/qqcccyr96a1p4j7ywgzhqi06n5y47mk0-jq-1.8.1-dev",
+        "doc": "/nix/store/ankng0jgm40wkgwiz3n8rj6hanmgdsx7-jq-1.8.1-doc",
+        "man": "/nix/store/n0y7a3f5hmglwifndimclg99mpn554bl-jq-1.8.1-man",
+        "out": "/nix/store/6h1mv44dhnq2jb94373cab59yaq5y8wz-jq-1.8.1"
+      },
+      "system": "aarch64-linux",
+      "group": "toplevel",
+      "priority": 5
+    },
+    {
+      "attr_path": "jq",
+      "broken": false,
+      "derivation": "/nix/store/yvb5zsm4ffb3k3216mry8zvpzn5sigm3-jq-1.8.1.drv",
+      "description": "Lightweight and flexible command-line JSON processor",
+      "install_id": "jq",
+      "license": "MIT",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=6a08e6bb4e46ff7fcbb53d409b253f6bad8a28ce",
+      "name": "jq-1.8.1",
+      "pname": "jq",
+      "rev": "6a08e6bb4e46ff7fcbb53d409b253f6bad8a28ce",
+      "rev_count": 883951,
+      "rev_date": "2025-10-25T06:24:58Z",
+      "scrape_date": "2025-10-27T02:29:36.409900Z",
+      "stabilities": [
+        "unstable"
+      ],
+      "unfree": false,
+      "version": "1.8.1",
+      "outputs_to_install": [
+        "bin",
+        "man"
+      ],
+      "outputs": {
+        "bin": "/nix/store/r52fkpag200agnznp2var2p0f0d0i4ch-jq-1.8.1-bin",
+        "dev": "/nix/store/ijwpwk35g7l8amallvhqymwnnspmxgcy-jq-1.8.1-dev",
+        "doc": "/nix/store/zci6xwc00v98flb0jqhdaac0231pmgvb-jq-1.8.1-doc",
+        "man": "/nix/store/xbvg59a0kdin1fibnqrw4l445a5dh9bc-jq-1.8.1-man",
+        "out": "/nix/store/50fm8yn7mpxfks0cvrjifi58r90q5c6h-jq-1.8.1"
+      },
+      "system": "x86_64-darwin",
+      "group": "toplevel",
+      "priority": 5
+    },
+    {
+      "attr_path": "jq",
+      "broken": false,
+      "derivation": "/nix/store/qk16np2i3ls20ih6n8lc38l6f3y6s7i3-jq-1.8.1.drv",
+      "description": "Lightweight and flexible command-line JSON processor",
+      "install_id": "jq",
+      "license": "MIT",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=6a08e6bb4e46ff7fcbb53d409b253f6bad8a28ce",
+      "name": "jq-1.8.1",
+      "pname": "jq",
+      "rev": "6a08e6bb4e46ff7fcbb53d409b253f6bad8a28ce",
+      "rev_count": 883951,
+      "rev_date": "2025-10-25T06:24:58Z",
+      "scrape_date": "2025-10-27T03:01:16.369852Z",
+      "stabilities": [
+        "unstable"
+      ],
+      "unfree": false,
+      "version": "1.8.1",
+      "outputs_to_install": [
+        "bin",
+        "man"
+      ],
+      "outputs": {
+        "bin": "/nix/store/frzsv47z1mcyrp941zab08mx6kardizi-jq-1.8.1-bin",
+        "dev": "/nix/store/caq8n6m9m5zyhf0by83ksbimqmpggkwr-jq-1.8.1-dev",
+        "doc": "/nix/store/n3wl5jkmnzfg0a1vjxxx8w2n7js1b5sr-jq-1.8.1-doc",
+        "man": "/nix/store/rs84gk428azdd7ca46ki3w60yqp54ksk-jq-1.8.1-man",
+        "out": "/nix/store/zsw99s8nv2qffdg47jf8x8pyml9b0x2r-jq-1.8.1"
+      },
+      "system": "x86_64-linux",
+      "group": "toplevel",
+      "priority": 5
+    },
+    {
+      "attr_path": "kind",
+      "broken": false,
+      "derivation": "/nix/store/djdid6hdgv4dr94svch67kpk7c928q7h-kind-0.30.0.drv",
+      "description": "Kubernetes IN Docker - local clusters for testing Kubernetes",
+      "install_id": "kind",
+      "license": "Apache-2.0",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=6a08e6bb4e46ff7fcbb53d409b253f6bad8a28ce",
+      "name": "kind-0.30.0",
+      "pname": "kind",
+      "rev": "6a08e6bb4e46ff7fcbb53d409b253f6bad8a28ce",
+      "rev_count": 883951,
+      "rev_date": "2025-10-25T06:24:58Z",
+      "scrape_date": "2025-10-27T02:08:30.833387Z",
+      "stabilities": [
+        "unstable"
+      ],
+      "unfree": false,
+      "version": "0.30.0",
+      "outputs_to_install": [
+        "out"
+      ],
+      "outputs": {
+        "out": "/nix/store/0jqqgl8vg7ppk70zgagfbv7maydcz2r4-kind-0.30.0"
+      },
+      "system": "aarch64-darwin",
+      "group": "toplevel",
+      "priority": 5
+    },
+    {
+      "attr_path": "kind",
+      "broken": false,
+      "derivation": "/nix/store/hir1dmhvfn0vd1lhql3x35b8j9dwcxhm-kind-0.30.0.drv",
+      "description": "Kubernetes IN Docker - local clusters for testing Kubernetes",
+      "install_id": "kind",
+      "license": "Apache-2.0",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=6a08e6bb4e46ff7fcbb53d409b253f6bad8a28ce",
+      "name": "kind-0.30.0",
+      "pname": "kind",
+      "rev": "6a08e6bb4e46ff7fcbb53d409b253f6bad8a28ce",
+      "rev_count": 883951,
+      "rev_date": "2025-10-25T06:24:58Z",
+      "scrape_date": "2025-10-27T02:18:47.812710Z",
+      "stabilities": [
+        "unstable"
+      ],
+      "unfree": false,
+      "version": "0.30.0",
+      "outputs_to_install": [
+        "out"
+      ],
+      "outputs": {
+        "out": "/nix/store/4fh21i34gifqz12d2kbk2r14xyh4m885-kind-0.30.0"
+      },
+      "system": "aarch64-linux",
+      "group": "toplevel",
+      "priority": 5
+    },
+    {
+      "attr_path": "kind",
+      "broken": false,
+      "derivation": "/nix/store/5rg8s4vashvs6q456bnn9x1gzhiy80ma-kind-0.30.0.drv",
+      "description": "Kubernetes IN Docker - local clusters for testing Kubernetes",
+      "install_id": "kind",
+      "license": "Apache-2.0",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=6a08e6bb4e46ff7fcbb53d409b253f6bad8a28ce",
+      "name": "kind-0.30.0",
+      "pname": "kind",
+      "rev": "6a08e6bb4e46ff7fcbb53d409b253f6bad8a28ce",
+      "rev_count": 883951,
+      "rev_date": "2025-10-25T06:24:58Z",
+      "scrape_date": "2025-10-27T02:29:36.824914Z",
+      "stabilities": [
+        "unstable"
+      ],
+      "unfree": false,
+      "version": "0.30.0",
+      "outputs_to_install": [
+        "out"
+      ],
+      "outputs": {
+        "out": "/nix/store/ip0ba3b4dgp7b6bivdshf1x668hh72cc-kind-0.30.0"
+      },
+      "system": "x86_64-darwin",
+      "group": "toplevel",
+      "priority": 5
+    },
+    {
+      "attr_path": "kind",
+      "broken": false,
+      "derivation": "/nix/store/691x0jc2injxir4iyqallhf69mnddx7z-kind-0.30.0.drv",
+      "description": "Kubernetes IN Docker - local clusters for testing Kubernetes",
+      "install_id": "kind",
+      "license": "Apache-2.0",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=6a08e6bb4e46ff7fcbb53d409b253f6bad8a28ce",
+      "name": "kind-0.30.0",
+      "pname": "kind",
+      "rev": "6a08e6bb4e46ff7fcbb53d409b253f6bad8a28ce",
+      "rev_count": 883951,
+      "rev_date": "2025-10-25T06:24:58Z",
+      "scrape_date": "2025-10-27T03:01:17.670978Z",
+      "stabilities": [
+        "unstable"
+      ],
+      "unfree": false,
+      "version": "0.30.0",
+      "outputs_to_install": [
+        "out"
+      ],
+      "outputs": {
+        "out": "/nix/store/wrznv97xc63ijk541f95zyzn09s6qlzy-kind-0.30.0"
+      },
+      "system": "x86_64-linux",
+      "group": "toplevel",
+      "priority": 5
+    },
+    {
+      "attr_path": "kubectl",
+      "broken": false,
+      "derivation": "/nix/store/4s4iqkg19cn9d64l0vss4szckhbyddh5-kubectl-1.34.1.drv",
+      "description": "Kubernetes CLI",
+      "install_id": "kubectl",
+      "license": "Apache-2.0",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=6a08e6bb4e46ff7fcbb53d409b253f6bad8a28ce",
+      "name": "kubectl-1.34.1",
+      "pname": "kubectl",
+      "rev": "6a08e6bb4e46ff7fcbb53d409b253f6bad8a28ce",
+      "rev_count": 883951,
+      "rev_date": "2025-10-25T06:24:58Z",
+      "scrape_date": "2025-10-27T02:08:31.064866Z",
+      "stabilities": [
+        "unstable"
+      ],
+      "unfree": false,
+      "version": "1.34.1",
+      "outputs_to_install": [
+        "man",
+        "out"
+      ],
+      "outputs": {
+        "convert": "/nix/store/ciffxa4czjlmjzmq4yq21l8zkjvadxsq-kubectl-1.34.1-convert",
+        "man": "/nix/store/5xfa19i31d4vhvbjihf6inqbp410fsp5-kubectl-1.34.1-man",
+        "out": "/nix/store/pv5lknr9a985cdmxy0zqg0vk0562w1js-kubectl-1.34.1"
+      },
+      "system": "aarch64-darwin",
+      "group": "toplevel",
+      "priority": 5
+    },
+    {
+      "attr_path": "kubectl",
+      "broken": false,
+      "derivation": "/nix/store/k9d0hb2s3q1npazrx10sz4bysjkic2si-kubectl-1.34.1.drv",
+      "description": "Kubernetes CLI",
+      "install_id": "kubectl",
+      "license": "Apache-2.0",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=6a08e6bb4e46ff7fcbb53d409b253f6bad8a28ce",
+      "name": "kubectl-1.34.1",
+      "pname": "kubectl",
+      "rev": "6a08e6bb4e46ff7fcbb53d409b253f6bad8a28ce",
+      "rev_count": 883951,
+      "rev_date": "2025-10-25T06:24:58Z",
+      "scrape_date": "2025-10-27T02:18:48.222261Z",
+      "stabilities": [
+        "unstable"
+      ],
+      "unfree": false,
+      "version": "1.34.1",
+      "outputs_to_install": [
+        "man",
+        "out"
+      ],
+      "outputs": {
+        "convert": "/nix/store/hhdzbn767znxinwswfqab0d0bg2jpwln-kubectl-1.34.1-convert",
+        "man": "/nix/store/0s8wk88y5rnvnbgsy77x3ak02fnsq01i-kubectl-1.34.1-man",
+        "out": "/nix/store/8xfnh8k465mm5q2cnh83hqk3h4p9i9n2-kubectl-1.34.1"
+      },
+      "system": "aarch64-linux",
+      "group": "toplevel",
+      "priority": 5
+    },
+    {
+      "attr_path": "kubectl",
+      "broken": false,
+      "derivation": "/nix/store/d4x50hyr7wim6gxpc5mk3w80mq6zfrs7-kubectl-1.34.1.drv",
+      "description": "Kubernetes CLI",
+      "install_id": "kubectl",
+      "license": "Apache-2.0",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=6a08e6bb4e46ff7fcbb53d409b253f6bad8a28ce",
+      "name": "kubectl-1.34.1",
+      "pname": "kubectl",
+      "rev": "6a08e6bb4e46ff7fcbb53d409b253f6bad8a28ce",
+      "rev_count": 883951,
+      "rev_date": "2025-10-25T06:24:58Z",
+      "scrape_date": "2025-10-27T02:29:37.032823Z",
+      "stabilities": [
+        "unstable"
+      ],
+      "unfree": false,
+      "version": "1.34.1",
+      "outputs_to_install": [
+        "man",
+        "out"
+      ],
+      "outputs": {
+        "convert": "/nix/store/0msa3w7f7bazgfpa2icmz7fkvcdrn4d7-kubectl-1.34.1-convert",
+        "man": "/nix/store/qf79cl59w1kga58030s9a9nvk2b3m1qc-kubectl-1.34.1-man",
+        "out": "/nix/store/80mql1xb9i7l5pb9cs5kmmgxhp351lv1-kubectl-1.34.1"
+      },
+      "system": "x86_64-darwin",
+      "group": "toplevel",
+      "priority": 5
+    },
+    {
+      "attr_path": "kubectl",
+      "broken": false,
+      "derivation": "/nix/store/gnd8gwjpf3q8mi21dydc2nzw87npbva4-kubectl-1.34.1.drv",
+      "description": "Kubernetes CLI",
+      "install_id": "kubectl",
+      "license": "Apache-2.0",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=6a08e6bb4e46ff7fcbb53d409b253f6bad8a28ce",
+      "name": "kubectl-1.34.1",
+      "pname": "kubectl",
+      "rev": "6a08e6bb4e46ff7fcbb53d409b253f6bad8a28ce",
+      "rev_count": 883951,
+      "rev_date": "2025-10-25T06:24:58Z",
+      "scrape_date": "2025-10-27T03:01:18.131749Z",
+      "stabilities": [
+        "unstable"
+      ],
+      "unfree": false,
+      "version": "1.34.1",
+      "outputs_to_install": [
+        "man",
+        "out"
+      ],
+      "outputs": {
+        "convert": "/nix/store/aq74byw89ckq4hiw85gl2cq4c8h99wqi-kubectl-1.34.1-convert",
+        "man": "/nix/store/g5wlm6mrnf1pgjqapfb5r8zkh37rizgf-kubectl-1.34.1-man",
+        "out": "/nix/store/hkdsjac8x7pvq0lmazmg7qs6y8k6kayh-kubectl-1.34.1"
+      },
+      "system": "x86_64-linux",
+      "group": "toplevel",
+      "priority": 5
+    },
+    {
+      "attr_path": "postgresql16Packages.postgis",
+      "broken": false,
+      "derivation": "/nix/store/0xd2virvis2qs63j8w6c3f6w5j9q629z-postgis-3.6.0.drv",
+      "description": "Geographic Objects for PostgreSQL",
+      "install_id": "postgis",
+      "license": "GPL-2.0-or-later",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=6a08e6bb4e46ff7fcbb53d409b253f6bad8a28ce",
+      "name": "postgis-3.6.0",
+      "pname": "postgis",
+      "rev": "6a08e6bb4e46ff7fcbb53d409b253f6bad8a28ce",
+      "rev_count": 883951,
+      "rev_date": "2025-10-25T06:24:58Z",
+      "scrape_date": "2025-10-27T02:08:52.751485Z",
+      "stabilities": [
+        "unstable"
+      ],
+      "unfree": false,
+      "version": "3.6.0",
+      "outputs_to_install": [
+        "out"
+      ],
+      "outputs": {
+        "doc": "/nix/store/jxmlizb6ni1q0886cbi3iqj4jzd5n54k-postgis-3.6.0-doc",
+        "out": "/nix/store/sg3kig34ajpa91pijqj4prh0gwrrgjpn-postgis-3.6.0"
+      },
+      "system": "aarch64-darwin",
+      "group": "toplevel",
+      "priority": 5
+    },
+    {
+      "attr_path": "postgresql16Packages.postgis",
+      "broken": false,
+      "derivation": "/nix/store/ar4rm8vyzjrdwad4pszlv4rz7abj7h93-postgis-3.6.0.drv",
+      "description": "Geographic Objects for PostgreSQL",
+      "install_id": "postgis",
+      "license": "GPL-2.0-or-later",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=6a08e6bb4e46ff7fcbb53d409b253f6bad8a28ce",
+      "name": "postgis-3.6.0",
+      "pname": "postgis",
+      "rev": "6a08e6bb4e46ff7fcbb53d409b253f6bad8a28ce",
+      "rev_count": 883951,
+      "rev_date": "2025-10-25T06:24:58Z",
+      "scrape_date": "2025-10-27T02:19:24.577354Z",
+      "stabilities": [
+        "unstable"
+      ],
+      "unfree": false,
+      "version": "3.6.0",
+      "outputs_to_install": [
+        "out"
+      ],
+      "outputs": {
+        "doc": "/nix/store/7kwkimw8iaashdlh85cn6x1afix798d8-postgis-3.6.0-doc",
+        "out": "/nix/store/927xn6kvp3qbmngzpvaghlxd88ccwkh4-postgis-3.6.0"
+      },
+      "system": "aarch64-linux",
+      "group": "toplevel",
+      "priority": 5
+    },
+    {
+      "attr_path": "postgresql16Packages.postgis",
+      "broken": false,
+      "derivation": "/nix/store/ap7v6sq19ivvdnpacf35dq0bkh0wrz8a-postgis-3.6.0.drv",
+      "description": "Geographic Objects for PostgreSQL",
+      "install_id": "postgis",
+      "license": "GPL-2.0-or-later",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=6a08e6bb4e46ff7fcbb53d409b253f6bad8a28ce",
+      "name": "postgis-3.6.0",
+      "pname": "postgis",
+      "rev": "6a08e6bb4e46ff7fcbb53d409b253f6bad8a28ce",
+      "rev_count": 883951,
+      "rev_date": "2025-10-25T06:24:58Z",
+      "scrape_date": "2025-10-27T02:29:58.312258Z",
+      "stabilities": [
+        "unstable"
+      ],
+      "unfree": false,
+      "version": "3.6.0",
+      "outputs_to_install": [
+        "out"
+      ],
+      "outputs": {
+        "doc": "/nix/store/8djk8yrfjy564f0sz7wx3gjb0269d9qz-postgis-3.6.0-doc",
+        "out": "/nix/store/lhz71cr3v5h281254iyjjc502wqzhzhj-postgis-3.6.0"
+      },
+      "system": "x86_64-darwin",
+      "group": "toplevel",
+      "priority": 5
+    },
+    {
+      "attr_path": "postgresql16Packages.postgis",
+      "broken": false,
+      "derivation": "/nix/store/9sm0vv7d6kjkprbhpj98q7f65rl3f810-postgis-3.6.0.drv",
+      "description": "Geographic Objects for PostgreSQL",
+      "install_id": "postgis",
+      "license": "GPL-2.0-or-later",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=6a08e6bb4e46ff7fcbb53d409b253f6bad8a28ce",
+      "name": "postgis-3.6.0",
+      "pname": "postgis",
+      "rev": "6a08e6bb4e46ff7fcbb53d409b253f6bad8a28ce",
+      "rev_count": 883951,
+      "rev_date": "2025-10-25T06:24:58Z",
+      "scrape_date": "2025-10-27T03:01:57.491221Z",
+      "stabilities": [
+        "unstable"
+      ],
+      "unfree": false,
+      "version": "3.6.0",
+      "outputs_to_install": [
+        "out"
+      ],
+      "outputs": {
+        "doc": "/nix/store/jy476kp6aaw6rys2z5ckrkqrci57gl42-postgis-3.6.0-doc",
+        "out": "/nix/store/zn5662g4rdsc4xv98d3kd24dnjvsgwp0-postgis-3.6.0"
+      },
+      "system": "x86_64-linux",
+      "group": "toplevel",
+      "priority": 5
+    },
+    {
+      "attr_path": "postgresql_16",
+      "broken": false,
+      "derivation": "/nix/store/26ds0iw7vbvdi21gavr1w17zi9wjdslz-postgresql-16.10.drv",
+      "description": "Powerful, open source object-relational database system",
+      "install_id": "postgresql",
+      "license": "PostgreSQL",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=6a08e6bb4e46ff7fcbb53d409b253f6bad8a28ce",
+      "name": "postgresql-16.10",
+      "pname": "postgresql_16",
+      "rev": "6a08e6bb4e46ff7fcbb53d409b253f6bad8a28ce",
+      "rev_count": 883951,
+      "rev_date": "2025-10-25T06:24:58Z",
+      "scrape_date": "2025-10-27T02:08:53.131109Z",
+      "stabilities": [
+        "unstable"
+      ],
+      "unfree": false,
+      "version": "16.10",
+      "outputs_to_install": [
+        "man",
+        "out"
+      ],
+      "outputs": {
+        "dev": "/nix/store/9b0x64bwjwv5fz0bdv6w1s4mm7960dk2-postgresql-16.10-dev",
+        "doc": "/nix/store/rivqz9k4x942kncpiqa11952vz2yd83w-postgresql-16.10-doc",
+        "jit": "/nix/store/5ma1iibg7rrhr9vk4lgmj4wsds1bn2lq-postgresql-16.10-jit",
+        "lib": "/nix/store/zyry2aqhcrjy6034l53fj2x6p3nbsirc-postgresql-16.10-lib",
+        "man": "/nix/store/19yczwkx2ghpc48h12svzwvdmai43h1d-postgresql-16.10-man",
+        "out": "/nix/store/mjj1ad4p7mhplvqkxir9irbwgncjna8k-postgresql-16.10",
+        "plperl": "/nix/store/k39hh30nj46s748y4x4zgdqavzmwg8l2-postgresql-16.10-plperl",
+        "plpython3": "/nix/store/0yrlydpg6v0pwyj8w9dxa473s7g0kk1a-postgresql-16.10-plpython3",
+        "pltcl": "/nix/store/s59v3p5kpjm6vp0jg03l8ksnacg0vas5-postgresql-16.10-pltcl"
+      },
+      "system": "aarch64-darwin",
+      "group": "toplevel",
+      "priority": 5
+    },
+    {
+      "attr_path": "postgresql_16",
+      "broken": false,
+      "derivation": "/nix/store/wsr7k2di2xchkl1sbhgxxalx5vi0nmm8-postgresql-16.10.drv",
+      "description": "Powerful, open source object-relational database system",
+      "install_id": "postgresql",
+      "license": "PostgreSQL",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=6a08e6bb4e46ff7fcbb53d409b253f6bad8a28ce",
+      "name": "postgresql-16.10",
+      "pname": "postgresql_16",
+      "rev": "6a08e6bb4e46ff7fcbb53d409b253f6bad8a28ce",
+      "rev_count": 883951,
+      "rev_date": "2025-10-25T06:24:58Z",
+      "scrape_date": "2025-10-27T02:19:25.105357Z",
+      "stabilities": [
+        "unstable"
+      ],
+      "unfree": false,
+      "version": "16.10",
+      "outputs_to_install": [
+        "man",
+        "out"
+      ],
+      "outputs": {
+        "debug": "/nix/store/9snr8kwq5mgs99lfrrra84pga7rj028l-postgresql-16.10-debug",
+        "dev": "/nix/store/id2zxdz68yin7ipd5wxsbqrdxnl7dh12-postgresql-16.10-dev",
+        "doc": "/nix/store/ab963h9ffkcix3dyli05ayxvrnd5018c-postgresql-16.10-doc",
+        "jit": "/nix/store/6xb72z48dbd93sv72nlskcq8661hmnzi-postgresql-16.10-jit",
+        "lib": "/nix/store/6vv2r1hfn5v53chb7w35sm91w42f52lx-postgresql-16.10-lib",
+        "man": "/nix/store/mdyaig3jd7js0rhs50m7d2gjlpwp46d5-postgresql-16.10-man",
+        "out": "/nix/store/589gil3s8fd4wdnf8drdgjqsfd0xk5pr-postgresql-16.10",
+        "plperl": "/nix/store/71hqwmvp84nalfvqmz9mzxs9pc7c3z6x-postgresql-16.10-plperl",
+        "plpython3": "/nix/store/nl1cp5sad17p4l74mkiv1krcm7yybhwr-postgresql-16.10-plpython3",
+        "pltcl": "/nix/store/s7phbpyzyq2wjmqvm9ylq4xmfr9plrhg-postgresql-16.10-pltcl"
+      },
+      "system": "aarch64-linux",
+      "group": "toplevel",
+      "priority": 5
+    },
+    {
+      "attr_path": "postgresql_16",
+      "broken": false,
+      "derivation": "/nix/store/fph4lw6vr6zqm8x0lv8p5pndvx0c7blv-postgresql-16.10.drv",
+      "description": "Powerful, open source object-relational database system",
+      "install_id": "postgresql",
+      "license": "PostgreSQL",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=6a08e6bb4e46ff7fcbb53d409b253f6bad8a28ce",
+      "name": "postgresql-16.10",
+      "pname": "postgresql_16",
+      "rev": "6a08e6bb4e46ff7fcbb53d409b253f6bad8a28ce",
+      "rev_count": 883951,
+      "rev_date": "2025-10-25T06:24:58Z",
+      "scrape_date": "2025-10-27T02:29:58.699506Z",
+      "stabilities": [
+        "unstable"
+      ],
+      "unfree": false,
+      "version": "16.10",
+      "outputs_to_install": [
+        "man",
+        "out"
+      ],
+      "outputs": {
+        "dev": "/nix/store/rml3rv4slkxc46a0f0xbbbxz53w48alp-postgresql-16.10-dev",
+        "doc": "/nix/store/abm0srgai0ha2kfr191cp55y0jnnv17q-postgresql-16.10-doc",
+        "jit": "/nix/store/12qd19cs7jzwfwbha3d21ml9kymhsw8q-postgresql-16.10-jit",
+        "lib": "/nix/store/8k2kfah4659xhwdg263214kyznci73ra-postgresql-16.10-lib",
+        "man": "/nix/store/3immiw548rhphj9lzpk13p859cy3wwx4-postgresql-16.10-man",
+        "out": "/nix/store/f7n0d7idv9pdja404afxik5r6b9a669x-postgresql-16.10",
+        "plperl": "/nix/store/j1m4qap45swww3xk1xxknrgjp634r559-postgresql-16.10-plperl",
+        "plpython3": "/nix/store/3a8i3dwwwz3amxr0pf1f0qs49f56aggb-postgresql-16.10-plpython3",
+        "pltcl": "/nix/store/ls0pc2m0s68bp5cicwnipard7hqvq7dy-postgresql-16.10-pltcl"
+      },
+      "system": "x86_64-darwin",
+      "group": "toplevel",
+      "priority": 5
+    },
+    {
+      "attr_path": "postgresql_16",
+      "broken": false,
+      "derivation": "/nix/store/n5aazj0i4l44nb52k5sqzpananvs7fdl-postgresql-16.10.drv",
+      "description": "Powerful, open source object-relational database system",
+      "install_id": "postgresql",
+      "license": "PostgreSQL",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=6a08e6bb4e46ff7fcbb53d409b253f6bad8a28ce",
+      "name": "postgresql-16.10",
+      "pname": "postgresql_16",
+      "rev": "6a08e6bb4e46ff7fcbb53d409b253f6bad8a28ce",
+      "rev_count": 883951,
+      "rev_date": "2025-10-25T06:24:58Z",
+      "scrape_date": "2025-10-27T03:01:58.028544Z",
+      "stabilities": [
+        "unstable"
+      ],
+      "unfree": false,
+      "version": "16.10",
+      "outputs_to_install": [
+        "man",
+        "out"
+      ],
+      "outputs": {
+        "debug": "/nix/store/1bckzc3hq35dwl1qf5c76w53c992dsr9-postgresql-16.10-debug",
+        "dev": "/nix/store/skrx4qah0hy1c3l79znsfza5zzqrxcyn-postgresql-16.10-dev",
+        "doc": "/nix/store/cz4w41bdfnjg4mqfcmw1x0p4jgg61kac-postgresql-16.10-doc",
+        "jit": "/nix/store/2805lajnhh7qd3acb0abyvpm91hn59fw-postgresql-16.10-jit",
+        "lib": "/nix/store/qsn1yfq2cfy03rj4xmaf0g5wybmak6qq-postgresql-16.10-lib",
+        "man": "/nix/store/flpax8rjcj5niv0krcfx8nz4gm64n81c-postgresql-16.10-man",
+        "out": "/nix/store/8lfn9a2a2c16fa2ia7j5yp03pymgmbv1-postgresql-16.10",
+        "plperl": "/nix/store/1ivj0kb6gyzzgdy49g312rm3wdllgkfw-postgresql-16.10-plperl",
+        "plpython3": "/nix/store/bd9rs52j0lrhp6hrr68vn27gi17f11v8-postgresql-16.10-plpython3",
+        "pltcl": "/nix/store/iszsfbryiqfd7z2fk4pfh02c2g41r9h4-postgresql-16.10-pltcl"
+      },
+      "system": "x86_64-linux",
+      "group": "toplevel",
+      "priority": 5
+    },
+    {
+      "attr_path": "redis",
+      "broken": false,
+      "derivation": "/nix/store/40813pbibs4x5dvxs58gzv8132ijr1sn-redis-8.2.2.drv",
+      "description": "Open source, advanced key-value store",
+      "install_id": "redis",
+      "license": "AGPL-3.0-only",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=6a08e6bb4e46ff7fcbb53d409b253f6bad8a28ce",
+      "name": "redis-8.2.2",
+      "pname": "redis",
+      "rev": "6a08e6bb4e46ff7fcbb53d409b253f6bad8a28ce",
+      "rev_count": 883951,
+      "rev_date": "2025-10-25T06:24:58Z",
+      "scrape_date": "2025-10-27T02:09:38.538876Z",
+      "stabilities": [
+        "unstable"
+      ],
+      "unfree": false,
+      "version": "8.2.2",
+      "outputs_to_install": [
+        "out"
+      ],
+      "outputs": {
+        "out": "/nix/store/098ag56hpj05yi1a0lc5h3dabbjcak47-redis-8.2.2"
+      },
+      "system": "aarch64-darwin",
+      "group": "toplevel",
+      "priority": 5
+    },
+    {
+      "attr_path": "redis",
+      "broken": false,
+      "derivation": "/nix/store/vdjv3ma7n6fgdyi1jxqih23c80bry679-redis-8.2.2.drv",
+      "description": "Open source, advanced key-value store",
+      "install_id": "redis",
+      "license": "AGPL-3.0-only",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=6a08e6bb4e46ff7fcbb53d409b253f6bad8a28ce",
+      "name": "redis-8.2.2",
+      "pname": "redis",
+      "rev": "6a08e6bb4e46ff7fcbb53d409b253f6bad8a28ce",
+      "rev_count": 883951,
+      "rev_date": "2025-10-25T06:24:58Z",
+      "scrape_date": "2025-10-27T02:20:26.914059Z",
+      "stabilities": [
+        "unstable"
+      ],
+      "unfree": false,
+      "version": "8.2.2",
+      "outputs_to_install": [
+        "out"
+      ],
+      "outputs": {
+        "out": "/nix/store/76fkv3lj81582lxgcpz2c5qai4dbsy7s-redis-8.2.2"
+      },
+      "system": "aarch64-linux",
+      "group": "toplevel",
+      "priority": 5
+    },
+    {
+      "attr_path": "redis",
+      "broken": false,
+      "derivation": "/nix/store/iad8zh6gvaxi99yqc7kn5arnl6fy75p3-redis-8.2.2.drv",
+      "description": "Open source, advanced key-value store",
+      "install_id": "redis",
+      "license": "AGPL-3.0-only",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=6a08e6bb4e46ff7fcbb53d409b253f6bad8a28ce",
+      "name": "redis-8.2.2",
+      "pname": "redis",
+      "rev": "6a08e6bb4e46ff7fcbb53d409b253f6bad8a28ce",
+      "rev_count": 883951,
+      "rev_date": "2025-10-25T06:24:58Z",
+      "scrape_date": "2025-10-27T02:30:42.731222Z",
+      "stabilities": [
+        "unstable"
+      ],
+      "unfree": false,
+      "version": "8.2.2",
+      "outputs_to_install": [
+        "out"
+      ],
+      "outputs": {
+        "out": "/nix/store/jlfys7wmr257l75dsz4x0va0wp6agmyr-redis-8.2.2"
+      },
+      "system": "x86_64-darwin",
+      "group": "toplevel",
+      "priority": 5
+    },
+    {
+      "attr_path": "redis",
+      "broken": false,
+      "derivation": "/nix/store/csnzbhfjmkc934l5jbqx3653hfi8sxbi-redis-8.2.2.drv",
+      "description": "Open source, advanced key-value store",
+      "install_id": "redis",
+      "license": "AGPL-3.0-only",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=6a08e6bb4e46ff7fcbb53d409b253f6bad8a28ce",
+      "name": "redis-8.2.2",
+      "pname": "redis",
+      "rev": "6a08e6bb4e46ff7fcbb53d409b253f6bad8a28ce",
+      "rev_count": 883951,
+      "rev_date": "2025-10-25T06:24:58Z",
+      "scrape_date": "2025-10-27T03:02:59.796166Z",
+      "stabilities": [
+        "unstable"
+      ],
+      "unfree": false,
+      "version": "8.2.2",
+      "outputs_to_install": [
+        "out"
+      ],
+      "outputs": {
+        "out": "/nix/store/cmxzhc1q1dw301l5iwbjn3kx96vpj5am-redis-8.2.2"
+      },
+      "system": "x86_64-linux",
+      "group": "toplevel",
+      "priority": 5
+    }
+  ],
+  "compose": {
+    "composer": {
+      "version": 1,
+      "hook": {
+        "on-activate": "# === ENTERPRISE-GRADE OVERRIDES ===\n\n# Force CeleryExecutor for distributed task execution\nexport AIRFLOW_EXECUTOR=\"CeleryExecutor\"\n\n# Production database name\nexport AIRFLOW_POSTGRES_DB=\"airflow_prod\"\n\n# === OVERRIDE POSTGRES FOR PRODUCTION ===\nexport POSTGRES_MAX_CONNECTIONS=\"200\"\nexport POSTGRES_SHARED_BUFFERS=\"512MB\"\nexport POSTGRES_WORK_MEM=\"8MB\"\nexport POSTGRES_EFFECTIVE_CACHE_SIZE=\"8GB\"\nexport POSTGRES_FSYNC=\"on\"  # Data safety - DO NOT DISABLE\n\n# === OVERRIDE REDIS FOR PRODUCTION ===\nexport REDIS_MAXMEMORY=\"1gb\"\nexport REDIS_APPENDONLY=\"yes\"  # Enable AOF persistence\nexport REDIS_APPENDFSYNC=\"everysec\"\n\n# === INCREASE CELERY WORKERS FOR PRODUCTION ===\nexport AIRFLOW_CELERY_WORKERS=\"4\"\nexport AIRFLOW__CELERY__WORKER_CONCURRENCY=\"32\"\n\n# === WEBSERVER CONFIGURATION ===\nexport AIRFLOW_WEBSERVER_WORKERS=\"8\"\n\n# Display enterprise stack info\necho \"\"\necho \"╔════════════════════════════════════════════════════════╗\"\necho \"║   🚀  Apache Airflow Enterprise Stack                  ║\"\necho \"╚════════════════════════════════════════════════════════╝\"\necho \"\"\necho \"Services:\"\necho \"  ✓ PostgreSQL (postgres-headless)\"\necho \"  ✓ Redis (redis-headless)\"\necho \"  ✓ KIND Cluster (kind-headless)\"\necho \"  ✓ Airflow Webserver\"\necho \"  ✓ Airflow Scheduler\"\necho \"  ✓ Airflow Celery Workers ($AIRFLOW_CELERY_WORKERS)\"\necho \"\"\necho \"Configuration:\"\necho \"  Executor: CeleryExecutor\"\necho \"  Database: PostgreSQL ($POSTGRES_MAX_CONNECTIONS max connections)\"\necho \"  Message Broker: Redis (${REDIS_MAXMEMORY}, AOF persistence)\"\necho \"  Kubernetes: Enabled (KubernetesPodOperator available)\"\necho \"\"\necho \"Access:\"\necho \"  Airflow UI: http://localhost:$AIRFLOW_WEBSERVER_PORT\"\necho \"  Username: $AIRFLOW_ADMIN_USER\"\necho \"  Password: $AIRFLOW_ADMIN_PASSWORD\"\necho \"\"\necho \"Commands:\"\necho \"  flox activate -s        Start all services\"\necho \"  enterprise-info         Show detailed configuration\"\necho \"  airflow-info            Airflow configuration\"\necho \"  postgres-info           PostgreSQL configuration\"\necho \"  redis-info              Redis configuration\"\necho \"  k8s-airflow-info        Kubernetes configuration\"\necho \"\"\n"
+      },
+      "profile": {
+        "bash": "enterprise-info() {\n    echo \"╔════════════════════════════════════════════════════════╗\"\n    echo \"║   Apache Airflow Enterprise Stack                      ║\"\n    echo \"╚════════════════════════════════════════════════════════╝\"\n    echo \"\"\n    echo \"Executor: $AIRFLOW_EXECUTOR\"\n    echo \"Workers: $AIRFLOW_CELERY_WORKERS (concurrency: $AIRFLOW__CELERY__WORKER_CONCURRENCY)\"\n    echo \"Webserver Workers: $AIRFLOW_WEBSERVER_WORKERS\"\n    echo \"\"\n    echo \"═══ PostgreSQL Configuration ═══\"\n    echo \"  Host: $AIRFLOW_POSTGRES_HOST:$AIRFLOW_POSTGRES_PORT\"\n    echo \"  Database: $AIRFLOW_POSTGRES_DB\"\n    echo \"  Max connections: $POSTGRES_MAX_CONNECTIONS\"\n    echo \"  Shared buffers: $POSTGRES_SHARED_BUFFERS\"\n    echo \"  fsync: $POSTGRES_FSYNC (data safety)\"\n    echo \"\"\n    echo \"═══ Redis Configuration ═══\"\n    echo \"  Host: $AIRFLOW_REDIS_HOST:$AIRFLOW_REDIS_PORT\"\n    echo \"  Max memory: $REDIS_MAXMEMORY\"\n    echo \"  Persistence: AOF ($REDIS_APPENDFSYNC)\"\n    echo \"\"\n    echo \"═══ Kubernetes Configuration ═══\"\n    echo \"  Namespace: $AIRFLOW_KUBE_NAMESPACE\"\n    echo \"  ServiceAccount: $AIRFLOW_KUBE_WORKER_SERVICE_ACCOUNT\"\n    echo \"  Kubeconfig: $AIRFLOW_KUBE_CONFIG\"\n    echo \"\"\n    echo \"═══ Airflow Access ═══\"\n    echo \"  Web UI: http://localhost:$AIRFLOW_WEBSERVER_PORT\"\n    echo \"  Admin User: $AIRFLOW_ADMIN_USER\"\n    echo \"  Password: $AIRFLOW_ADMIN_PASSWORD\"\n    echo \"\"\n    echo \"═══ Component Info Commands ═══\"\n    echo \"  airflow-info         Airflow details\"\n    echo \"  postgres-info        PostgreSQL details\"\n    echo \"  redis-info           Redis details\"\n    echo \"  k8s-airflow-info     Kubernetes details\"\n    echo \"\"\n    echo \"═══ Service Management ═══\"\n    echo \"  flox services status                    Check all services\"\n    echo \"  flox services logs <service>            View logs\"\n    echo \"  flox services restart <service>         Restart service\"\n    echo \"\"\n    echo \"═══ Airflow Commands ═══\"\n    echo \"  airflow dags list                       List DAGs\"\n    echo \"  airflow dags trigger <dag_id>           Trigger a DAG\"\n    echo \"  airflow tasks test <dag> <task> <date>  Test a task\"\n}\nexport -f enterprise-info\n",
+        "zsh": "enterprise-info() {\n    echo \"╔════════════════════════════════════════════════════════╗\"\n    echo \"║   Apache Airflow Enterprise Stack                      ║\"\n    echo \"╚════════════════════════════════════════════════════════╝\"\n    echo \"\"\n    echo \"Executor: $AIRFLOW_EXECUTOR\"\n    echo \"Workers: $AIRFLOW_CELERY_WORKERS (concurrency: $AIRFLOW__CELERY__WORKER_CONCURRENCY)\"\n    echo \"Webserver Workers: $AIRFLOW_WEBSERVER_WORKERS\"\n    echo \"\"\n    echo \"═══ PostgreSQL Configuration ═══\"\n    echo \"  Host: $AIRFLOW_POSTGRES_HOST:$AIRFLOW_POSTGRES_PORT\"\n    echo \"  Database: $AIRFLOW_POSTGRES_DB\"\n    echo \"  Max connections: $POSTGRES_MAX_CONNECTIONS\"\n    echo \"  Shared buffers: $POSTGRES_SHARED_BUFFERS\"\n    echo \"  fsync: $POSTGRES_FSYNC (data safety)\"\n    echo \"\"\n    echo \"═══ Redis Configuration ═══\"\n    echo \"  Host: $AIRFLOW_REDIS_HOST:$AIRFLOW_REDIS_PORT\"\n    echo \"  Max memory: $REDIS_MAXMEMORY\"\n    echo \"  Persistence: AOF ($REDIS_APPENDFSYNC)\"\n    echo \"\"\n    echo \"═══ Kubernetes Configuration ═══\"\n    echo \"  Namespace: $AIRFLOW_KUBE_NAMESPACE\"\n    echo \"  ServiceAccount: $AIRFLOW_KUBE_WORKER_SERVICE_ACCOUNT\"\n    echo \"  Kubeconfig: $AIRFLOW_KUBE_CONFIG\"\n    echo \"\"\n    echo \"═══ Airflow Access ═══\"\n    echo \"  Web UI: http://localhost:$AIRFLOW_WEBSERVER_PORT\"\n    echo \"  Admin User: $AIRFLOW_ADMIN_USER\"\n    echo \"  Password: $AIRFLOW_ADMIN_PASSWORD\"\n    echo \"\"\n    echo \"═══ Component Info Commands ═══\"\n    echo \"  airflow-info         Airflow details\"\n    echo \"  postgres-info        PostgreSQL details\"\n    echo \"  redis-info           Redis details\"\n    echo \"  k8s-airflow-info     Kubernetes details\"\n    echo \"\"\n    echo \"═══ Service Management ═══\"\n    echo \"  flox services status                    Check all services\"\n    echo \"  flox services logs <service>            View logs\"\n    echo \"  flox services restart <service>         Restart service\"\n    echo \"\"\n    echo \"═══ Airflow Commands ═══\"\n    echo \"  airflow dags list                       List DAGs\"\n    echo \"  airflow dags trigger <dag_id>           Trigger a DAG\"\n    echo \"  airflow tasks test <dag> <task> <date>  Test a task\"\n}\n",
+        "fish": "function enterprise-info\n    echo \"╔════════════════════════════════════════════════════════╗\"\n    echo \"║   Apache Airflow Enterprise Stack                      ║\"\n    echo \"╚════════════════════════════════════════════════════════╝\"\n    echo \"\"\n    echo \"Executor: $AIRFLOW_EXECUTOR\"\n    echo \"Workers: $AIRFLOW_CELERY_WORKERS (concurrency: $AIRFLOW__CELERY__WORKER_CONCURRENCY)\"\n    echo \"Webserver Workers: $AIRFLOW_WEBSERVER_WORKERS\"\n    echo \"\"\n    echo \"═══ PostgreSQL Configuration ═══\"\n    echo \"  Host: $AIRFLOW_POSTGRES_HOST:$AIRFLOW_POSTGRES_PORT\"\n    echo \"  Database: $AIRFLOW_POSTGRES_DB\"\n    echo \"  Max connections: $POSTGRES_MAX_CONNECTIONS\"\n    echo \"  Shared buffers: $POSTGRES_SHARED_BUFFERS\"\n    echo \"  fsync: $POSTGRES_FSYNC (data safety)\"\n    echo \"\"\n    echo \"═══ Redis Configuration ═══\"\n    echo \"  Host: $AIRFLOW_REDIS_HOST:$AIRFLOW_REDIS_PORT\"\n    echo \"  Max memory: $REDIS_MAXMEMORY\"\n    echo \"  Persistence: AOF ($REDIS_APPENDFSYNC)\"\n    echo \"\"\n    echo \"═══ Kubernetes Configuration ═══\"\n    echo \"  Namespace: $AIRFLOW_KUBE_NAMESPACE\"\n    echo \"  ServiceAccount: $AIRFLOW_KUBE_WORKER_SERVICE_ACCOUNT\"\n    echo \"  Kubeconfig: $AIRFLOW_KUBE_CONFIG\"\n    echo \"\"\n    echo \"═══ Airflow Access ═══\"\n    echo \"  Web UI: http://localhost:$AIRFLOW_WEBSERVER_PORT\"\n    echo \"  Admin User: $AIRFLOW_ADMIN_USER\"\n    echo \"  Password: $AIRFLOW_ADMIN_PASSWORD\"\n    echo \"\"\n    echo \"═══ Component Info Commands ═══\"\n    echo \"  airflow-info         Airflow details\"\n    echo \"  postgres-info        PostgreSQL details\"\n    echo \"  redis-info           Redis details\"\n    echo \"  k8s-airflow-info     Kubernetes details\"\n    echo \"\"\n    echo \"═══ Service Management ═══\"\n    echo \"  flox services status                    Check all services\"\n    echo \"  flox services logs <service>            View logs\"\n    echo \"  flox services restart <service>         Restart service\"\n    echo \"\"\n    echo \"═══ Airflow Commands ═══\"\n    echo \"  airflow dags list                       List DAGs\"\n    echo \"  airflow dags trigger <dag_id>           Trigger a DAG\"\n    echo \"  airflow tasks test <dag> <task> <date>  Test a task\"\nend\n"
+      },
+      "options": {
+        "systems": [
+          "aarch64-darwin",
+          "aarch64-linux",
+          "x86_64-darwin",
+          "x86_64-linux"
+        ]
+      },
+      "include": {
+        "environments": [
+          {
+            "remote": "barstoolbluz/airflow-local-dev"
+          },
+          {
+            "remote": "barstoolbluz/airflow-k8s-executor"
+          }
+        ]
+      }
+    },
+    "include": [
+      {
+        "manifest": {
+          "version": 1,
+          "install": {
+            "airflow": {
+              "pkg-path": "barstoolbluz/airflow-full-3-1-1",
+              "systems": [
+                "x86_64-linux"
+              ]
+            },
+            "postgis": {
+              "pkg-path": "postgresql16Packages.postgis"
+            },
+            "postgresql": {
+              "pkg-path": "postgresql_16"
+            },
+            "redis": {
+              "pkg-path": "redis"
+            }
+          },
+          "vars": {
+            "AIRFLOW_CONFIG_DIR": "$FLOX_ENV_CACHE/airflow-config",
+            "AIRFLOW_DAGS_DIR": "$FLOX_ENV_CACHE/airflow-dags",
+            "AIRFLOW_DATA_DIR": "$FLOX_ENV_CACHE/airflow-data",
+            "AIRFLOW_LOG_DIR": "$FLOX_ENV_CACHE/airflow-logs",
+            "AIRFLOW_PLUGINS_DIR": "$FLOX_ENV_CACHE/airflow-plugins",
+            "POSTGRES_CONFIG_DIR": "$FLOX_ENV_CACHE/postgres-config",
+            "POSTGRES_DATA_DIR": "$FLOX_ENV_CACHE/postgres-data",
+            "POSTGRES_LOG_DIR": "$FLOX_ENV_CACHE/postgres-logs",
+            "POSTGRES_RUN_DIR": "$FLOX_ENV_CACHE/postgres-run",
+            "REDIS_CONFIG_DIR": "$FLOX_ENV_CACHE/redis-config",
+            "REDIS_DATA_DIR": "$FLOX_ENV_CACHE/redis-data",
+            "REDIS_LOG_DIR": "$FLOX_ENV_CACHE/redis-logs"
+          },
+          "hook": {
+            "on-activate": "# Create required directories\nmkdir -p \"$FLOX_ENV_CACHE/postgres-config\"\nmkdir -p \"$FLOX_ENV_CACHE/postgres-logs\"\nmkdir -p \"$FLOX_ENV_CACHE/postgres-data\"\nmkdir -p \"$FLOX_ENV_CACHE/postgres-run\"\n\n# === INIT-TIME VARIABLES ===\n# These affect initdb and cannot change without deleting PGDATA\nexport PGUSER=\"${PGUSER:-pguser}\"\nexport PGPASSWORD=\"${PGPASSWORD:-pgpass}\"\nexport POSTGRES_HOST_AUTH_METHOD=\"${POSTGRES_HOST_AUTH_METHOD:-md5}\"\nexport POSTGRES_ENCODING=\"${POSTGRES_ENCODING:-UTF8}\"\nexport POSTGRES_LOCALE=\"${POSTGRES_LOCALE:-C}\"\nexport POSTGRES_DATA_CHECKSUMS=\"${POSTGRES_DATA_CHECKSUMS:-}\"\nexport POSTGRES_INITDB_ARGS=\"${POSTGRES_INITDB_ARGS:-}\"\n\n# === RUNTIME VARIABLES - Connection ===\n# These can be changed by restarting the service\nexport PGHOSTADDR=\"${PGHOSTADDR:-127.0.0.1}\"\nexport PGPORT=\"${PGPORT:-15432}\"\nexport PGHOST=\"${PGHOST:-}\"\nexport PGDATABASE=\"${PGDATABASE:-postgres}\"\n\n# === RUNTIME VARIABLES - Performance ===\nexport POSTGRES_MAX_CONNECTIONS=\"${POSTGRES_MAX_CONNECTIONS:-100}\"\nexport POSTGRES_SHARED_BUFFERS=\"${POSTGRES_SHARED_BUFFERS:-128MB}\"\nexport POSTGRES_WORK_MEM=\"${POSTGRES_WORK_MEM:-4MB}\"\nexport POSTGRES_EFFECTIVE_CACHE_SIZE=\"${POSTGRES_EFFECTIVE_CACHE_SIZE:-4GB}\"\nexport POSTGRES_FSYNC=\"${POSTGRES_FSYNC:-on}\"\nexport POSTGRES_SYNCHRONOUS_COMMIT=\"${POSTGRES_SYNCHRONOUS_COMMIT:-on}\"\nexport POSTGRES_FULL_PAGE_WRITES=\"${POSTGRES_FULL_PAGE_WRITES:-on}\"\n\n# === RUNTIME VARIABLES - WAL ===\nexport POSTGRES_MAX_WAL_SIZE=\"${POSTGRES_MAX_WAL_SIZE:-1GB}\"\nexport POSTGRES_MIN_WAL_SIZE=\"${POSTGRES_MIN_WAL_SIZE:-80MB}\"\nexport POSTGRES_CHECKPOINT_TIMEOUT=\"${POSTGRES_CHECKPOINT_TIMEOUT:-5min}\"\n\n# === RUNTIME VARIABLES - Logging ===\nexport POSTGRES_LOG_STATEMENT=\"${POSTGRES_LOG_STATEMENT:-none}\"\nexport POSTGRES_LOG_DURATION=\"${POSTGRES_LOG_DURATION:-off}\"\nexport POSTGRES_LOG_MIN_DURATION=\"${POSTGRES_LOG_MIN_DURATION:-}\"\nexport POSTGRES_LOG_CONNECTIONS=\"${POSTGRES_LOG_CONNECTIONS:-off}\"\nexport POSTGRES_LOG_DISCONNECTIONS=\"${POSTGRES_LOG_DISCONNECTIONS:-off}\"\n\n# === FLEXIBILITY ===\nexport POSTGRES_EXTRA_OPTS=\"${POSTGRES_EXTRA_OPTS:-}\"\n\n# === DERIVED VARIABLES ===\nexport POSTGRES_DIR=\"${POSTGRES_DIR:-$FLOX_ENV_CACHE/postgres-data}\"\nexport PGDATA=\"$POSTGRES_DIR/data\"\nexport PGHOST_SOCKET=\"$POSTGRES_DIR/run\"\n\n# PGHOST logic: If empty or unset, use Unix socket\nif [ -z \"$PGHOST\" ]; then\n    export PGHOST=\"$PGHOST_SOCKET\"\n    export DATABASE_URL=\"postgresql:///$PGDATABASE?host=$PGHOST&port=$PGPORT\"\nelse\n    # User specified host for TCP\n    export DATABASE_URL=\"postgresql://$PGUSER:$PGPASSWORD@$PGHOST:$PGPORT/$PGDATABASE\"\nfi\n\n# === INITIALIZATION FUNCTION ===\ninitialize_postgres() {\n    # Check if already initialized\n    if [ -f \"$PGDATA/PG_VERSION\" ]; then\n        return 0\n    fi\n\n    # Create directories with proper permissions\n    mkdir -p \"$PGDATA\" \"$PGHOST_SOCKET\"\n    chmod 700 \"$PGDATA\" \"$PGHOST_SOCKET\"\n\n    # Initialize PostgreSQL with direct execution\n    echo \"Initializing PostgreSQL database...\"\n    initdb \"$PGDATA\" \\\n        --username=\"$PGUSER\" \\\n        --pwfile=<(echo \"$PGPASSWORD\") \\\n        --encoding=\"$POSTGRES_ENCODING\" \\\n        --locale=\"$POSTGRES_LOCALE\" \\\n        --auth=\"$POSTGRES_HOST_AUTH_METHOD\" \\\n        $([ -n \"$POSTGRES_DATA_CHECKSUMS\" ] && echo \"--data-checksums\") \\\n        $POSTGRES_INITDB_ARGS \\\n        > /dev/null 2>&1\n\n    if [ $? -ne 0 ]; then\n        echo \"❌ Failed to initialize PostgreSQL\"\n        return 1\n    fi\n\n    # Create database if not \"postgres\"\n    if [ \"$PGDATABASE\" != \"postgres\" ]; then\n        echo \"Creating database '$PGDATABASE'...\"\n\n        # Start postgres temporarily\n        postgres -D \"$PGDATA\" \\\n            -c listen_addresses='' \\\n            -c unix_socket_directories=\"$PGHOST_SOCKET\" \\\n            -p \"$PGPORT\" \\\n            > /dev/null 2>&1 &\n        PG_PID=$!\n\n        sleep 3  # Wait for startup\n\n        # Create database\n        createdb \"$PGDATABASE\" > /dev/null 2>&1 || true\n\n        # Stop postgres\n        pg_ctl stop -D \"$PGDATA\" -m fast -w > /dev/null 2>&1\n    fi\n\n    echo \"✅ PostgreSQL initialized successfully\"\n    return 0\n}\n\n# Run initialization\ninitialize_postgres\n\n# Display info with safety warnings\necho \"\"\necho \"✅ PostgreSQL environment ready (headless mode)\"\necho \"\"\n\n# Safety warnings\nif [ \"$POSTGRES_FSYNC\" = \"off\" ]; then\n    echo \"⚠️  WARNING: fsync disabled - DATA LOSS RISK if crash occurs\"\nfi\nif [ \"$POSTGRES_HOST_AUTH_METHOD\" = \"trust\" ]; then\n    echo \"⚠️  WARNING: Authentication disabled - NO PASSWORD REQUIRED\"\nfi\nif [ \"$PGHOSTADDR\" = \"0.0.0.0\" ]; then\n    echo \"⚠️  WARNING: Listening on all interfaces - NETWORK EXPOSED\"\nfi\n[ \"$POSTGRES_FSYNC\" = \"off\" ] || [ \"$POSTGRES_HOST_AUTH_METHOD\" = \"trust\" ] || [ \"$PGHOSTADDR\" = \"0.0.0.0\" ] && echo \"\"\n\necho \"Connection:\"\necho \"  Listen address: ${PGHOSTADDR}:${PGPORT}\"\necho \"  Client connects to: ${PGHOST}\"\necho \"  Database: ${PGDATABASE}\"\necho \"  User: ${PGUSER}\"\necho \"\"\necho \"Performance:\"\necho \"  Max connections: ${POSTGRES_MAX_CONNECTIONS}\"\necho \"  Shared buffers: ${POSTGRES_SHARED_BUFFERS}\"\necho \"  fsync: ${POSTGRES_FSYNC}\"\necho \"\"\necho \"Commands:\"\necho \"  flox activate -s        Start PostgreSQL\"\necho \"  psql                    Connect to database\"\necho \"  postgres-info           Show configuration\"\necho \"\"\n\n# Create required directories\nmkdir -p \"$FLOX_ENV_CACHE/redis-config\"\nmkdir -p \"$FLOX_ENV_CACHE/redis-logs\"\nmkdir -p \"$FLOX_ENV_CACHE/redis-data\"\n\n# === RUNTIME VARIABLES - Connection ===\nexport REDIS_HOST=\"${REDIS_HOST:-127.0.0.1}\"\nexport REDIS_PORT=\"${REDIS_PORT:-16379}\"\nexport REDIS_PASSWORD=\"${REDIS_PASSWORD:-}\"\n\n# === RUNTIME VARIABLES - Memory Management ===\nexport REDIS_MAXMEMORY=\"${REDIS_MAXMEMORY:-256mb}\"\nexport REDIS_MAXMEMORY_POLICY=\"${REDIS_MAXMEMORY_POLICY:-noeviction}\"\nexport REDIS_MAXMEMORY_SAMPLES=\"${REDIS_MAXMEMORY_SAMPLES:-5}\"\n\n# === RUNTIME VARIABLES - Persistence (RDB) ===\nexport REDIS_SAVE_RDB=\"${REDIS_SAVE_RDB:-yes}\"\nexport REDIS_SAVE_900=\"${REDIS_SAVE_900:-1}\"\nexport REDIS_SAVE_300=\"${REDIS_SAVE_300:-10}\"\nexport REDIS_SAVE_60=\"${REDIS_SAVE_60:-10000}\"\nexport REDIS_RDB_COMPRESSION=\"${REDIS_RDB_COMPRESSION:-yes}\"\nexport REDIS_RDB_CHECKSUM=\"${REDIS_RDB_CHECKSUM:-yes}\"\n\n# === RUNTIME VARIABLES - Persistence (AOF) ===\nexport REDIS_APPENDONLY=\"${REDIS_APPENDONLY:-no}\"\nexport REDIS_APPENDFSYNC=\"${REDIS_APPENDFSYNC:-everysec}\"\nexport REDIS_AOF_REWRITE_PERCENTAGE=\"${REDIS_AOF_REWRITE_PERCENTAGE:-100}\"\nexport REDIS_AOF_REWRITE_MIN_SIZE=\"${REDIS_AOF_REWRITE_MIN_SIZE:-64mb}\"\n\n# === RUNTIME VARIABLES - Performance ===\nexport REDIS_DATABASES=\"${REDIS_DATABASES:-16}\"\nexport REDIS_TCP_BACKLOG=\"${REDIS_TCP_BACKLOG:-511}\"\nexport REDIS_TIMEOUT=\"${REDIS_TIMEOUT:-0}\"\nexport REDIS_TCP_KEEPALIVE=\"${REDIS_TCP_KEEPALIVE:-300}\"\nexport REDIS_MAXCLIENTS=\"${REDIS_MAXCLIENTS:-10000}\"\n\n# === RUNTIME VARIABLES - Slow Log ===\nexport REDIS_SLOWLOG_LOG_SLOWER_THAN=\"${REDIS_SLOWLOG_LOG_SLOWER_THAN:-10000}\"\nexport REDIS_SLOWLOG_MAX_LEN=\"${REDIS_SLOWLOG_MAX_LEN:-128}\"\n\n# === RUNTIME VARIABLES - Latency Monitor ===\nexport REDIS_LATENCY_MONITOR_THRESHOLD=\"${REDIS_LATENCY_MONITOR_THRESHOLD:-0}\"\n\n# === RUNTIME VARIABLES - Security ===\nexport REDIS_PROTECTED_MODE=\"${REDIS_PROTECTED_MODE:-yes}\"\nexport REDIS_RENAME_COMMANDS=\"${REDIS_RENAME_COMMANDS:-}\"\n\n# === FLEXIBILITY ===\nexport REDIS_EXTRA_OPTS=\"${REDIS_EXTRA_OPTS:-}\"\n\n# === DERIVED VARIABLES ===\nexport REDIS_DIR=\"${REDIS_DIR:-$FLOX_ENV_CACHE/redis-data}\"\nexport REDIS_CONF_FILE=\"$REDIS_CONFIG_DIR/redis.conf\"\nexport REDIS_LOG_FILE=\"$REDIS_LOG_DIR/redis.log\"\n\n# === CONFIGURATION GENERATION ===\ngenerate_redis_config() {\n    # Ensure directories exist\n    mkdir -p \"$REDIS_DIR\" \"$REDIS_CONFIG_DIR\" \"$REDIS_LOG_DIR\"\n    chmod 700 \"$REDIS_DIR\" \"$REDIS_CONFIG_DIR\"\n\n    cat > \"$REDIS_CONF_FILE\" << EOF\n# Redis configuration generated by Flox (headless mode)\n# Connection\nbind $REDIS_HOST\nport $REDIS_PORT\nprotected-mode $REDIS_PROTECTED_MODE\n\n# General\ndaemonize no\ndir $REDIS_DIR\nlogfile $REDIS_LOG_FILE\ndatabases $REDIS_DATABASES\n\n# Network\ntcp-backlog $REDIS_TCP_BACKLOG\ntimeout $REDIS_TIMEOUT\ntcp-keepalive $REDIS_TCP_KEEPALIVE\n\n# Clients\nmaxclients $REDIS_MAXCLIENTS\n\n# Memory Management\nmaxmemory $REDIS_MAXMEMORY\nmaxmemory-policy $REDIS_MAXMEMORY_POLICY\nmaxmemory-samples $REDIS_MAXMEMORY_SAMPLES\n\nEOF\n\n    # Add password if set\n    if [ -n \"$REDIS_PASSWORD\" ]; then\n        echo \"# Security\" >> \"$REDIS_CONF_FILE\"\n        echo \"requirepass $REDIS_PASSWORD\" >> \"$REDIS_CONF_FILE\"\n        echo \"\" >> \"$REDIS_CONF_FILE\"\n    fi\n\n    # Add command renaming if set\n    if [ -n \"$REDIS_RENAME_COMMANDS\" ]; then\n        echo \"# Command renaming\" >> \"$REDIS_CONF_FILE\"\n        # Format: \"FLUSHDB,FLUSHALL,CONFIG\" -> rename-command FLUSHDB \"\", rename-command FLUSHALL \"\"\n        IFS=',' read -ra CMDS <<< \"$REDIS_RENAME_COMMANDS\"\n        for cmd in \"${CMDS[@]}\"; do\n            echo \"rename-command $cmd \\\"\\\"\" >> \"$REDIS_CONF_FILE\"\n        done\n        echo \"\" >> \"$REDIS_CONF_FILE\"\n    fi\n\n    # RDB Persistence\n    echo \"# RDB Persistence\" >> \"$REDIS_CONF_FILE\"\n    if [ \"$REDIS_SAVE_RDB\" = \"yes\" ]; then\n        echo \"save 900 $REDIS_SAVE_900\" >> \"$REDIS_CONF_FILE\"\n        echo \"save 300 $REDIS_SAVE_300\" >> \"$REDIS_CONF_FILE\"\n        echo \"save 60 $REDIS_SAVE_60\" >> \"$REDIS_CONF_FILE\"\n        echo \"rdbcompression $REDIS_RDB_COMPRESSION\" >> \"$REDIS_CONF_FILE\"\n        echo \"rdbchecksum $REDIS_RDB_CHECKSUM\" >> \"$REDIS_CONF_FILE\"\n    else\n        echo \"save \\\"\\\"\" >> \"$REDIS_CONF_FILE\"\n    fi\n    echo \"\" >> \"$REDIS_CONF_FILE\"\n\n    # AOF Persistence\n    echo \"# AOF Persistence\" >> \"$REDIS_CONF_FILE\"\n    echo \"appendonly $REDIS_APPENDONLY\" >> \"$REDIS_CONF_FILE\"\n    if [ \"$REDIS_APPENDONLY\" = \"yes\" ]; then\n        echo \"appendfsync $REDIS_APPENDFSYNC\" >> \"$REDIS_CONF_FILE\"\n        echo \"auto-aof-rewrite-percentage $REDIS_AOF_REWRITE_PERCENTAGE\" >> \"$REDIS_CONF_FILE\"\n        echo \"auto-aof-rewrite-min-size $REDIS_AOF_REWRITE_MIN_SIZE\" >> \"$REDIS_CONF_FILE\"\n    fi\n    echo \"\" >> \"$REDIS_CONF_FILE\"\n\n    # Slow Log\n    echo \"# Slow Log\" >> \"$REDIS_CONF_FILE\"\n    echo \"slowlog-log-slower-than $REDIS_SLOWLOG_LOG_SLOWER_THAN\" >> \"$REDIS_CONF_FILE\"\n    echo \"slowlog-max-len $REDIS_SLOWLOG_MAX_LEN\" >> \"$REDIS_CONF_FILE\"\n    echo \"\" >> \"$REDIS_CONF_FILE\"\n\n    # Latency Monitor\n    echo \"# Latency Monitor\" >> \"$REDIS_CONF_FILE\"\n    echo \"latency-monitor-threshold $REDIS_LATENCY_MONITOR_THRESHOLD\" >> \"$REDIS_CONF_FILE\"\n\n    chmod 644 \"$REDIS_CONF_FILE\"\n    return 0\n}\n\n# Generate configuration on activation\ngenerate_redis_config\n\n# Display info with safety warnings\necho \"\"\necho \"✅ Redis environment ready (headless mode)\"\necho \"\"\n\n# Safety warnings\nif [ \"$REDIS_PROTECTED_MODE\" = \"no\" ]; then\n    echo \"⚠️  WARNING: Protected mode disabled - EXPOSED TO NETWORK\"\nfi\nif [ -z \"$REDIS_PASSWORD\" ]; then\n    echo \"⚠️  WARNING: No password set - UNAUTHENTICATED ACCESS\"\nfi\nif [ \"$REDIS_HOST\" = \"0.0.0.0\" ]; then\n    echo \"⚠️  WARNING: Listening on all interfaces - NETWORK EXPOSED\"\nfi\nif [ \"$REDIS_APPENDONLY\" = \"no\" ] && [ \"$REDIS_SAVE_RDB\" = \"no\" ]; then\n    echo \"⚠️  WARNING: All persistence disabled - DATA LOSS ON RESTART\"\nfi\n[ \"$REDIS_PROTECTED_MODE\" = \"no\" ] || [ -z \"$REDIS_PASSWORD\" ] || [ \"$REDIS_HOST\" = \"0.0.0.0\" ] || [ \"$REDIS_APPENDONLY\" = \"no\" -a \"$REDIS_SAVE_RDB\" = \"no\" ] && echo \"\"\n\necho \"Connection:\"\necho \"  Host: ${REDIS_HOST}:${REDIS_PORT}\"\nif [ -n \"$REDIS_PASSWORD\" ]; then\n    echo \"  Password: ***\"\nelse\n    echo \"  Password: (none)\"\nfi\necho \"\"\necho \"Memory:\"\necho \"  Max memory: ${REDIS_MAXMEMORY}\"\necho \"  Eviction policy: ${REDIS_MAXMEMORY_POLICY}\"\necho \"\"\necho \"Persistence:\"\necho \"  RDB snapshots: ${REDIS_SAVE_RDB}\"\necho \"  AOF logging: ${REDIS_APPENDONLY}\"\necho \"\"\necho \"Commands:\"\necho \"  flox activate -s        Start Redis\"\necho \"  redis-cli               Connect to Redis\"\necho \"  redis-info              Show configuration\"\necho \"\"\n\n# Create required directories\nmkdir -p \"$FLOX_ENV_CACHE/airflow-config\"\nmkdir -p \"$FLOX_ENV_CACHE/airflow-logs\"\nmkdir -p \"$FLOX_ENV_CACHE/airflow-data\"\nmkdir -p \"$FLOX_ENV_CACHE/airflow-dags\"\nmkdir -p \"$FLOX_ENV_CACHE/airflow-plugins\"\n\n# === EXECUTOR SELECTION ===\nexport AIRFLOW_EXECUTOR=\"${AIRFLOW_EXECUTOR:-LocalExecutor}\"\n\n# === AIRFLOW HOME ===\nexport AIRFLOW_HOME=\"${AIRFLOW_HOME:-$FLOX_ENV_CACHE/airflow-data}\"\nexport AIRFLOW__CORE__DAGS_FOLDER=\"$AIRFLOW_DAGS_DIR\"\nexport AIRFLOW__CORE__PLUGINS_FOLDER=\"$AIRFLOW_PLUGINS_DIR\"\nexport AIRFLOW__LOGGING__BASE_LOG_FOLDER=\"$AIRFLOW_LOG_DIR\"\n\n# === DATABASE CONNECTION (from postgres-headless) ===\nexport AIRFLOW_POSTGRES_HOST=\"${AIRFLOW_POSTGRES_HOST:-127.0.0.1}\"\nexport AIRFLOW_POSTGRES_PORT=\"${AIRFLOW_POSTGRES_PORT:-15432}\"\nexport AIRFLOW_POSTGRES_USER=\"${AIRFLOW_POSTGRES_USER:-pguser}\"\nexport AIRFLOW_POSTGRES_PASSWORD=\"${AIRFLOW_POSTGRES_PASSWORD:-pgpass}\"\nexport AIRFLOW_POSTGRES_DB=\"${AIRFLOW_POSTGRES_DB:-airflow}\"\n\n# === REDIS CONNECTION (from redis-headless, for CeleryExecutor) ===\nexport AIRFLOW_REDIS_HOST=\"${AIRFLOW_REDIS_HOST:-127.0.0.1}\"\nexport AIRFLOW_REDIS_PORT=\"${AIRFLOW_REDIS_PORT:-16379}\"\nexport AIRFLOW_REDIS_PASSWORD=\"${AIRFLOW_REDIS_PASSWORD:-}\"\nexport AIRFLOW_REDIS_DB=\"${AIRFLOW_REDIS_DB:-0}\"\n\n# === WEBSERVER CONFIGURATION ===\nexport AIRFLOW_WEBSERVER_HOST=\"${AIRFLOW_WEBSERVER_HOST:-0.0.0.0}\"\nexport AIRFLOW_WEBSERVER_PORT=\"${AIRFLOW_WEBSERVER_PORT:-8080}\"\nexport AIRFLOW_WEBSERVER_WORKERS=\"${AIRFLOW_WEBSERVER_WORKERS:-4}\"\nexport AIRFLOW__WEBSERVER__SECRET_KEY=\"${AIRFLOW__WEBSERVER__SECRET_KEY:-$(openssl rand -hex 32 2>/dev/null || echo 'change-this-secret-key')}\"\n\n# === SCHEDULER CONFIGURATION ===\nexport AIRFLOW__SCHEDULER__MIN_FILE_PROCESS_INTERVAL=\"${AIRFLOW__SCHEDULER__MIN_FILE_PROCESS_INTERVAL:-30}\"\nexport AIRFLOW__SCHEDULER__DAG_DIR_LIST_INTERVAL=\"${AIRFLOW__SCHEDULER__DAG_DIR_LIST_INTERVAL:-300}\"\n\n# === CELERY CONFIGURATION (if executor=CeleryExecutor) ===\nexport AIRFLOW_CELERY_WORKERS=\"${AIRFLOW_CELERY_WORKERS:-1}\"\nexport AIRFLOW__CELERY__WORKER_CONCURRENCY=\"${AIRFLOW__CELERY__WORKER_CONCURRENCY:-16}\"\n\n# === KUBERNETES CONFIGURATION (if executor=KubernetesExecutor) ===\nexport AIRFLOW__KUBERNETES__NAMESPACE=\"${AIRFLOW__KUBERNETES__NAMESPACE:-default}\"\nexport AIRFLOW__KUBERNETES__KUBE_CONFIG=\"${AIRFLOW__KUBERNETES__KUBE_CONFIG:-$HOME/.kube/config}\"\nexport AIRFLOW__KUBERNETES__IN_CLUSTER=\"${AIRFLOW__KUBERNETES__IN_CLUSTER:-False}\"\n\n# === AUTHENTICATION ===\nexport AIRFLOW_ADMIN_USER=\"${AIRFLOW_ADMIN_USER:-admin}\"\nexport AIRFLOW_ADMIN_PASSWORD=\"${AIRFLOW_ADMIN_PASSWORD:-admin}\"\nexport AIRFLOW_ADMIN_EMAIL=\"${AIRFLOW_ADMIN_EMAIL:-admin@example.com}\"\n\n# === LOGGING ===\nexport AIRFLOW__LOGGING__LOGGING_LEVEL=\"${AIRFLOW__LOGGING__LOGGING_LEVEL:-INFO}\"\nexport AIRFLOW__LOGGING__FAB_LOGGING_LEVEL=\"${AIRFLOW__LOGGING__FAB_LOGGING_LEVEL:-WARNING}\"\n\n# === DERIVED VARIABLES ===\n# SQL Alchemy connection string\nexport AIRFLOW__DATABASE__SQL_ALCHEMY_CONN=\"postgresql+psycopg2://${AIRFLOW_POSTGRES_USER}:${AIRFLOW_POSTGRES_PASSWORD}@${AIRFLOW_POSTGRES_HOST}:${AIRFLOW_POSTGRES_PORT}/${AIRFLOW_POSTGRES_DB}\"\n\n# Celery broker and result backend (if CeleryExecutor)\nif [ -n \"$AIRFLOW_REDIS_PASSWORD\" ]; then\n    export AIRFLOW__CELERY__BROKER_URL=\"redis://:${AIRFLOW_REDIS_PASSWORD}@${AIRFLOW_REDIS_HOST}:${AIRFLOW_REDIS_PORT}/${AIRFLOW_REDIS_DB}\"\n    export AIRFLOW__CELERY__RESULT_BACKEND=\"db+postgresql://${AIRFLOW_POSTGRES_USER}:${AIRFLOW_POSTGRES_PASSWORD}@${AIRFLOW_POSTGRES_HOST}:${AIRFLOW_POSTGRES_PORT}/${AIRFLOW_POSTGRES_DB}\"\nelse\n    export AIRFLOW__CELERY__BROKER_URL=\"redis://${AIRFLOW_REDIS_HOST}:${AIRFLOW_REDIS_PORT}/${AIRFLOW_REDIS_DB}\"\n    export AIRFLOW__CELERY__RESULT_BACKEND=\"db+postgresql://${AIRFLOW_POSTGRES_USER}:${AIRFLOW_POSTGRES_PASSWORD}@${AIRFLOW_POSTGRES_HOST}:${AIRFLOW_POSTGRES_PORT}/${AIRFLOW_POSTGRES_DB}\"\nfi\n\n# Set executor\nexport AIRFLOW__CORE__EXECUTOR=\"$AIRFLOW_EXECUTOR\"\n\n# === INITIALIZATION FUNCTION ===\ninitialize_airflow() {\n    # Check if already initialized\n    if [ -f \"$AIRFLOW_HOME/airflow-initialized\" ]; then\n        return 0\n    fi\n\n    echo \"Initializing Airflow database...\"\n\n    # Initialize database\n    airflow db migrate > \"$AIRFLOW_LOG_DIR/db-init.log\" 2>&1\n\n    if [ $? -ne 0 ]; then\n        echo \"❌ Failed to initialize Airflow database\"\n        echo \"Check logs: $AIRFLOW_LOG_DIR/db-init.log\"\n        return 1\n    fi\n\n    # Create admin user\n    airflow users create \\\n        --username \"$AIRFLOW_ADMIN_USER\" \\\n        --password \"$AIRFLOW_ADMIN_PASSWORD\" \\\n        --firstname Admin \\\n        --lastname User \\\n        --role Admin \\\n        --email \"$AIRFLOW_ADMIN_EMAIL\" \\\n        > \"$AIRFLOW_LOG_DIR/user-create.log\" 2>&1\n\n    if [ $? -ne 0 ]; then\n        echo \"⚠️  Warning: Failed to create admin user (may already exist)\"\n    fi\n\n    touch \"$AIRFLOW_HOME/airflow-initialized\"\n    echo \"✅ Airflow initialized successfully\"\n    return 0\n}\n\n# === CREATE EXAMPLE DAGS ===\ncreate_example_dags() {\n    # Only create if DAGs directory is empty\n    if [ -n \"$(ls -A \"$AIRFLOW_DAGS_DIR\" 2>/dev/null)\" ]; then\n        return 0\n    fi\n\n    # Example 1: LocalExecutor DAG\n    cat > \"$AIRFLOW_DAGS_DIR/example_local_executor.py\" << 'EOF'\nfrom datetime import datetime, timedelta\nfrom airflow import DAG\nfrom airflow.operators.python import PythonOperator\n\ndefault_args = {\n    'owner': 'airflow',\n    'depends_on_past': False,\n    'start_date': datetime(2024, 1, 1),\n    'retries': 1,\n    'retry_delay': timedelta(minutes=5),\n}\n\ndef print_hello():\n    print(\"Hello from LocalExecutor!\")\n    return \"Task completed\"\n\nwith DAG(\n    'example_local_executor',\n    default_args=default_args,\n    description='Example DAG for LocalExecutor',\n    schedule=timedelta(days=1),\n    catchup=False,\n) as dag:\n\n    task = PythonOperator(\n        task_id='print_hello',\n        python_callable=print_hello,\n    )\nEOF\n\n    # Example 2: CeleryExecutor DAG\n    cat > \"$AIRFLOW_DAGS_DIR/example_celery_executor.py\" << 'EOF'\nfrom datetime import datetime, timedelta\nfrom airflow import DAG\nfrom airflow.operators.python import PythonOperator\n\ndefault_args = {\n    'owner': 'airflow',\n    'depends_on_past': False,\n    'start_date': datetime(2024, 1, 1),\n    'retries': 1,\n    'retry_delay': timedelta(minutes=5),\n}\n\ndef process_data(task_number):\n    print(f\"Processing task {task_number} on Celery worker\")\n    return f\"Task {task_number} completed\"\n\nwith DAG(\n    'example_celery_executor',\n    default_args=default_args,\n    description='Example DAG for CeleryExecutor with parallel tasks',\n    schedule=timedelta(days=1),\n    catchup=False,\n) as dag:\n\n    tasks = []\n    for i in range(5):\n        task = PythonOperator(\n            task_id=f'process_task_{i}',\n            python_callable=process_data,\n            op_kwargs={'task_number': i},\n        )\n        tasks.append(task)\nEOF\n\n    # Example 3: KubernetesPodOperator DAG\n    cat > \"$AIRFLOW_DAGS_DIR/example_kubernetes_pod.py\" << 'EOF'\nfrom datetime import datetime, timedelta\nfrom airflow import DAG\nfrom airflow.providers.cncf.kubernetes.operators.pod import KubernetesPodOperator\n\ndefault_args = {\n    'owner': 'airflow',\n    'depends_on_past': False,\n    'start_date': datetime(2024, 1, 1),\n    'retries': 1,\n    'retry_delay': timedelta(minutes=5),\n}\n\nwith DAG(\n    'example_kubernetes_pod',\n    default_args=default_args,\n    description='Example DAG using KubernetesPodOperator',\n    schedule=timedelta(days=1),\n    catchup=False,\n) as dag:\n\n    k8s_task = KubernetesPodOperator(\n        task_id='run_python_in_pod',\n        name='airflow-test-pod',\n        namespace='default',\n        image='python:3.11-slim',\n        cmds=['python', '-c'],\n        arguments=['print(\"Hello from Kubernetes Pod!\")'],\n        is_delete_operator_pod=True,\n        get_logs=True,\n    )\nEOF\n\n    chmod 644 \"$AIRFLOW_DAGS_DIR\"/*.py\n}\n\n# Run initialization\ninitialize_airflow\n\n# Create example DAGs\ncreate_example_dags\n\n# Display info\necho \"\"\necho \"✅ Airflow Local Development environment ready\"\necho \"\"\necho \"Executor: $AIRFLOW_EXECUTOR\"\necho \"Webserver: http://$AIRFLOW_WEBSERVER_HOST:$AIRFLOW_WEBSERVER_PORT\"\necho \"\"\necho \"Database:\"\necho \"  Host: $AIRFLOW_POSTGRES_HOST:$AIRFLOW_POSTGRES_PORT\"\necho \"  Database: $AIRFLOW_POSTGRES_DB\"\necho \"  User: $AIRFLOW_POSTGRES_USER\"\necho \"\"\n\nif [ \"$AIRFLOW_EXECUTOR\" = \"CeleryExecutor\" ]; then\n    echo \"Redis (Celery):\"\n    echo \"  Host: $AIRFLOW_REDIS_HOST:$AIRFLOW_REDIS_PORT\"\n    echo \"  Database: $AIRFLOW_REDIS_DB\"\n    echo \"\"\nfi\n\nif [ \"$AIRFLOW_EXECUTOR\" = \"KubernetesExecutor\" ]; then\n    echo \"Kubernetes:\"\n    echo \"  Namespace: $AIRFLOW__KUBERNETES__NAMESPACE\"\n    echo \"  Config: $AIRFLOW__KUBERNETES__KUBE_CONFIG\"\n    echo \"\"\nfi\n\necho \"Admin User:\"\necho \"  Username: $AIRFLOW_ADMIN_USER\"\necho \"  Password: $AIRFLOW_ADMIN_PASSWORD\"\necho \"\"\necho \"Commands:\"\necho \"  flox activate -s        Start Airflow services\"\necho \"  airflow-info            Show configuration\"\necho \"  airflow dags list       List DAGs\"\necho \"\"\n"
+          },
+          "profile": {
+            "bash": "postgres-info() {\n    echo \"PostgreSQL (Headless Mode) - Configuration\"\n    echo \"\"\n    echo \"Connection:\"\n    echo \"  Listen address: ${PGHOSTADDR}:${PGPORT}\"\n    echo \"  Client connects to: ${PGHOST}\"\n    echo \"  Database: ${PGDATABASE}\"\n    echo \"  User: ${PGUSER}\"\n    echo \"  Auth method: ${POSTGRES_HOST_AUTH_METHOD}\"\n    echo \"\"\n    echo \"Performance:\"\n    echo \"  Max connections: ${POSTGRES_MAX_CONNECTIONS}\"\n    echo \"  Shared buffers: ${POSTGRES_SHARED_BUFFERS}\"\n    echo \"  Work mem: ${POSTGRES_WORK_MEM}\"\n    echo \"  Effective cache size: ${POSTGRES_EFFECTIVE_CACHE_SIZE}\"\n    echo \"  fsync: ${POSTGRES_FSYNC}\"\n    echo \"  Synchronous commit: ${POSTGRES_SYNCHRONOUS_COMMIT}\"\n    echo \"\"\n    echo \"WAL:\"\n    echo \"  Max WAL size: ${POSTGRES_MAX_WAL_SIZE}\"\n    echo \"  Min WAL size: ${POSTGRES_MIN_WAL_SIZE}\"\n    echo \"  Checkpoint timeout: ${POSTGRES_CHECKPOINT_TIMEOUT}\"\n    echo \"\"\n    echo \"Logging:\"\n    echo \"  Statement logging: ${POSTGRES_LOG_STATEMENT}\"\n    echo \"  Duration logging: ${POSTGRES_LOG_DURATION}\"\n    echo \"  Connection logging: ${POSTGRES_LOG_CONNECTIONS}\"\n    echo \"\"\n    echo \"Data Directory: ${PGDATA}\"\n    echo \"\"\n    echo \"Commands:\"\n    echo \"  psql                        Connect to database\"\n    echo \"  flox activate -s            Start PostgreSQL service\"\n    echo \"  flox services status        Check service status\"\n    echo \"  flox services logs postgres View service logs\"\n    echo \"  flox services restart postgres Restart with new settings\"\n}\nexport -f postgres-info\n\nredis-info() {\n    echo \"Redis (Headless Mode) - Configuration\"\n    echo \"\"\n    echo \"Connection:\"\n    echo \"  Host: ${REDIS_HOST}:${REDIS_PORT}\"\n    if [ -n \"$REDIS_PASSWORD\" ]; then\n        echo \"  Password: ***\"\n    else\n        echo \"  Password: (none)\"\n    fi\n    echo \"  Protected mode: ${REDIS_PROTECTED_MODE}\"\n    echo \"\"\n    echo \"Memory:\"\n    echo \"  Max memory: ${REDIS_MAXMEMORY}\"\n    echo \"  Eviction policy: ${REDIS_MAXMEMORY_POLICY}\"\n    echo \"  Eviction samples: ${REDIS_MAXMEMORY_SAMPLES}\"\n    echo \"\"\n    echo \"Persistence (RDB):\"\n    echo \"  Enabled: ${REDIS_SAVE_RDB}\"\n    if [ \"$REDIS_SAVE_RDB\" = \"yes\" ]; then\n        echo \"  Save after 900s if ${REDIS_SAVE_900}+ changes\"\n        echo \"  Save after 300s if ${REDIS_SAVE_300}+ changes\"\n        echo \"  Save after 60s if ${REDIS_SAVE_60}+ changes\"\n        echo \"  Compression: ${REDIS_RDB_COMPRESSION}\"\n        echo \"  Checksum: ${REDIS_RDB_CHECKSUM}\"\n    fi\n    echo \"\"\n    echo \"Persistence (AOF):\"\n    echo \"  Enabled: ${REDIS_APPENDONLY}\"\n    if [ \"$REDIS_APPENDONLY\" = \"yes\" ]; then\n        echo \"  Fsync policy: ${REDIS_APPENDFSYNC}\"\n        echo \"  Rewrite percentage: ${REDIS_AOF_REWRITE_PERCENTAGE}\"\n        echo \"  Rewrite min size: ${REDIS_AOF_REWRITE_MIN_SIZE}\"\n    fi\n    echo \"\"\n    echo \"Performance:\"\n    echo \"  Databases: ${REDIS_DATABASES}\"\n    echo \"  Max clients: ${REDIS_MAXCLIENTS}\"\n    echo \"  TCP backlog: ${REDIS_TCP_BACKLOG}\"\n    echo \"  Timeout: ${REDIS_TIMEOUT}s\"\n    echo \"  TCP keepalive: ${REDIS_TCP_KEEPALIVE}s\"\n    echo \"\"\n    echo \"Monitoring:\"\n    echo \"  Slow log threshold: ${REDIS_SLOWLOG_LOG_SLOWER_THAN}μs\"\n    echo \"  Slow log max length: ${REDIS_SLOWLOG_MAX_LEN}\"\n    echo \"  Latency monitor threshold: ${REDIS_LATENCY_MONITOR_THRESHOLD}ms\"\n    echo \"\"\n    echo \"Data Directory: ${REDIS_DIR}\"\n    echo \"Config File: ${REDIS_CONF_FILE}\"\n    echo \"\"\n    echo \"Commands:\"\n    echo \"  redis-cli                       Connect to Redis\"\n    echo \"  flox activate -s                Start Redis service\"\n    echo \"  flox services status            Check service status\"\n    echo \"  flox services logs redis        View service logs\"\n    echo \"  flox services restart redis     Restart with new settings\"\n}\nexport -f redis-info\n\nairflow-info() {\n    echo \"Airflow Local Development Environment\"\n    echo \"\"\n    echo \"Executor: $AIRFLOW_EXECUTOR\"\n    echo \"Webserver: http://$AIRFLOW_WEBSERVER_HOST:$AIRFLOW_WEBSERVER_PORT\"\n    echo \"\"\n    echo \"Admin User:\"\n    echo \"  Username: $AIRFLOW_ADMIN_USER\"\n    echo \"  Password: $AIRFLOW_ADMIN_PASSWORD\"\n    echo \"\"\n    echo \"Database:\"\n    echo \"  Host: $AIRFLOW_POSTGRES_HOST:$AIRFLOW_POSTGRES_PORT\"\n    echo \"  Database: $AIRFLOW_POSTGRES_DB\"\n    echo \"  User: $AIRFLOW_POSTGRES_USER\"\n    echo \"\"\n    if [ \"$AIRFLOW_EXECUTOR\" = \"CeleryExecutor\" ]; then\n        echo \"Redis (Celery):\"\n        echo \"  Host: $AIRFLOW_REDIS_HOST:$AIRFLOW_REDIS_PORT\"\n        echo \"  Database: $AIRFLOW_REDIS_DB\"\n        echo \"\"\n    fi\n    if [ \"$AIRFLOW_EXECUTOR\" = \"KubernetesExecutor\" ]; then\n        echo \"Kubernetes:\"\n        echo \"  Namespace: $AIRFLOW__KUBERNETES__NAMESPACE\"\n        echo \"  Config: $AIRFLOW__KUBERNETES__KUBE_CONFIG\"\n        echo \"\"\n    fi\n    echo \"Directories:\"\n    echo \"  Home: $AIRFLOW_HOME\"\n    echo \"  DAGs: $AIRFLOW_DAGS_DIR\"\n    echo \"  Logs: $AIRFLOW_LOG_DIR\"\n    echo \"  Plugins: $AIRFLOW_PLUGINS_DIR\"\n    echo \"\"\n    echo \"Commands:\"\n    echo \"  flox activate -s                    Start all services\"\n    echo \"  flox services status                Check service status\"\n    echo \"  flox services logs airflow-webserver View webserver logs\"\n    echo \"  flox services logs airflow-scheduler View scheduler logs\"\n    echo \"  airflow dags list                   List DAGs\"\n    echo \"  airflow dags trigger <dag_id>       Trigger a DAG\"\n    echo \"\"\n    echo \"Change Executor:\"\n    echo \"  AIRFLOW_EXECUTOR=CeleryExecutor flox activate -s\"\n    echo \"  AIRFLOW_EXECUTOR=KubernetesExecutor flox activate -s\"\n}\nexport -f airflow-info\n",
+            "zsh": "postgres-info() {\n    echo \"PostgreSQL (Headless Mode) - Configuration\"\n    echo \"\"\n    echo \"Connection:\"\n    echo \"  Listen address: ${PGHOSTADDR}:${PGPORT}\"\n    echo \"  Client connects to: ${PGHOST}\"\n    echo \"  Database: ${PGDATABASE}\"\n    echo \"  User: ${PGUSER}\"\n    echo \"  Auth method: ${POSTGRES_HOST_AUTH_METHOD}\"\n    echo \"\"\n    echo \"Performance:\"\n    echo \"  Max connections: ${POSTGRES_MAX_CONNECTIONS}\"\n    echo \"  Shared buffers: ${POSTGRES_SHARED_BUFFERS}\"\n    echo \"  Work mem: ${POSTGRES_WORK_MEM}\"\n    echo \"  Effective cache size: ${POSTGRES_EFFECTIVE_CACHE_SIZE}\"\n    echo \"  fsync: ${POSTGRES_FSYNC}\"\n    echo \"  Synchronous commit: ${POSTGRES_SYNCHRONOUS_COMMIT}\"\n    echo \"\"\n    echo \"WAL:\"\n    echo \"  Max WAL size: ${POSTGRES_MAX_WAL_SIZE}\"\n    echo \"  Min WAL size: ${POSTGRES_MIN_WAL_SIZE}\"\n    echo \"  Checkpoint timeout: ${POSTGRES_CHECKPOINT_TIMEOUT}\"\n    echo \"\"\n    echo \"Logging:\"\n    echo \"  Statement logging: ${POSTGRES_LOG_STATEMENT}\"\n    echo \"  Duration logging: ${POSTGRES_LOG_DURATION}\"\n    echo \"  Connection logging: ${POSTGRES_LOG_CONNECTIONS}\"\n    echo \"\"\n    echo \"Data Directory: ${PGDATA}\"\n    echo \"\"\n    echo \"Commands:\"\n    echo \"  psql                        Connect to database\"\n    echo \"  flox activate -s            Start PostgreSQL service\"\n    echo \"  flox services status        Check service status\"\n    echo \"  flox services logs postgres View service logs\"\n    echo \"  flox services restart postgres Restart with new settings\"\n}\n\nredis-info() {\n    echo \"Redis (Headless Mode) - Configuration\"\n    echo \"\"\n    echo \"Connection:\"\n    echo \"  Host: ${REDIS_HOST}:${REDIS_PORT}\"\n    if [ -n \"$REDIS_PASSWORD\" ]; then\n        echo \"  Password: ***\"\n    else\n        echo \"  Password: (none)\"\n    fi\n    echo \"  Protected mode: ${REDIS_PROTECTED_MODE}\"\n    echo \"\"\n    echo \"Memory:\"\n    echo \"  Max memory: ${REDIS_MAXMEMORY}\"\n    echo \"  Eviction policy: ${REDIS_MAXMEMORY_POLICY}\"\n    echo \"  Eviction samples: ${REDIS_MAXMEMORY_SAMPLES}\"\n    echo \"\"\n    echo \"Persistence (RDB):\"\n    echo \"  Enabled: ${REDIS_SAVE_RDB}\"\n    if [ \"$REDIS_SAVE_RDB\" = \"yes\" ]; then\n        echo \"  Save after 900s if ${REDIS_SAVE_900}+ changes\"\n        echo \"  Save after 300s if ${REDIS_SAVE_300}+ changes\"\n        echo \"  Save after 60s if ${REDIS_SAVE_60}+ changes\"\n        echo \"  Compression: ${REDIS_RDB_COMPRESSION}\"\n        echo \"  Checksum: ${REDIS_RDB_CHECKSUM}\"\n    fi\n    echo \"\"\n    echo \"Persistence (AOF):\"\n    echo \"  Enabled: ${REDIS_APPENDONLY}\"\n    if [ \"$REDIS_APPENDONLY\" = \"yes\" ]; then\n        echo \"  Fsync policy: ${REDIS_APPENDFSYNC}\"\n        echo \"  Rewrite percentage: ${REDIS_AOF_REWRITE_PERCENTAGE}\"\n        echo \"  Rewrite min size: ${REDIS_AOF_REWRITE_MIN_SIZE}\"\n    fi\n    echo \"\"\n    echo \"Performance:\"\n    echo \"  Databases: ${REDIS_DATABASES}\"\n    echo \"  Max clients: ${REDIS_MAXCLIENTS}\"\n    echo \"  TCP backlog: ${REDIS_TCP_BACKLOG}\"\n    echo \"  Timeout: ${REDIS_TIMEOUT}s\"\n    echo \"  TCP keepalive: ${REDIS_TCP_KEEPALIVE}s\"\n    echo \"\"\n    echo \"Monitoring:\"\n    echo \"  Slow log threshold: ${REDIS_SLOWLOG_LOG_SLOWER_THAN}μs\"\n    echo \"  Slow log max length: ${REDIS_SLOWLOG_MAX_LEN}\"\n    echo \"  Latency monitor threshold: ${REDIS_LATENCY_MONITOR_THRESHOLD}ms\"\n    echo \"\"\n    echo \"Data Directory: ${REDIS_DIR}\"\n    echo \"Config File: ${REDIS_CONF_FILE}\"\n    echo \"\"\n    echo \"Commands:\"\n    echo \"  redis-cli                       Connect to Redis\"\n    echo \"  flox activate -s                Start Redis service\"\n    echo \"  flox services status            Check service status\"\n    echo \"  flox services logs redis        View service logs\"\n    echo \"  flox services restart redis     Restart with new settings\"\n}\n\nairflow-info() {\n    echo \"Airflow Local Development Environment\"\n    echo \"\"\n    echo \"Executor: $AIRFLOW_EXECUTOR\"\n    echo \"Webserver: http://$AIRFLOW_WEBSERVER_HOST:$AIRFLOW_WEBSERVER_PORT\"\n    echo \"\"\n    echo \"Admin User:\"\n    echo \"  Username: $AIRFLOW_ADMIN_USER\"\n    echo \"  Password: $AIRFLOW_ADMIN_PASSWORD\"\n    echo \"\"\n    echo \"Database:\"\n    echo \"  Host: $AIRFLOW_POSTGRES_HOST:$AIRFLOW_POSTGRES_PORT\"\n    echo \"  Database: $AIRFLOW_POSTGRES_DB\"\n    echo \"  User: $AIRFLOW_POSTGRES_USER\"\n    echo \"\"\n    if [ \"$AIRFLOW_EXECUTOR\" = \"CeleryExecutor\" ]; then\n        echo \"Redis (Celery):\"\n        echo \"  Host: $AIRFLOW_REDIS_HOST:$AIRFLOW_REDIS_PORT\"\n        echo \"  Database: $AIRFLOW_REDIS_DB\"\n        echo \"\"\n    fi\n    if [ \"$AIRFLOW_EXECUTOR\" = \"KubernetesExecutor\" ]; then\n        echo \"Kubernetes:\"\n        echo \"  Namespace: $AIRFLOW__KUBERNETES__NAMESPACE\"\n        echo \"  Config: $AIRFLOW__KUBERNETES__KUBE_CONFIG\"\n        echo \"\"\n    fi\n    echo \"Directories:\"\n    echo \"  Home: $AIRFLOW_HOME\"\n    echo \"  DAGs: $AIRFLOW_DAGS_DIR\"\n    echo \"  Logs: $AIRFLOW_LOG_DIR\"\n    echo \"  Plugins: $AIRFLOW_PLUGINS_DIR\"\n    echo \"\"\n    echo \"Commands:\"\n    echo \"  flox activate -s                    Start all services\"\n    echo \"  flox services status                Check service status\"\n    echo \"  flox services logs airflow-webserver View webserver logs\"\n    echo \"  flox services logs airflow-scheduler View scheduler logs\"\n    echo \"  airflow dags list                   List DAGs\"\n    echo \"  airflow dags trigger <dag_id>       Trigger a DAG\"\n    echo \"\"\n    echo \"Change Executor:\"\n    echo \"  AIRFLOW_EXECUTOR=CeleryExecutor flox activate -s\"\n    echo \"  AIRFLOW_EXECUTOR=KubernetesExecutor flox activate -s\"\n}\n",
+            "fish": "function postgres-info\n    echo \"PostgreSQL (Headless Mode) - Configuration\"\n    echo \"\"\n    echo \"Connection:\"\n    echo \"  Listen address: $PGHOSTADDR:$PGPORT\"\n    echo \"  Client connects to: $PGHOST\"\n    echo \"  Database: $PGDATABASE\"\n    echo \"  User: $PGUSER\"\n    echo \"  Auth method: $POSTGRES_HOST_AUTH_METHOD\"\n    echo \"\"\n    echo \"Performance:\"\n    echo \"  Max connections: $POSTGRES_MAX_CONNECTIONS\"\n    echo \"  Shared buffers: $POSTGRES_SHARED_BUFFERS\"\n    echo \"  Work mem: $POSTGRES_WORK_MEM\"\n    echo \"  Effective cache size: $POSTGRES_EFFECTIVE_CACHE_SIZE\"\n    echo \"  fsync: $POSTGRES_FSYNC\"\n    echo \"  Synchronous commit: $POSTGRES_SYNCHRONOUS_COMMIT\"\n    echo \"\"\n    echo \"WAL:\"\n    echo \"  Max WAL size: $POSTGRES_MAX_WAL_SIZE\"\n    echo \"  Min WAL size: $POSTGRES_MIN_WAL_SIZE\"\n    echo \"  Checkpoint timeout: $POSTGRES_CHECKPOINT_TIMEOUT\"\n    echo \"\"\n    echo \"Logging:\"\n    echo \"  Statement logging: $POSTGRES_LOG_STATEMENT\"\n    echo \"  Duration logging: $POSTGRES_LOG_DURATION\"\n    echo \"  Connection logging: $POSTGRES_LOG_CONNECTIONS\"\n    echo \"\"\n    echo \"Data Directory: $PGDATA\"\n    echo \"\"\n    echo \"Commands:\"\n    echo \"  psql                        Connect to database\"\n    echo \"  flox activate -s            Start PostgreSQL service\"\n    echo \"  flox services status        Check service status\"\n    echo \"  flox services logs postgres View service logs\"\n    echo \"  flox services restart postgres Restart with new settings\"\nend\n\nfunction redis-info\n    echo \"Redis (Headless Mode) - Configuration\"\n    echo \"\"\n    echo \"Connection:\"\n    echo \"  Host: $REDIS_HOST:$REDIS_PORT\"\n    if test -n \"$REDIS_PASSWORD\"\n        echo \"  Password: ***\"\n    else\n        echo \"  Password: (none)\"\n    end\n    echo \"  Protected mode: $REDIS_PROTECTED_MODE\"\n    echo \"\"\n    echo \"Memory:\"\n    echo \"  Max memory: $REDIS_MAXMEMORY\"\n    echo \"  Eviction policy: $REDIS_MAXMEMORY_POLICY\"\n    echo \"  Eviction samples: $REDIS_MAXMEMORY_SAMPLES\"\n    echo \"\"\n    echo \"Persistence (RDB):\"\n    echo \"  Enabled: $REDIS_SAVE_RDB\"\n    if test \"$REDIS_SAVE_RDB\" = \"yes\"\n        echo \"  Save after 900s if $REDIS_SAVE_900+ changes\"\n        echo \"  Save after 300s if $REDIS_SAVE_300+ changes\"\n        echo \"  Save after 60s if $REDIS_SAVE_60+ changes\"\n        echo \"  Compression: $REDIS_RDB_COMPRESSION\"\n        echo \"  Checksum: $REDIS_RDB_CHECKSUM\"\n    end\n    echo \"\"\n    echo \"Persistence (AOF):\"\n    echo \"  Enabled: $REDIS_APPENDONLY\"\n    if test \"$REDIS_APPENDONLY\" = \"yes\"\n        echo \"  Fsync policy: $REDIS_APPENDFSYNC\"\n        echo \"  Rewrite percentage: $REDIS_AOF_REWRITE_PERCENTAGE\"\n        echo \"  Rewrite min size: $REDIS_AOF_REWRITE_MIN_SIZE\"\n    end\n    echo \"\"\n    echo \"Performance:\"\n    echo \"  Databases: $REDIS_DATABASES\"\n    echo \"  Max clients: $REDIS_MAXCLIENTS\"\n    echo \"  TCP backlog: $REDIS_TCP_BACKLOG\"\n    echo \"  Timeout: $REDIS_TIMEOUT\"s\n    echo \"  TCP keepalive: $REDIS_TCP_KEEPALIVE\"s\n    echo \"\"\n    echo \"Monitoring:\"\n    echo \"  Slow log threshold: $REDIS_SLOWLOG_LOG_SLOWER_THAN\"μs\n    echo \"  Slow log max length: $REDIS_SLOWLOG_MAX_LEN\"\n    echo \"  Latency monitor threshold: $REDIS_LATENCY_MONITOR_THRESHOLD\"ms\n    echo \"\"\n    echo \"Data Directory: $REDIS_DIR\"\n    echo \"Config File: $REDIS_CONF_FILE\"\n    echo \"\"\n    echo \"Commands:\"\n    echo \"  redis-cli                       Connect to Redis\"\n    echo \"  flox activate -s                Start Redis service\"\n    echo \"  flox services status            Check service status\"\n    echo \"  flox services logs redis        View service logs\"\n    echo \"  flox services restart redis     Restart with new settings\"\nend\n\nfunction airflow-info\n    echo \"Airflow Local Development Environment\"\n    echo \"\"\n    echo \"Executor: $AIRFLOW_EXECUTOR\"\n    echo \"Webserver: http://$AIRFLOW_WEBSERVER_HOST:$AIRFLOW_WEBSERVER_PORT\"\n    echo \"\"\n    echo \"Admin User:\"\n    echo \"  Username: $AIRFLOW_ADMIN_USER\"\n    echo \"  Password: $AIRFLOW_ADMIN_PASSWORD\"\n    echo \"\"\n    echo \"Database:\"\n    echo \"  Host: $AIRFLOW_POSTGRES_HOST:$AIRFLOW_POSTGRES_PORT\"\n    echo \"  Database: $AIRFLOW_POSTGRES_DB\"\n    echo \"  User: $AIRFLOW_POSTGRES_USER\"\n    echo \"\"\n    if test \"$AIRFLOW_EXECUTOR\" = \"CeleryExecutor\"\n        echo \"Redis (Celery):\"\n        echo \"  Host: $AIRFLOW_REDIS_HOST:$AIRFLOW_REDIS_PORT\"\n        echo \"  Database: $AIRFLOW_REDIS_DB\"\n        echo \"\"\n    end\n    if test \"$AIRFLOW_EXECUTOR\" = \"KubernetesExecutor\"\n        echo \"Kubernetes:\"\n        echo \"  Namespace: $AIRFLOW__KUBERNETES__NAMESPACE\"\n        echo \"  Config: $AIRFLOW__KUBERNETES__KUBE_CONFIG\"\n        echo \"\"\n    end\n    echo \"Directories:\"\n    echo \"  Home: $AIRFLOW_HOME\"\n    echo \"  DAGs: $AIRFLOW_DAGS_DIR\"\n    echo \"  Logs: $AIRFLOW_LOG_DIR\"\n    echo \"  Plugins: $AIRFLOW_PLUGINS_DIR\"\n    echo \"\"\n    echo \"Commands:\"\n    echo \"  flox activate -s                    Start all services\"\n    echo \"  flox services status                Check service status\"\n    echo \"  flox services logs airflow-webserver View webserver logs\"\n    echo \"  flox services logs airflow-scheduler View scheduler logs\"\n    echo \"  airflow dags list                   List DAGs\"\n    echo \"  airflow dags trigger <dag_id>       Trigger a DAG\"\n    echo \"\"\n    echo \"Change Executor:\"\n    echo \"  AIRFLOW_EXECUTOR=CeleryExecutor flox activate -s\"\n    echo \"  AIRFLOW_EXECUTOR=KubernetesExecutor flox activate -s\"\nend\n"
+          },
+          "options": {
+            "systems": [
+              "aarch64-darwin",
+              "aarch64-linux",
+              "x86_64-darwin",
+              "x86_64-linux"
+            ]
+          },
+          "services": {
+            "airflow-scheduler": {
+              "command": "exec airflow scheduler\n"
+            },
+            "airflow-webserver": {
+              "command": "exec airflow webserver \\\n    --port \"$AIRFLOW_WEBSERVER_PORT\" \\\n    --hostname \"$AIRFLOW_WEBSERVER_HOST\" \\\n    --workers \"$AIRFLOW_WEBSERVER_WORKERS\"\n"
+            },
+            "airflow-worker": {
+              "command": "if [ \"$AIRFLOW_EXECUTOR\" = \"CeleryExecutor\" ]; then\n    exec airflow celery worker \\\n        --concurrency \"$AIRFLOW__CELERY__WORKER_CONCURRENCY\"\nelse\n    # Not needed for LocalExecutor or KubernetesExecutor\n    tail -f /dev/null\nfi\n"
+            },
+            "postgres": {
+              "command": "# Ensure socket directory exists\nmkdir -p \"$PGHOST_SOCKET\"\nchmod 700 \"$PGHOST_SOCKET\"\n\n# Start PostgreSQL with all runtime configuration\nexec postgres -D \"$PGDATA\" \\\n  -c listen_addresses=\"$PGHOSTADDR\" \\\n  -p \"$PGPORT\" \\\n  -c unix_socket_directories=\"$PGHOST_SOCKET\" \\\n  -c unix_socket_permissions=0700 \\\n  ${POSTGRES_MAX_CONNECTIONS:+-c max_connections=\"$POSTGRES_MAX_CONNECTIONS\"} \\\n  ${POSTGRES_SHARED_BUFFERS:+-c shared_buffers=\"$POSTGRES_SHARED_BUFFERS\"} \\\n  ${POSTGRES_WORK_MEM:+-c work_mem=\"$POSTGRES_WORK_MEM\"} \\\n  ${POSTGRES_EFFECTIVE_CACHE_SIZE:+-c effective_cache_size=\"$POSTGRES_EFFECTIVE_CACHE_SIZE\"} \\\n  $([ \"$POSTGRES_FSYNC\" = \"off\" ] && echo \"-c fsync=off\") \\\n  ${POSTGRES_SYNCHRONOUS_COMMIT:+-c synchronous_commit=\"$POSTGRES_SYNCHRONOUS_COMMIT\"} \\\n  ${POSTGRES_FULL_PAGE_WRITES:+-c full_page_writes=\"$POSTGRES_FULL_PAGE_WRITES\"} \\\n  ${POSTGRES_MAX_WAL_SIZE:+-c max_wal_size=\"$POSTGRES_MAX_WAL_SIZE\"} \\\n  ${POSTGRES_MIN_WAL_SIZE:+-c min_wal_size=\"$POSTGRES_MIN_WAL_SIZE\"} \\\n  ${POSTGRES_CHECKPOINT_TIMEOUT:+-c checkpoint_timeout=\"$POSTGRES_CHECKPOINT_TIMEOUT\"} \\\n  ${POSTGRES_LOG_STATEMENT:+-c log_statement=\"$POSTGRES_LOG_STATEMENT\"} \\\n  ${POSTGRES_LOG_DURATION:+-c log_duration=\"$POSTGRES_LOG_DURATION\"} \\\n  ${POSTGRES_LOG_MIN_DURATION:+-c log_min_duration_statement=\"$POSTGRES_LOG_MIN_DURATION\"} \\\n  ${POSTGRES_LOG_CONNECTIONS:+-c log_connections=\"$POSTGRES_LOG_CONNECTIONS\"} \\\n  ${POSTGRES_LOG_DISCONNECTIONS:+-c log_disconnections=\"$POSTGRES_LOG_DISCONNECTIONS\"} \\\n  $POSTGRES_EXTRA_OPTS\n"
+            },
+            "redis": {
+              "command": "redis-server $REDIS_CONF_FILE"
+            }
+          }
+        },
+        "name": "airflow-local-dev",
+        "descriptor": {
+          "remote": "barstoolbluz/airflow-local-dev"
+        }
+      },
+      {
+        "manifest": {
+          "version": 1,
+          "install": {
+            "airflow": {
+              "pkg-path": "barstoolbluz/airflow-full-3-1-1",
+              "systems": [
+                "x86_64-linux"
+              ]
+            },
+            "bat": {
+              "pkg-path": "bat"
+            },
+            "coreutils": {
+              "pkg-path": "coreutils",
+              "pkg-group": "darwin-tools"
+            },
+            "curl": {
+              "pkg-path": "curl"
+            },
+            "jq": {
+              "pkg-path": "jq"
+            },
+            "kind": {
+              "pkg-path": "kind"
+            },
+            "kubectl": {
+              "pkg-path": "kubectl"
+            }
+          },
+          "vars": {
+            "AIRFLOW_KUBE_CONFIG_DIR": "$FLOX_ENV_CACHE/k8s-config",
+            "AIRFLOW_KUBE_LOG_DIR": "$FLOX_ENV_CACHE/k8s-logs",
+            "AIRFLOW_KUBE_TEMPLATES_DIR": "$FLOX_ENV_CACHE/k8s-templates",
+            "KIND_CONFIG_DIR": "$FLOX_ENV_CACHE/kind-config",
+            "KIND_DATA_DIR": "$FLOX_ENV_CACHE/kind-data",
+            "KIND_LOG_DIR": "$FLOX_ENV_CACHE/kind-logs"
+          },
+          "hook": {
+            "on-activate": "# Create required directories\nmkdir -p \"$FLOX_ENV_CACHE/kind-config\"\nmkdir -p \"$FLOX_ENV_CACHE/kind-logs\"\nmkdir -p \"$FLOX_ENV_CACHE/kind-data\"\n\n# Runtime-configurable variables with defaults\nexport KIND_CLUSTER_NAME=\"${KIND_CLUSTER_NAME:-kind}\"\nexport KIND_CONFIG_FILE=\"${KIND_CONFIG_FILE:-$KIND_CONFIG_DIR/cluster.yaml}\"\nexport KIND_KUBECONFIG=\"${KIND_KUBECONFIG:-$KIND_DATA_DIR/kubeconfig}\"\nexport KIND_IMAGE=\"${KIND_IMAGE:-}\"\n\n# Generate default KIND config if not exists\nif [ ! -f \"$KIND_CONFIG_FILE\" ]; then\n    cat > \"$KIND_CONFIG_FILE\" << 'EOF'\nkind: Cluster\napiVersion: kind.x-k8s.io/v1alpha4\nnodes:\n- role: control-plane\n- role: worker\nEOF\nfi\n\n# Display minimal info\necho \"\"\necho \"✅ KIND environment ready (headless mode)\"\necho \"\"\necho \"Cluster Name: $KIND_CLUSTER_NAME\"\necho \"Config File:  $KIND_CONFIG_FILE\"\necho \"\"\necho \"Start cluster: flox activate -s\"\necho \"Check status:  flox services status\"\necho \"Show info:     kind-info\"\necho \"\"\n\n# Create required directories\nmkdir -p \"$FLOX_ENV_CACHE/k8s-config\"\nmkdir -p \"$FLOX_ENV_CACHE/k8s-templates\"\nmkdir -p \"$FLOX_ENV_CACHE/k8s-logs\"\n\n# === KUBERNETES CONNECTION ===\nexport AIRFLOW_KUBE_NAMESPACE=\"${AIRFLOW_KUBE_NAMESPACE:-default}\"\nexport AIRFLOW_KUBE_CONFIG=\"${AIRFLOW_KUBE_CONFIG:-$KIND_KUBECONFIG}\"\nexport AIRFLOW_KUBE_IN_CLUSTER=\"${AIRFLOW_KUBE_IN_CLUSTER:-False}\"\n\n# === POD CONFIGURATION ===\nexport AIRFLOW_KUBE_IMAGE_PULL_POLICY=\"${AIRFLOW_KUBE_IMAGE_PULL_POLICY:-IfNotPresent}\"\nexport AIRFLOW_KUBE_DELETE_WORKER_PODS=\"${AIRFLOW_KUBE_DELETE_WORKER_PODS:-True}\"\nexport AIRFLOW_KUBE_DELETE_WORKER_PODS_ON_FAILURE=\"${AIRFLOW_KUBE_DELETE_WORKER_PODS_ON_FAILURE:-False}\"\nexport AIRFLOW_KUBE_WORKER_SERVICE_ACCOUNT=\"${AIRFLOW_KUBE_WORKER_SERVICE_ACCOUNT:-airflow}\"\n\n# === RESOURCE LIMITS ===\nexport AIRFLOW_KUBE_WORKER_CPU_REQUEST=\"${AIRFLOW_KUBE_WORKER_CPU_REQUEST:-100m}\"\nexport AIRFLOW_KUBE_WORKER_CPU_LIMIT=\"${AIRFLOW_KUBE_WORKER_CPU_LIMIT:-1000m}\"\nexport AIRFLOW_KUBE_WORKER_MEM_REQUEST=\"${AIRFLOW_KUBE_WORKER_MEM_REQUEST:-512Mi}\"\nexport AIRFLOW_KUBE_WORKER_MEM_LIMIT=\"${AIRFLOW_KUBE_WORKER_MEM_LIMIT:-2Gi}\"\n\n# === DERIVED PATHS ===\nexport AIRFLOW_KUBE_RBAC_CONFIG=\"$AIRFLOW_KUBE_CONFIG_DIR/rbac.yaml\"\nexport AIRFLOW_KUBE_POD_TEMPLATE=\"$AIRFLOW_KUBE_TEMPLATES_DIR/worker-pod-template.yaml\"\n\n# === GENERATE RBAC CONFIGURATION ===\ngenerate_rbac_config() {\n    cat > \"$AIRFLOW_KUBE_RBAC_CONFIG\" << EOF\n---\napiVersion: v1\nkind: ServiceAccount\nmetadata:\n  name: airflow\n  namespace: $AIRFLOW_KUBE_NAMESPACE\n---\napiVersion: rbac.authorization.k8s.io/v1\nkind: Role\nmetadata:\n  name: airflow-role\n  namespace: $AIRFLOW_KUBE_NAMESPACE\nrules:\n  - apiGroups: [\"\"]\n    resources: [\"pods\", \"pods/log\", \"pods/exec\"]\n    verbs: [\"get\", \"list\", \"watch\", \"create\", \"update\", \"delete\", \"patch\"]\n  - apiGroups: [\"\"]\n    resources: [\"configmaps\"]\n    verbs: [\"get\", \"list\", \"watch\"]\n  - apiGroups: [\"\"]\n    resources: [\"secrets\"]\n    verbs: [\"get\", \"list\"]\n---\napiVersion: rbac.authorization.k8s.io/v1\nkind: RoleBinding\nmetadata:\n  name: airflow-role-binding\n  namespace: $AIRFLOW_KUBE_NAMESPACE\nroleRef:\n  apiGroup: rbac.authorization.k8s.io\n  kind: Role\n  name: airflow-role\nsubjects:\n  - kind: ServiceAccount\n    name: airflow\n    namespace: $AIRFLOW_KUBE_NAMESPACE\nEOF\n    chmod 644 \"$AIRFLOW_KUBE_RBAC_CONFIG\"\n    return 0\n}\n\n# === GENERATE POD TEMPLATE ===\ngenerate_pod_template() {\n    cat > \"$AIRFLOW_KUBE_POD_TEMPLATE\" << EOF\napiVersion: v1\nkind: Pod\nmetadata:\n  name: airflow-worker\n  namespace: $AIRFLOW_KUBE_NAMESPACE\nspec:\n  serviceAccountName: $AIRFLOW_KUBE_WORKER_SERVICE_ACCOUNT\n  containers:\n  - name: base\n    image: apache/airflow:3.1.1\n    imagePullPolicy: $AIRFLOW_KUBE_IMAGE_PULL_POLICY\n    resources:\n      requests:\n        cpu: \"$AIRFLOW_KUBE_WORKER_CPU_REQUEST\"\n        memory: \"$AIRFLOW_KUBE_WORKER_MEM_REQUEST\"\n      limits:\n        cpu: \"$AIRFLOW_KUBE_WORKER_CPU_LIMIT\"\n        memory: \"$AIRFLOW_KUBE_WORKER_MEM_LIMIT\"\n  restartPolicy: Never\nEOF\n    chmod 644 \"$AIRFLOW_KUBE_POD_TEMPLATE\"\n    return 0\n}\n\n# === VALIDATE KUBERNETES CONNECTION ===\nvalidate_k8s_connection() {\n    if [ ! -f \"$AIRFLOW_KUBE_CONFIG\" ]; then\n        echo \"⚠️  Warning: Kubeconfig not found: $AIRFLOW_KUBE_CONFIG\"\n        echo \"Make sure KIND cluster is started with: flox activate -s\"\n        return 1\n    fi\n\n    export KUBECONFIG=\"$AIRFLOW_KUBE_CONFIG\"\n\n    if kubectl cluster-info > /dev/null 2>&1; then\n        return 0\n    else\n        echo \"⚠️  Warning: Cannot connect to Kubernetes cluster\"\n        echo \"Make sure KIND cluster is running\"\n        return 1\n    fi\n}\n\n# Generate configurations\ngenerate_rbac_config\ngenerate_pod_template\n\n# Validate connection (non-blocking)\nvalidate_k8s_connection\n\n# Display info\necho \"\"\necho \"✅ Airflow Kubernetes Executor environment ready\"\necho \"\"\necho \"Namespace: $AIRFLOW_KUBE_NAMESPACE\"\necho \"ServiceAccount: $AIRFLOW_KUBE_WORKER_SERVICE_ACCOUNT\"\necho \"\"\necho \"Resource Limits:\"\necho \"  CPU Request: $AIRFLOW_KUBE_WORKER_CPU_REQUEST\"\necho \"  CPU Limit: $AIRFLOW_KUBE_WORKER_CPU_LIMIT\"\necho \"  Memory Request: $AIRFLOW_KUBE_WORKER_MEM_REQUEST\"\necho \"  Memory Limit: $AIRFLOW_KUBE_WORKER_MEM_LIMIT\"\necho \"\"\necho \"Configuration Files:\"\necho \"  RBAC: $AIRFLOW_KUBE_RBAC_CONFIG\"\necho \"  Pod Template: $AIRFLOW_KUBE_POD_TEMPLATE\"\necho \"\"\necho \"Commands:\"\necho \"  flox activate -s        Setup Kubernetes RBAC\"\necho \"  k8s-airflow-info        Show configuration\"\necho \"  k8s-test-pod            Test pod creation\"\necho \"\"\n"
+          },
+          "profile": {
+            "bash": "kind-info() {\n    echo \"KIND Cluster (Headless Mode)\"\n    echo \"\"\n    echo \"Cluster Name: $KIND_CLUSTER_NAME\"\n    echo \"Config File:  $KIND_CONFIG_FILE\"\n    echo \"Kubeconfig:   $KIND_KUBECONFIG\"\n    echo \"\"\n    echo \"Commands:\"\n    echo \"  flox activate -s        Start KIND cluster service\"\n    echo \"  flox services status    Check service status\"\n    echo \"  flox services logs kind View service logs\"\n    echo \"  kubectl cluster-info    Show cluster information\"\n    echo \"  kind get clusters       List KIND clusters\"\n    echo \"\"\n    echo \"Runtime Configuration:\"\n    echo \"  KIND_CLUSTER_NAME       Default: $KIND_CLUSTER_NAME\"\n    echo \"  KIND_CONFIG_FILE        Default: $KIND_CONFIG_FILE\"\n    echo \"  KIND_KUBECONFIG         Default: $KIND_KUBECONFIG\"\n    echo \"  KIND_IMAGE              Default: (latest)\"\n    echo \"\"\n    echo \"Example:\"\n    echo \"  KIND_CLUSTER_NAME=dev KIND_CONFIG_FILE=./my-config.yaml flox activate -s\"\n}\n\nreadme() {\n  local readme_path=\"$FLOX_ENV_PROJECT/README.md\"\n  if [[ \"$1\" == \"--refresh\" ]] || [ ! -s \"$readme_path\" ]; then\n    curl -sL \"https://raw.githubusercontent.com/barstoolbluz/floxenvs/main/kind-basic/README.md\" > \"$readme_path\" 2>/dev/null\n  fi\n  if command -v bat &>/dev/null; then\n    bat --language markdown \"$readme_path\" 2>/dev/null\n  else\n    cat \"$readme_path\" 2>/dev/null\n  fi\n}\n\nk8s-airflow-info() {\n    export KUBECONFIG=\"$AIRFLOW_KUBE_CONFIG\"\n\n    echo \"Airflow Kubernetes Executor Environment\"\n    echo \"\"\n    echo \"Namespace: $AIRFLOW_KUBE_NAMESPACE\"\n    echo \"ServiceAccount: $AIRFLOW_KUBE_WORKER_SERVICE_ACCOUNT\"\n    echo \"Kubeconfig: $AIRFLOW_KUBE_CONFIG\"\n    echo \"\"\n    echo \"Resource Limits:\"\n    echo \"  CPU Request: $AIRFLOW_KUBE_WORKER_CPU_REQUEST\"\n    echo \"  CPU Limit: $AIRFLOW_KUBE_WORKER_CPU_LIMIT\"\n    echo \"  Memory Request: $AIRFLOW_KUBE_WORKER_MEM_REQUEST\"\n    echo \"  Memory Limit: $AIRFLOW_KUBE_WORKER_MEM_LIMIT\"\n    echo \"\"\n    echo \"Pod Configuration:\"\n    echo \"  Image Pull Policy: $AIRFLOW_KUBE_IMAGE_PULL_POLICY\"\n    echo \"  Delete Worker Pods: $AIRFLOW_KUBE_DELETE_WORKER_PODS\"\n    echo \"  Delete On Failure: $AIRFLOW_KUBE_DELETE_WORKER_PODS_ON_FAILURE\"\n    echo \"\"\n    echo \"Configuration Files:\"\n    echo \"  RBAC: $AIRFLOW_KUBE_RBAC_CONFIG\"\n    echo \"  Pod Template: $AIRFLOW_KUBE_POD_TEMPLATE\"\n    echo \"\"\n    echo \"Kubernetes Status:\"\n    if kubectl cluster-info > /dev/null 2>&1; then\n        kubectl get nodes 2>/dev/null | head -n 5\n        echo \"\"\n        echo \"ServiceAccount:\"\n        kubectl get sa airflow -n \"$AIRFLOW_KUBE_NAMESPACE\" 2>/dev/null || echo \"  (Not created yet - run: flox activate -s)\"\n    else\n        echo \"  ❌ Cannot connect to cluster\"\n    fi\n    echo \"\"\n    echo \"Commands:\"\n    echo \"  kubectl get pods -n $AIRFLOW_KUBE_NAMESPACE       View Airflow pods\"\n    echo \"  kubectl get sa airflow -n $AIRFLOW_KUBE_NAMESPACE View ServiceAccount\"\n    echo \"  kubectl logs <pod> -n $AIRFLOW_KUBE_NAMESPACE     View pod logs\"\n    echo \"  k8s-test-pod                                       Test pod creation\"\n    echo \"  flox services logs k8s-setup                       View setup logs\"\n}\nexport -f k8s-airflow-info\n\nk8s-test-pod() {\n    export KUBECONFIG=\"$AIRFLOW_KUBE_CONFIG\"\n\n    echo \"Testing Airflow pod creation in namespace: $AIRFLOW_KUBE_NAMESPACE\"\n    echo \"\"\n\n    kubectl run test-airflow-pod \\\n        --image=apache/airflow:3.1.1 \\\n        --namespace=\"$AIRFLOW_KUBE_NAMESPACE\" \\\n        --serviceaccount=airflow \\\n        --restart=Never \\\n        --rm -it \\\n        -- python --version\n\n    if [ $? -eq 0 ]; then\n        echo \"\"\n        echo \"✅ Pod creation successful\"\n    else\n        echo \"\"\n        echo \"❌ Pod creation failed\"\n        echo \"Check RBAC with: kubectl get sa airflow -n $AIRFLOW_KUBE_NAMESPACE\"\n    fi\n}\nexport -f k8s-test-pod\n",
+            "zsh": "kind-info() {\n    echo \"KIND Cluster (Headless Mode)\"\n    echo \"\"\n    echo \"Cluster Name: $KIND_CLUSTER_NAME\"\n    echo \"Config File:  $KIND_CONFIG_FILE\"\n    echo \"Kubeconfig:   $KIND_KUBECONFIG\"\n    echo \"\"\n    echo \"Commands:\"\n    echo \"  flox activate -s        Start KIND cluster service\"\n    echo \"  flox services status    Check service status\"\n    echo \"  flox services logs kind View service logs\"\n    echo \"  kubectl cluster-info    Show cluster information\"\n    echo \"  kind get clusters       List KIND clusters\"\n    echo \"\"\n    echo \"Runtime Configuration:\"\n    echo \"  KIND_CLUSTER_NAME       Default: $KIND_CLUSTER_NAME\"\n    echo \"  KIND_CONFIG_FILE        Default: $KIND_CONFIG_FILE\"\n    echo \"  KIND_KUBECONFIG         Default: $KIND_KUBECONFIG\"\n    echo \"  KIND_IMAGE              Default: (latest)\"\n    echo \"\"\n    echo \"Example:\"\n    echo \"  KIND_CLUSTER_NAME=dev KIND_CONFIG_FILE=./my-config.yaml flox activate -s\"\n}\n\nreadme() {\n  local readme_path=\"$FLOX_ENV_PROJECT/README.md\"\n  if [[ \"$1\" == \"--refresh\" ]] || [ ! -s \"$readme_path\" ]; then\n    curl -sL \"https://raw.githubusercontent.com/barstoolbluz/floxenvs/main/kind-basic/README.md\" > \"$readme_path\" 2>/dev/null\n  fi\n  if command -v bat &>/dev/null; then\n    bat --language markdown \"$readme_path\" 2>/dev/null\n  else\n    cat \"$readme_path\" 2>/dev/null\n  fi\n}\n\nk8s-airflow-info() {\n    export KUBECONFIG=\"$AIRFLOW_KUBE_CONFIG\"\n\n    echo \"Airflow Kubernetes Executor Environment\"\n    echo \"\"\n    echo \"Namespace: $AIRFLOW_KUBE_NAMESPACE\"\n    echo \"ServiceAccount: $AIRFLOW_KUBE_WORKER_SERVICE_ACCOUNT\"\n    echo \"Kubeconfig: $AIRFLOW_KUBE_CONFIG\"\n    echo \"\"\n    echo \"Resource Limits:\"\n    echo \"  CPU Request: $AIRFLOW_KUBE_WORKER_CPU_REQUEST\"\n    echo \"  CPU Limit: $AIRFLOW_KUBE_WORKER_CPU_LIMIT\"\n    echo \"  Memory Request: $AIRFLOW_KUBE_WORKER_MEM_REQUEST\"\n    echo \"  Memory Limit: $AIRFLOW_KUBE_WORKER_MEM_LIMIT\"\n    echo \"\"\n    echo \"Pod Configuration:\"\n    echo \"  Image Pull Policy: $AIRFLOW_KUBE_IMAGE_PULL_POLICY\"\n    echo \"  Delete Worker Pods: $AIRFLOW_KUBE_DELETE_WORKER_PODS\"\n    echo \"  Delete On Failure: $AIRFLOW_KUBE_DELETE_WORKER_PODS_ON_FAILURE\"\n    echo \"\"\n    echo \"Configuration Files:\"\n    echo \"  RBAC: $AIRFLOW_KUBE_RBAC_CONFIG\"\n    echo \"  Pod Template: $AIRFLOW_KUBE_POD_TEMPLATE\"\n    echo \"\"\n    echo \"Kubernetes Status:\"\n    if kubectl cluster-info > /dev/null 2>&1; then\n        kubectl get nodes 2>/dev/null | head -n 5\n        echo \"\"\n        echo \"ServiceAccount:\"\n        kubectl get sa airflow -n \"$AIRFLOW_KUBE_NAMESPACE\" 2>/dev/null || echo \"  (Not created yet - run: flox activate -s)\"\n    else\n        echo \"  ❌ Cannot connect to cluster\"\n    fi\n    echo \"\"\n    echo \"Commands:\"\n    echo \"  kubectl get pods -n $AIRFLOW_KUBE_NAMESPACE       View Airflow pods\"\n    echo \"  kubectl get sa airflow -n $AIRFLOW_KUBE_NAMESPACE View ServiceAccount\"\n    echo \"  kubectl logs <pod> -n $AIRFLOW_KUBE_NAMESPACE     View pod logs\"\n    echo \"  k8s-test-pod                                       Test pod creation\"\n    echo \"  flox services logs k8s-setup                       View setup logs\"\n}\n\nk8s-test-pod() {\n    export KUBECONFIG=\"$AIRFLOW_KUBE_CONFIG\"\n\n    echo \"Testing Airflow pod creation in namespace: $AIRFLOW_KUBE_NAMESPACE\"\n    echo \"\"\n\n    kubectl run test-airflow-pod \\\n        --image=apache/airflow:3.1.1 \\\n        --namespace=\"$AIRFLOW_KUBE_NAMESPACE\" \\\n        --serviceaccount=airflow \\\n        --restart=Never \\\n        --rm -it \\\n        -- python --version\n\n    if [ $? -eq 0 ]; then\n        echo \"\"\n        echo \"✅ Pod creation successful\"\n    else\n        echo \"\"\n        echo \"❌ Pod creation failed\"\n        echo \"Check RBAC with: kubectl get sa airflow -n $AIRFLOW_KUBE_NAMESPACE\"\n    fi\n}\n",
+            "fish": "function kind-info\n    echo \"KIND Cluster (Headless Mode)\"\n    echo \"\"\n    echo \"Cluster Name: $KIND_CLUSTER_NAME\"\n    echo \"Config File:  $KIND_CONFIG_FILE\"\n    echo \"Kubeconfig:   $KIND_KUBECONFIG\"\n    echo \"\"\n    echo \"Commands:\"\n    echo \"  flox activate -s        Start KIND cluster service\"\n    echo \"  flox services status    Check service status\"\n    echo \"  flox services logs kind View service logs\"\n    echo \"  kubectl cluster-info    Show cluster information\"\n    echo \"  kind get clusters       List KIND clusters\"\n    echo \"\"\n    echo \"Runtime Configuration:\"\n    echo \"  KIND_CLUSTER_NAME       Default: $KIND_CLUSTER_NAME\"\n    echo \"  KIND_CONFIG_FILE        Default: $KIND_CONFIG_FILE\"\n    echo \"  KIND_KUBECONFIG         Default: $KIND_KUBECONFIG\"\n    echo \"  KIND_IMAGE              Default: (latest)\"\n    echo \"\"\n    echo \"Example:\"\n    echo \"  KIND_CLUSTER_NAME=dev KIND_CONFIG_FILE=./my-config.yaml flox activate -s\"\nend\n\nfunction readme\n  set readme_path \"$FLOX_ENV_PROJECT/README.md\"\n  if test \"$argv[1]\" = \"--refresh\"; or test ! -s \"$readme_path\"\n    curl -sL \"https://raw.githubusercontent.com/barstoolbluz/floxenvs/main/kind-basic/README.md\" > \"$readme_path\" 2>/dev/null\n  end\n  if command -v bat >/dev/null 2>&1\n    bat --language markdown \"$readme_path\" 2>/dev/null\n  else\n    cat \"$readme_path\" 2>/dev/null\n  end\nend\n\nfunction k8s-airflow-info\n    set -x KUBECONFIG \"$AIRFLOW_KUBE_CONFIG\"\n\n    echo \"Airflow Kubernetes Executor Environment\"\n    echo \"\"\n    echo \"Namespace: $AIRFLOW_KUBE_NAMESPACE\"\n    echo \"ServiceAccount: $AIRFLOW_KUBE_WORKER_SERVICE_ACCOUNT\"\n    echo \"Kubeconfig: $AIRFLOW_KUBE_CONFIG\"\n    echo \"\"\n    echo \"Resource Limits:\"\n    echo \"  CPU Request: $AIRFLOW_KUBE_WORKER_CPU_REQUEST\"\n    echo \"  CPU Limit: $AIRFLOW_KUBE_WORKER_CPU_LIMIT\"\n    echo \"  Memory Request: $AIRFLOW_KUBE_WORKER_MEM_REQUEST\"\n    echo \"  Memory Limit: $AIRFLOW_KUBE_WORKER_MEM_LIMIT\"\n    echo \"\"\n    echo \"Pod Configuration:\"\n    echo \"  Image Pull Policy: $AIRFLOW_KUBE_IMAGE_PULL_POLICY\"\n    echo \"  Delete Worker Pods: $AIRFLOW_KUBE_DELETE_WORKER_PODS\"\n    echo \"  Delete On Failure: $AIRFLOW_KUBE_DELETE_WORKER_PODS_ON_FAILURE\"\n    echo \"\"\n    echo \"Configuration Files:\"\n    echo \"  RBAC: $AIRFLOW_KUBE_RBAC_CONFIG\"\n    echo \"  Pod Template: $AIRFLOW_KUBE_POD_TEMPLATE\"\n    echo \"\"\n    echo \"Kubernetes Status:\"\n    if kubectl cluster-info > /dev/null 2>&1\n        kubectl get nodes 2>/dev/null | head -n 5\n        echo \"\"\n        echo \"ServiceAccount:\"\n        kubectl get sa airflow -n \"$AIRFLOW_KUBE_NAMESPACE\" 2>/dev/null; or echo \"  (Not created yet - run: flox activate -s)\"\n    else\n        echo \"  ❌ Cannot connect to cluster\"\n    end\n    echo \"\"\n    echo \"Commands:\"\n    echo \"  kubectl get pods -n $AIRFLOW_KUBE_NAMESPACE       View Airflow pods\"\n    echo \"  kubectl get sa airflow -n $AIRFLOW_KUBE_NAMESPACE View ServiceAccount\"\n    echo \"  kubectl logs <pod> -n $AIRFLOW_KUBE_NAMESPACE     View pod logs\"\n    echo \"  k8s-test-pod                                       Test pod creation\"\n    echo \"  flox services logs k8s-setup                       View setup logs\"\nend\n\nfunction k8s-test-pod\n    set -x KUBECONFIG \"$AIRFLOW_KUBE_CONFIG\"\n\n    echo \"Testing Airflow pod creation in namespace: $AIRFLOW_KUBE_NAMESPACE\"\n    echo \"\"\n\n    kubectl run test-airflow-pod \\\n        --image=apache/airflow:3.1.1 \\\n        --namespace=\"$AIRFLOW_KUBE_NAMESPACE\" \\\n        --serviceaccount=airflow \\\n        --restart=Never \\\n        --rm -it \\\n        -- python --version\n\n    if test $status -eq 0\n        echo \"\"\n        echo \"✅ Pod creation successful\"\n    else\n        echo \"\"\n        echo \"❌ Pod creation failed\"\n        echo \"Check RBAC with: kubectl get sa airflow -n $AIRFLOW_KUBE_NAMESPACE\"\n    end\nend\n"
+          },
+          "options": {
+            "systems": [
+              "aarch64-darwin",
+              "aarch64-linux",
+              "x86_64-darwin",
+              "x86_64-linux"
+            ]
+          },
+          "services": {
+            "k8s-setup": {
+              "command": "export KUBECONFIG=\"$AIRFLOW_KUBE_CONFIG\"\n\necho \"=== Kubernetes Setup Service ===\" | tee \"$AIRFLOW_KUBE_LOG_DIR/setup.log\"\necho \"Starting at $(date)\" | tee -a \"$AIRFLOW_KUBE_LOG_DIR/setup.log\"\n\n# Wait for cluster to be ready\necho \"Waiting for cluster to be ready...\" | tee -a \"$AIRFLOW_KUBE_LOG_DIR/setup.log\"\nif ! kubectl wait --for=condition=Ready nodes --all --timeout=120s 2>&1 | tee -a \"$AIRFLOW_KUBE_LOG_DIR/setup.log\"; then\n    echo \"❌ Cluster not ready\" | tee -a \"$AIRFLOW_KUBE_LOG_DIR/setup.log\"\n    exit 1\nfi\n\n# Create namespace\necho \"Creating namespace '$AIRFLOW_KUBE_NAMESPACE'...\" | tee -a \"$AIRFLOW_KUBE_LOG_DIR/setup.log\"\nkubectl create namespace \"$AIRFLOW_KUBE_NAMESPACE\" --dry-run=client -o yaml | kubectl apply -f - 2>&1 | tee -a \"$AIRFLOW_KUBE_LOG_DIR/setup.log\"\n\n# Apply RBAC\necho \"Applying RBAC configuration...\" | tee -a \"$AIRFLOW_KUBE_LOG_DIR/setup.log\"\nif kubectl apply -f \"$AIRFLOW_KUBE_RBAC_CONFIG\" 2>&1 | tee -a \"$AIRFLOW_KUBE_LOG_DIR/setup.log\"; then\n    echo \"✅ RBAC configured successfully\" | tee -a \"$AIRFLOW_KUBE_LOG_DIR/setup.log\"\nelse\n    echo \"❌ Failed to apply RBAC\" | tee -a \"$AIRFLOW_KUBE_LOG_DIR/setup.log\"\n    exit 1\nfi\n\n# Verify ServiceAccount\necho \"\" | tee -a \"$AIRFLOW_KUBE_LOG_DIR/setup.log\"\necho \"ServiceAccount created:\" | tee -a \"$AIRFLOW_KUBE_LOG_DIR/setup.log\"\nkubectl get serviceaccount airflow -n \"$AIRFLOW_KUBE_NAMESPACE\" 2>&1 | tee -a \"$AIRFLOW_KUBE_LOG_DIR/setup.log\"\n\necho \"\" | tee -a \"$AIRFLOW_KUBE_LOG_DIR/setup.log\"\necho \"✅ Kubernetes executor environment ready\" | tee -a \"$AIRFLOW_KUBE_LOG_DIR/setup.log\"\necho \"Pod template available at: $AIRFLOW_KUBE_POD_TEMPLATE\" | tee -a \"$AIRFLOW_KUBE_LOG_DIR/setup.log\"\n\n# Keep service running\ntail -f /dev/null\n"
+            },
+            "kind": {
+              "command": "mkdir -p \"$KIND_LOG_DIR\"\nmkdir -p \"$KIND_DATA_DIR\"\n\n# Log startup\necho \"=== KIND Service Startup ===\" > \"$KIND_LOG_DIR/service.log\"\necho \"Starting at $(date)\" >> \"$KIND_LOG_DIR/service.log\"\necho \"KIND_CLUSTER_NAME = $KIND_CLUSTER_NAME\" >> \"$KIND_LOG_DIR/service.log\"\necho \"KIND_CONFIG_FILE = $KIND_CONFIG_FILE\" >> \"$KIND_LOG_DIR/service.log\"\n\n# Check if cluster already exists\nif kind get clusters 2>/dev/null | grep -q \"^${KIND_CLUSTER_NAME}$\"; then\n    echo \"Cluster '$KIND_CLUSTER_NAME' already exists\" | tee -a \"$KIND_LOG_DIR/service.log\"\nelse\n    echo \"Creating KIND cluster '$KIND_CLUSTER_NAME'...\" | tee -a \"$KIND_LOG_DIR/service.log\"\n\n    # Build kind create command\n    KIND_CMD=\"kind create cluster --name $KIND_CLUSTER_NAME\"\n\n    # Add config file if it exists\n    if [ -f \"$KIND_CONFIG_FILE\" ]; then\n        KIND_CMD=\"$KIND_CMD --config $KIND_CONFIG_FILE\"\n    fi\n\n    # Add image if specified\n    if [ -n \"$KIND_IMAGE\" ]; then\n        KIND_CMD=\"$KIND_CMD --image $KIND_IMAGE\"\n    fi\n\n    # Add kubeconfig location\n    KIND_CMD=\"$KIND_CMD --kubeconfig $KIND_KUBECONFIG\"\n\n    # Create cluster\n    echo \"Running: $KIND_CMD\" >> \"$KIND_LOG_DIR/service.log\"\n    if eval \"$KIND_CMD\" 2>&1 | tee -a \"$KIND_LOG_DIR/service.log\"; then\n        echo \"✓ Cluster created successfully\" | tee -a \"$KIND_LOG_DIR/service.log\"\n\n        # Set KUBECONFIG for kubectl\n        export KUBECONFIG=\"$KIND_KUBECONFIG\"\n\n        # Wait for cluster to be ready\n        echo \"Waiting for cluster to be ready...\" | tee -a \"$KIND_LOG_DIR/service.log\"\n        kubectl wait --for=condition=Ready nodes --all --timeout=300s 2>&1 | tee -a \"$KIND_LOG_DIR/service.log\"\n\n        echo \"✓ Cluster is ready\" | tee -a \"$KIND_LOG_DIR/service.log\"\n        echo \"\" | tee -a \"$KIND_LOG_DIR/service.log\"\n        kubectl cluster-info 2>&1 | tee -a \"$KIND_LOG_DIR/service.log\"\n    else\n        echo \"✗ Failed to create cluster\" | tee -a \"$KIND_LOG_DIR/service.log\"\n        exit 1\n    fi\nfi\n\n# Keep service running\ntail -f /dev/null\n"
+            }
+          }
+        },
+        "name": "airflow-k8s-executor",
+        "descriptor": {
+          "remote": "barstoolbluz/airflow-k8s-executor"
+        }
+      }
+    ],
+    "warnings": [
+      {
+        "warning": {
+          "Overriding": [
+            "install",
+            "airflow"
+          ]
+        },
+        "higher_priority_name": "airflow-k8s-executor"
+      },
+      {
+        "warning": {
+          "Overriding": [
+            "options",
+            "systems"
+          ]
+        },
+        "higher_priority_name": "airflow-k8s-executor"
+      },
+      {
+        "warning": {
+          "Overriding": [
+            "options",
+            "systems"
+          ]
+        },
+        "higher_priority_name": "Current manifest"
+      }
+    ]
+  }
+}

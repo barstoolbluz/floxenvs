@@ -1,0 +1,464 @@
+version = 1
+
+[install]
+# Pre-built Airflow with all providers (kubernetes, postgres, redis, http, ssh)
+airflow.pkg-path = "barstoolbluz/airflow-full-3-1-1"
+airflow.systems = ["x86_64-linux"]
+
+[include]
+environments = [
+  { remote = "barstoolbluz/postgres-headless" },
+  { remote = "barstoolbluz/redis-headless" },
+]
+
+[vars]
+# Base configuration paths (invariant)
+AIRFLOW_CONFIG_DIR = "$FLOX_ENV_CACHE/airflow-config"
+AIRFLOW_LOG_DIR = "$FLOX_ENV_CACHE/airflow-logs"
+AIRFLOW_DATA_DIR = "$FLOX_ENV_CACHE/airflow-data"
+AIRFLOW_DAGS_DIR = "$FLOX_ENV_CACHE/airflow-dags"
+AIRFLOW_PLUGINS_DIR = "$FLOX_ENV_CACHE/airflow-plugins"
+
+[hook]
+on-activate = '''
+# Create required directories
+mkdir -p "$FLOX_ENV_CACHE/airflow-config"
+mkdir -p "$FLOX_ENV_CACHE/airflow-logs"
+mkdir -p "$FLOX_ENV_CACHE/airflow-data"
+mkdir -p "$FLOX_ENV_CACHE/airflow-dags"
+mkdir -p "$FLOX_ENV_CACHE/airflow-plugins"
+
+# === EXECUTOR SELECTION ===
+export AIRFLOW_EXECUTOR="${AIRFLOW_EXECUTOR:-LocalExecutor}"
+
+# === AIRFLOW HOME ===
+export AIRFLOW_HOME="${AIRFLOW_HOME:-$FLOX_ENV_CACHE/airflow-data}"
+export AIRFLOW__CORE__DAGS_FOLDER="$AIRFLOW_DAGS_DIR"
+export AIRFLOW__CORE__PLUGINS_FOLDER="$AIRFLOW_PLUGINS_DIR"
+export AIRFLOW__LOGGING__BASE_LOG_FOLDER="$AIRFLOW_LOG_DIR"
+
+# === DATABASE CONNECTION (from postgres-headless) ===
+export AIRFLOW_POSTGRES_HOST="${AIRFLOW_POSTGRES_HOST:-127.0.0.1}"
+export AIRFLOW_POSTGRES_PORT="${AIRFLOW_POSTGRES_PORT:-15432}"
+export AIRFLOW_POSTGRES_USER="${AIRFLOW_POSTGRES_USER:-pguser}"
+export AIRFLOW_POSTGRES_PASSWORD="${AIRFLOW_POSTGRES_PASSWORD:-pgpass}"
+export AIRFLOW_POSTGRES_DB="${AIRFLOW_POSTGRES_DB:-airflow}"
+
+# === REDIS CONNECTION (from redis-headless, for CeleryExecutor) ===
+export AIRFLOW_REDIS_HOST="${AIRFLOW_REDIS_HOST:-127.0.0.1}"
+export AIRFLOW_REDIS_PORT="${AIRFLOW_REDIS_PORT:-16379}"
+export AIRFLOW_REDIS_PASSWORD="${AIRFLOW_REDIS_PASSWORD:-}"
+export AIRFLOW_REDIS_DB="${AIRFLOW_REDIS_DB:-0}"
+
+# === WEBSERVER CONFIGURATION ===
+export AIRFLOW_WEBSERVER_HOST="${AIRFLOW_WEBSERVER_HOST:-0.0.0.0}"
+export AIRFLOW_WEBSERVER_PORT="${AIRFLOW_WEBSERVER_PORT:-8080}"
+export AIRFLOW_WEBSERVER_WORKERS="${AIRFLOW_WEBSERVER_WORKERS:-4}"
+export AIRFLOW__WEBSERVER__SECRET_KEY="${AIRFLOW__WEBSERVER__SECRET_KEY:-$(openssl rand -hex 32 2>/dev/null || echo 'change-this-secret-key')}"
+
+# === SCHEDULER CONFIGURATION ===
+export AIRFLOW__SCHEDULER__MIN_FILE_PROCESS_INTERVAL="${AIRFLOW__SCHEDULER__MIN_FILE_PROCESS_INTERVAL:-30}"
+export AIRFLOW__SCHEDULER__DAG_DIR_LIST_INTERVAL="${AIRFLOW__SCHEDULER__DAG_DIR_LIST_INTERVAL:-300}"
+
+# === CELERY CONFIGURATION (if executor=CeleryExecutor) ===
+export AIRFLOW_CELERY_WORKERS="${AIRFLOW_CELERY_WORKERS:-1}"
+export AIRFLOW__CELERY__WORKER_CONCURRENCY="${AIRFLOW__CELERY__WORKER_CONCURRENCY:-16}"
+
+# === KUBERNETES CONFIGURATION (if executor=KubernetesExecutor) ===
+export AIRFLOW__KUBERNETES__NAMESPACE="${AIRFLOW__KUBERNETES__NAMESPACE:-default}"
+export AIRFLOW__KUBERNETES__KUBE_CONFIG="${AIRFLOW__KUBERNETES__KUBE_CONFIG:-$HOME/.kube/config}"
+export AIRFLOW__KUBERNETES__IN_CLUSTER="${AIRFLOW__KUBERNETES__IN_CLUSTER:-False}"
+
+# === AUTHENTICATION ===
+export AIRFLOW_ADMIN_USER="${AIRFLOW_ADMIN_USER:-admin}"
+export AIRFLOW_ADMIN_PASSWORD="${AIRFLOW_ADMIN_PASSWORD:-admin}"
+export AIRFLOW_ADMIN_EMAIL="${AIRFLOW_ADMIN_EMAIL:-admin@example.com}"
+
+# === LOGGING ===
+export AIRFLOW__LOGGING__LOGGING_LEVEL="${AIRFLOW__LOGGING__LOGGING_LEVEL:-INFO}"
+export AIRFLOW__LOGGING__FAB_LOGGING_LEVEL="${AIRFLOW__LOGGING__FAB_LOGGING_LEVEL:-WARNING}"
+
+# === DERIVED VARIABLES ===
+# SQL Alchemy connection string
+export AIRFLOW__DATABASE__SQL_ALCHEMY_CONN="postgresql+psycopg2://${AIRFLOW_POSTGRES_USER}:${AIRFLOW_POSTGRES_PASSWORD}@${AIRFLOW_POSTGRES_HOST}:${AIRFLOW_POSTGRES_PORT}/${AIRFLOW_POSTGRES_DB}"
+
+# Celery broker and result backend (if CeleryExecutor)
+if [ -n "$AIRFLOW_REDIS_PASSWORD" ]; then
+    export AIRFLOW__CELERY__BROKER_URL="redis://:${AIRFLOW_REDIS_PASSWORD}@${AIRFLOW_REDIS_HOST}:${AIRFLOW_REDIS_PORT}/${AIRFLOW_REDIS_DB}"
+    export AIRFLOW__CELERY__RESULT_BACKEND="db+postgresql://${AIRFLOW_POSTGRES_USER}:${AIRFLOW_POSTGRES_PASSWORD}@${AIRFLOW_POSTGRES_HOST}:${AIRFLOW_POSTGRES_PORT}/${AIRFLOW_POSTGRES_DB}"
+else
+    export AIRFLOW__CELERY__BROKER_URL="redis://${AIRFLOW_REDIS_HOST}:${AIRFLOW_REDIS_PORT}/${AIRFLOW_REDIS_DB}"
+    export AIRFLOW__CELERY__RESULT_BACKEND="db+postgresql://${AIRFLOW_POSTGRES_USER}:${AIRFLOW_POSTGRES_PASSWORD}@${AIRFLOW_POSTGRES_HOST}:${AIRFLOW_POSTGRES_PORT}/${AIRFLOW_POSTGRES_DB}"
+fi
+
+# Set executor
+export AIRFLOW__CORE__EXECUTOR="$AIRFLOW_EXECUTOR"
+
+# === INITIALIZATION FUNCTION ===
+initialize_airflow() {
+    # Check if already initialized
+    if [ -f "$AIRFLOW_HOME/airflow-initialized" ]; then
+        return 0
+    fi
+
+    echo "Initializing Airflow database..."
+
+    # Initialize database
+    airflow db migrate > "$AIRFLOW_LOG_DIR/db-init.log" 2>&1
+
+    if [ $? -ne 0 ]; then
+        echo "❌ Failed to initialize Airflow database"
+        echo "Check logs: $AIRFLOW_LOG_DIR/db-init.log"
+        return 1
+    fi
+
+    # Create admin user
+    airflow users create \
+        --username "$AIRFLOW_ADMIN_USER" \
+        --password "$AIRFLOW_ADMIN_PASSWORD" \
+        --firstname Admin \
+        --lastname User \
+        --role Admin \
+        --email "$AIRFLOW_ADMIN_EMAIL" \
+        > "$AIRFLOW_LOG_DIR/user-create.log" 2>&1
+
+    if [ $? -ne 0 ]; then
+        echo "⚠️  Warning: Failed to create admin user (may already exist)"
+    fi
+
+    touch "$AIRFLOW_HOME/airflow-initialized"
+    echo "✅ Airflow initialized successfully"
+    return 0
+}
+
+# === CREATE EXAMPLE DAGS ===
+create_example_dags() {
+    # Only create if DAGs directory is empty
+    if [ -n "$(ls -A "$AIRFLOW_DAGS_DIR" 2>/dev/null)" ]; then
+        return 0
+    fi
+
+    # Example 1: LocalExecutor DAG
+    cat > "$AIRFLOW_DAGS_DIR/example_local_executor.py" << 'EOF'
+from datetime import datetime, timedelta
+from airflow import DAG
+from airflow.operators.python import PythonOperator
+
+default_args = {
+    'owner': 'airflow',
+    'depends_on_past': False,
+    'start_date': datetime(2024, 1, 1),
+    'retries': 1,
+    'retry_delay': timedelta(minutes=5),
+}
+
+def print_hello():
+    print("Hello from LocalExecutor!")
+    return "Task completed"
+
+with DAG(
+    'example_local_executor',
+    default_args=default_args,
+    description='Example DAG for LocalExecutor',
+    schedule=timedelta(days=1),
+    catchup=False,
+) as dag:
+
+    task = PythonOperator(
+        task_id='print_hello',
+        python_callable=print_hello,
+    )
+EOF
+
+    # Example 2: CeleryExecutor DAG
+    cat > "$AIRFLOW_DAGS_DIR/example_celery_executor.py" << 'EOF'
+from datetime import datetime, timedelta
+from airflow import DAG
+from airflow.operators.python import PythonOperator
+
+default_args = {
+    'owner': 'airflow',
+    'depends_on_past': False,
+    'start_date': datetime(2024, 1, 1),
+    'retries': 1,
+    'retry_delay': timedelta(minutes=5),
+}
+
+def process_data(task_number):
+    print(f"Processing task {task_number} on Celery worker")
+    return f"Task {task_number} completed"
+
+with DAG(
+    'example_celery_executor',
+    default_args=default_args,
+    description='Example DAG for CeleryExecutor with parallel tasks',
+    schedule=timedelta(days=1),
+    catchup=False,
+) as dag:
+
+    tasks = []
+    for i in range(5):
+        task = PythonOperator(
+            task_id=f'process_task_{i}',
+            python_callable=process_data,
+            op_kwargs={'task_number': i},
+        )
+        tasks.append(task)
+EOF
+
+    # Example 3: KubernetesPodOperator DAG
+    cat > "$AIRFLOW_DAGS_DIR/example_kubernetes_pod.py" << 'EOF'
+from datetime import datetime, timedelta
+from airflow import DAG
+from airflow.providers.cncf.kubernetes.operators.pod import KubernetesPodOperator
+
+default_args = {
+    'owner': 'airflow',
+    'depends_on_past': False,
+    'start_date': datetime(2024, 1, 1),
+    'retries': 1,
+    'retry_delay': timedelta(minutes=5),
+}
+
+with DAG(
+    'example_kubernetes_pod',
+    default_args=default_args,
+    description='Example DAG using KubernetesPodOperator',
+    schedule=timedelta(days=1),
+    catchup=False,
+) as dag:
+
+    k8s_task = KubernetesPodOperator(
+        task_id='run_python_in_pod',
+        name='airflow-test-pod',
+        namespace='default',
+        image='python:3.11-slim',
+        cmds=['python', '-c'],
+        arguments=['print("Hello from Kubernetes Pod!")'],
+        is_delete_operator_pod=True,
+        get_logs=True,
+    )
+EOF
+
+    chmod 644 "$AIRFLOW_DAGS_DIR"/*.py
+}
+
+# Run initialization
+initialize_airflow
+
+# Create example DAGs
+create_example_dags
+
+# Display info
+echo ""
+echo "✅ Airflow Local Development environment ready"
+echo ""
+echo "Executor: $AIRFLOW_EXECUTOR"
+echo "Webserver: http://$AIRFLOW_WEBSERVER_HOST:$AIRFLOW_WEBSERVER_PORT"
+echo ""
+echo "Database:"
+echo "  Host: $AIRFLOW_POSTGRES_HOST:$AIRFLOW_POSTGRES_PORT"
+echo "  Database: $AIRFLOW_POSTGRES_DB"
+echo "  User: $AIRFLOW_POSTGRES_USER"
+echo ""
+
+if [ "$AIRFLOW_EXECUTOR" = "CeleryExecutor" ]; then
+    echo "Redis (Celery):"
+    echo "  Host: $AIRFLOW_REDIS_HOST:$AIRFLOW_REDIS_PORT"
+    echo "  Database: $AIRFLOW_REDIS_DB"
+    echo ""
+fi
+
+if [ "$AIRFLOW_EXECUTOR" = "KubernetesExecutor" ]; then
+    echo "Kubernetes:"
+    echo "  Namespace: $AIRFLOW__KUBERNETES__NAMESPACE"
+    echo "  Config: $AIRFLOW__KUBERNETES__KUBE_CONFIG"
+    echo ""
+fi
+
+echo "Admin User:"
+echo "  Username: $AIRFLOW_ADMIN_USER"
+echo "  Password: $AIRFLOW_ADMIN_PASSWORD"
+echo ""
+echo "Commands:"
+echo "  flox activate -s        Start Airflow services"
+echo "  airflow-info            Show configuration"
+echo "  airflow dags list       List DAGs"
+echo ""
+'''
+
+[services]
+airflow-webserver.command = '''
+exec airflow webserver \
+    --port "$AIRFLOW_WEBSERVER_PORT" \
+    --hostname "$AIRFLOW_WEBSERVER_HOST" \
+    --workers "$AIRFLOW_WEBSERVER_WORKERS"
+'''
+
+airflow-scheduler.command = '''
+exec airflow scheduler
+'''
+
+airflow-worker.command = '''
+if [ "$AIRFLOW_EXECUTOR" = "CeleryExecutor" ]; then
+    exec airflow celery worker \
+        --concurrency "$AIRFLOW__CELERY__WORKER_CONCURRENCY"
+else
+    # Not needed for LocalExecutor or KubernetesExecutor
+    tail -f /dev/null
+fi
+'''
+
+[profile]
+bash = '''
+airflow-info() {
+    echo "Airflow Local Development Environment"
+    echo ""
+    echo "Executor: $AIRFLOW_EXECUTOR"
+    echo "Webserver: http://$AIRFLOW_WEBSERVER_HOST:$AIRFLOW_WEBSERVER_PORT"
+    echo ""
+    echo "Admin User:"
+    echo "  Username: $AIRFLOW_ADMIN_USER"
+    echo "  Password: $AIRFLOW_ADMIN_PASSWORD"
+    echo ""
+    echo "Database:"
+    echo "  Host: $AIRFLOW_POSTGRES_HOST:$AIRFLOW_POSTGRES_PORT"
+    echo "  Database: $AIRFLOW_POSTGRES_DB"
+    echo "  User: $AIRFLOW_POSTGRES_USER"
+    echo ""
+    if [ "$AIRFLOW_EXECUTOR" = "CeleryExecutor" ]; then
+        echo "Redis (Celery):"
+        echo "  Host: $AIRFLOW_REDIS_HOST:$AIRFLOW_REDIS_PORT"
+        echo "  Database: $AIRFLOW_REDIS_DB"
+        echo ""
+    fi
+    if [ "$AIRFLOW_EXECUTOR" = "KubernetesExecutor" ]; then
+        echo "Kubernetes:"
+        echo "  Namespace: $AIRFLOW__KUBERNETES__NAMESPACE"
+        echo "  Config: $AIRFLOW__KUBERNETES__KUBE_CONFIG"
+        echo ""
+    fi
+    echo "Directories:"
+    echo "  Home: $AIRFLOW_HOME"
+    echo "  DAGs: $AIRFLOW_DAGS_DIR"
+    echo "  Logs: $AIRFLOW_LOG_DIR"
+    echo "  Plugins: $AIRFLOW_PLUGINS_DIR"
+    echo ""
+    echo "Commands:"
+    echo "  flox activate -s                    Start all services"
+    echo "  flox services status                Check service status"
+    echo "  flox services logs airflow-webserver View webserver logs"
+    echo "  flox services logs airflow-scheduler View scheduler logs"
+    echo "  airflow dags list                   List DAGs"
+    echo "  airflow dags trigger <dag_id>       Trigger a DAG"
+    echo ""
+    echo "Change Executor:"
+    echo "  AIRFLOW_EXECUTOR=CeleryExecutor flox activate -s"
+    echo "  AIRFLOW_EXECUTOR=KubernetesExecutor flox activate -s"
+}
+export -f airflow-info
+'''
+
+zsh = '''
+airflow-info() {
+    echo "Airflow Local Development Environment"
+    echo ""
+    echo "Executor: $AIRFLOW_EXECUTOR"
+    echo "Webserver: http://$AIRFLOW_WEBSERVER_HOST:$AIRFLOW_WEBSERVER_PORT"
+    echo ""
+    echo "Admin User:"
+    echo "  Username: $AIRFLOW_ADMIN_USER"
+    echo "  Password: $AIRFLOW_ADMIN_PASSWORD"
+    echo ""
+    echo "Database:"
+    echo "  Host: $AIRFLOW_POSTGRES_HOST:$AIRFLOW_POSTGRES_PORT"
+    echo "  Database: $AIRFLOW_POSTGRES_DB"
+    echo "  User: $AIRFLOW_POSTGRES_USER"
+    echo ""
+    if [ "$AIRFLOW_EXECUTOR" = "CeleryExecutor" ]; then
+        echo "Redis (Celery):"
+        echo "  Host: $AIRFLOW_REDIS_HOST:$AIRFLOW_REDIS_PORT"
+        echo "  Database: $AIRFLOW_REDIS_DB"
+        echo ""
+    fi
+    if [ "$AIRFLOW_EXECUTOR" = "KubernetesExecutor" ]; then
+        echo "Kubernetes:"
+        echo "  Namespace: $AIRFLOW__KUBERNETES__NAMESPACE"
+        echo "  Config: $AIRFLOW__KUBERNETES__KUBE_CONFIG"
+        echo ""
+    fi
+    echo "Directories:"
+    echo "  Home: $AIRFLOW_HOME"
+    echo "  DAGs: $AIRFLOW_DAGS_DIR"
+    echo "  Logs: $AIRFLOW_LOG_DIR"
+    echo "  Plugins: $AIRFLOW_PLUGINS_DIR"
+    echo ""
+    echo "Commands:"
+    echo "  flox activate -s                    Start all services"
+    echo "  flox services status                Check service status"
+    echo "  flox services logs airflow-webserver View webserver logs"
+    echo "  flox services logs airflow-scheduler View scheduler logs"
+    echo "  airflow dags list                   List DAGs"
+    echo "  airflow dags trigger <dag_id>       Trigger a DAG"
+    echo ""
+    echo "Change Executor:"
+    echo "  AIRFLOW_EXECUTOR=CeleryExecutor flox activate -s"
+    echo "  AIRFLOW_EXECUTOR=KubernetesExecutor flox activate -s"
+}
+'''
+
+fish = '''
+function airflow-info
+    echo "Airflow Local Development Environment"
+    echo ""
+    echo "Executor: $AIRFLOW_EXECUTOR"
+    echo "Webserver: http://$AIRFLOW_WEBSERVER_HOST:$AIRFLOW_WEBSERVER_PORT"
+    echo ""
+    echo "Admin User:"
+    echo "  Username: $AIRFLOW_ADMIN_USER"
+    echo "  Password: $AIRFLOW_ADMIN_PASSWORD"
+    echo ""
+    echo "Database:"
+    echo "  Host: $AIRFLOW_POSTGRES_HOST:$AIRFLOW_POSTGRES_PORT"
+    echo "  Database: $AIRFLOW_POSTGRES_DB"
+    echo "  User: $AIRFLOW_POSTGRES_USER"
+    echo ""
+    if test "$AIRFLOW_EXECUTOR" = "CeleryExecutor"
+        echo "Redis (Celery):"
+        echo "  Host: $AIRFLOW_REDIS_HOST:$AIRFLOW_REDIS_PORT"
+        echo "  Database: $AIRFLOW_REDIS_DB"
+        echo ""
+    end
+    if test "$AIRFLOW_EXECUTOR" = "KubernetesExecutor"
+        echo "Kubernetes:"
+        echo "  Namespace: $AIRFLOW__KUBERNETES__NAMESPACE"
+        echo "  Config: $AIRFLOW__KUBERNETES__KUBE_CONFIG"
+        echo ""
+    end
+    echo "Directories:"
+    echo "  Home: $AIRFLOW_HOME"
+    echo "  DAGs: $AIRFLOW_DAGS_DIR"
+    echo "  Logs: $AIRFLOW_LOG_DIR"
+    echo "  Plugins: $AIRFLOW_PLUGINS_DIR"
+    echo ""
+    echo "Commands:"
+    echo "  flox activate -s                    Start all services"
+    echo "  flox services status                Check service status"
+    echo "  flox services logs airflow-webserver View webserver logs"
+    echo "  flox services logs airflow-scheduler View scheduler logs"
+    echo "  airflow dags list                   List DAGs"
+    echo "  airflow dags trigger <dag_id>       Trigger a DAG"
+    echo ""
+    echo "Change Executor:"
+    echo "  AIRFLOW_EXECUTOR=CeleryExecutor flox activate -s"
+    echo "  AIRFLOW_EXECUTOR=KubernetesExecutor flox activate -s"
+end
+'''
+
+[options]
+systems = [
+  "aarch64-darwin",
+  "aarch64-linux",
+  "x86_64-darwin",
+  "x86_64-linux",
+]

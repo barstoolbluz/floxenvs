@@ -1,0 +1,40 @@
+/nix/store/ph0xcid58q3qx08izvkpiii6l27cmckj-airflow-full-3-1-1-3.1.1/lib/python3.11/site-packages/airflow/configuration.py:869 DeprecationWarning: The secret_key option in [webserver] has been moved to the secret_key option in [api] - the old setting has been used, but please update your config.
+/nix/store/ph0xcid58q3qx08izvkpiii6l27cmckj-airflow-full-3-1-1-3.1.1/lib/python3.11/site-packages/airflow/dag_processing/bundles/base.py:260 DeprecationWarning: The dag_dir_list_interval option in [scheduler] has been moved to the refresh_interval option in [dag_processor] - the old setting has been used, but please update your config.
+/nix/store/ph0xcid58q3qx08izvkpiii6l27cmckj-airflow-full-3-1-1-3.1.1/lib/python3.11/site-packages/airflow/configuration.py:869 DeprecationWarning: The secret_key option in [webserver] has been moved to the secret_key option in [api] - the old setting has been used, but please update your config.
+
+airflow command error: argument GROUP_OR_COMMAND: invalid choice: 'users' (choose from 'api-server', 'assets', 'backfill', 'cheat-sheet', 'config', 'connections', 'dag-processor', 'dags', 'db', 'db-manager', 'info', 'jobs', 'kerberos', 'plugins', 'pools', 'providers', 'rotate-fernet-key', 'scheduler', 'standalone', 'tasks', 'triggerer', 'variables', 'version'), see help above.
+Usage: airflow [-h] GROUP_OR_COMMAND ...
+
+Positional Arguments:
+  GROUP_OR_COMMAND
+
+    Groups
+      assets         Manage assets
+      backfill       Manage backfills
+      config         View configuration
+      connections    Manage connections
+      dags           Manage DAGs
+      db             Database operations
+      db-manager     Manage externally connected database managers
+      jobs           Manage jobs
+      pools          Manage pools
+      providers      Display providers
+      tasks          Manage tasks
+      variables      Manage variables
+
+    Commands:
+      api-server     Start an Airflow API server instance
+      cheat-sheet    Display cheat sheet
+      dag-processor  Start a dag processor instance
+      info           Show information about current Airflow and environment
+      kerberos       Start a kerberos ticket renewer
+      plugins        Dump information about loaded plugins
+      rotate-fernet-key
+                     Rotate encrypted connection credentials and variables
+      scheduler      Start a scheduler instance
+      standalone     Run an all-in-one copy of Airflow
+      triggerer      Start a triggerer instance
+      version        Show the version
+
+Options:
+  -h, --help         show this help message and exit
