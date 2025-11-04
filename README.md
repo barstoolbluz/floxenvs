@@ -72,6 +72,11 @@ cd postgres-headless && PGPORT=5432 PGDATABASE=mydb flox activate -s
 ### Container Orchestration ⚡
 - [**kind**](./kind) / [**kind-headless**](./kind-headless) - Kubernetes in Docker with essential K8s tools
 
+### Workflow Orchestration
+- [**airflow-local-dev**](./airflow-local-dev) - Apache Airflow 3.1.1 with LocalExecutor, CeleryExecutor, and KubernetesExecutor
+- [**airflow-k8s-executor**](./airflow-k8s-executor) - Airflow Kubernetes executor with RBAC and pod templates
+- [**airflow-stack**](./airflow-stack) - Enterprise Airflow stack with production-grade PostgreSQL, Redis, and Kubernetes
+
 ### Data Science & Notebooks ⚡
 - [**jupyterlab**](./jupyterlab) / [**jupyterlab-headless**](./jupyterlab-headless) - JupyterLab notebook environment
 
