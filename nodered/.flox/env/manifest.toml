@@ -1,0 +1,797 @@
+version = 1
+
+[install]
+node-red.pkg-path = "node-red"
+nodejs.pkg-path = "nodejs"
+gum.pkg-path = "gum"
+
+[include]
+environments = [
+  { remote = "barstoolbluz/redis-headless" },
+]
+
+[vars]
+# Base configuration paths (invariant)
+NODERED_CONFIG_DIR = "$FLOX_ENV_CACHE/nodered-config"
+NODERED_DATA_DIR = "$FLOX_ENV_CACHE/nodered-data"
+NODERED_LOG_DIR = "$FLOX_ENV_CACHE/nodered-logs"
+
+[hook]
+on-activate = '''
+# Create required directories
+mkdir -p "$FLOX_ENV_CACHE/nodered-config"
+mkdir -p "$FLOX_ENV_CACHE/nodered-data"
+mkdir -p "$FLOX_ENV_CACHE/nodered-logs"
+
+# === CONFIGURATION FILES ===
+export CONFIG_FILE="$FLOX_ENV_CACHE/nodered.config"
+export CREDENTIAL_SECRET_FILE="$FLOX_ENV_CACHE/nodered-credential.key"
+export SETTINGS_FILE="$NODERED_DATA_DIR/settings.js"
+
+# === DEFAULT VALUES ===
+export DEFAULT_PORT="1880"
+export DEFAULT_HOST="0.0.0.0"
+export DEFAULT_ADMIN_USER="admin"
+export DEFAULT_ADMIN_PASSWORD="admin"
+export DEFAULT_CONTEXT_STORAGE="memory"
+export DEFAULT_PROJECTS_ENABLED="true"
+export DEFAULT_WORKFLOW_MODE="manual"
+
+# === HELPER FUNCTIONS ===
+
+check_first_run() {
+    if [[ ! -f "$CONFIG_FILE" ]]; then
+        return 0  # True, first run
+    else
+        return 1  # False, not first run
+    fi
+}
+
+load_config() {
+    if [[ -f "$CONFIG_FILE" ]]; then
+        source "$CONFIG_FILE"
+    else
+        # Set defaults if no config
+        export NODERED_PORT="$DEFAULT_PORT"
+        export NODERED_HOST="$DEFAULT_HOST"
+        export NODERED_ADMIN_AUTH_ENABLED="true"
+        export NODERED_ADMIN_USER="$DEFAULT_ADMIN_USER"
+        export NODERED_ADMIN_PASSWORD="$DEFAULT_ADMIN_PASSWORD"
+        export NODERED_HTTP_AUTH_ENABLED="false"
+        export NODERED_CONTEXT_STORAGE="$DEFAULT_CONTEXT_STORAGE"
+        export NODERED_CUSTOM_NODES="minimal"
+        export NODERED_PROJECTS_ENABLED="$DEFAULT_PROJECTS_ENABLED"
+        export NODERED_PROJECTS_WORKFLOW_MODE="$DEFAULT_WORKFLOW_MODE"
+    fi
+}
+
+save_config() {
+    mkdir -p "$(dirname "$CONFIG_FILE")"
+    cat > "$CONFIG_FILE" << EOF
+# Node-RED configuration - Generated on $(date)
+export NODERED_PORT="$NODERED_PORT"
+export NODERED_HOST="$NODERED_HOST"
+export NODERED_ADMIN_AUTH_ENABLED="$NODERED_ADMIN_AUTH_ENABLED"
+export NODERED_ADMIN_USER="$NODERED_ADMIN_USER"
+export NODERED_ADMIN_PASSWORD="$NODERED_ADMIN_PASSWORD"
+export NODERED_HTTP_AUTH_ENABLED="$NODERED_HTTP_AUTH_ENABLED"
+export NODERED_HTTP_USER="$NODERED_HTTP_USER"
+export NODERED_HTTP_PASSWORD="$NODERED_HTTP_PASSWORD"
+export NODERED_CONTEXT_STORAGE="$NODERED_CONTEXT_STORAGE"
+export REDIS_HOST="$REDIS_HOST"
+export REDIS_PORT="$REDIS_PORT"
+export REDIS_DB="$REDIS_DB"
+export REDIS_PASSWORD="$REDIS_PASSWORD"
+export NODERED_CUSTOM_NODES="$NODERED_CUSTOM_NODES"
+export NODERED_CUSTOM_NODES_LIST="$NODERED_CUSTOM_NODES_LIST"
+export NODERED_PROJECTS_ENABLED="$NODERED_PROJECTS_ENABLED"
+export NODERED_PROJECTS_WORKFLOW_MODE="$NODERED_PROJECTS_WORKFLOW_MODE"
+
+## BEGIN ACTIVATION HOOK ##
+$(declare -f check_first_run)
+$(declare -f load_config)
+$(declare -f save_config)
+$(declare -f ensure_credential_secret)
+$(declare -f prompt_for_config)
+$(declare -f install_custom_nodes)
+$(declare -f generate_settings_js)
+$(declare -f initialize_nodered)
+$(declare -f reconfigure_nodered)
+$(declare -f main)
+## END ACTIVATION HOOK ##
+EOF
+    chmod 644 "$CONFIG_FILE"
+}
+
+ensure_credential_secret() {
+    if [ -n "$NODERED_CREDENTIAL_SECRET" ]; then
+        # User provided their own secret
+        export NODERED_CREDENTIAL_SECRET
+    elif [ -f "$CREDENTIAL_SECRET_FILE" ]; then
+        # Load existing secret
+        export NODERED_CREDENTIAL_SECRET=$(cat "$CREDENTIAL_SECRET_FILE")
+    else
+        # Generate new secret
+        export NODERED_CREDENTIAL_SECRET=$(openssl rand -hex 32)
+        echo "$NODERED_CREDENTIAL_SECRET" > "$CREDENTIAL_SECRET_FILE"
+        chmod 600 "$CREDENTIAL_SECRET_FILE"
+        echo ""
+        gum style --foreground 208 "⚠️  Credential secret generated and saved to:"
+        echo "   $CREDENTIAL_SECRET_FILE"
+        echo ""
+        gum style --foreground 196 --bold "🔒 CRITICAL: Back up this file!"
+        echo "   Without it, flow credentials are unrecoverable."
+        echo ""
+    fi
+}
+
+prompt_for_config() {
+    gum style --border double --padding "1 2" --border-foreground 212 "
+    🎯 Node-RED Configuration Wizard
+
+    Configure your Node-RED workflow automation environment
+    "
+
+    # Server configuration
+    gum style --foreground 117 "──────────────────────────────────────────"
+    gum style --foreground 117 "📡 Server Configuration"
+    gum style --foreground 117 "──────────────────────────────────────────"
+    echo ""
+
+    NODERED_PORT=$(gum input --placeholder "$DEFAULT_PORT" --value "$NODERED_PORT" --prompt "Port: ")
+    NODERED_HOST=$(gum input --placeholder "$DEFAULT_HOST" --value "$NODERED_HOST" --prompt "Listen address: ")
+
+    # Security configuration
+    echo ""
+    gum style --foreground 117 "──────────────────────────────────────────"
+    gum style --foreground 117 "🔐 Security Configuration"
+    gum style --foreground 117 "──────────────────────────────────────────"
+    echo ""
+
+    if gum confirm "Enable admin authentication?" --default=true --affirmative="Yes" --negative="No"; then
+        export NODERED_ADMIN_AUTH_ENABLED="true"
+        NODERED_ADMIN_USER=$(gum input --placeholder "$DEFAULT_ADMIN_USER" --value "$NODERED_ADMIN_USER" --prompt "Admin username: ")
+        NODERED_ADMIN_PASSWORD=$(gum input --placeholder "$DEFAULT_ADMIN_PASSWORD" --value "$NODERED_ADMIN_PASSWORD" --prompt "Admin password: " --password)
+    else
+        export NODERED_ADMIN_AUTH_ENABLED="false"
+        gum style --foreground 208 "⚠️  Admin authentication disabled"
+    fi
+
+    echo ""
+    if gum confirm "Enable HTTP node authentication?" --default=false --affirmative="Yes" --negative="No"; then
+        export NODERED_HTTP_AUTH_ENABLED="true"
+        NODERED_HTTP_USER=$(gum input --placeholder "http-user" --prompt "HTTP username: ")
+        NODERED_HTTP_PASSWORD=$(gum input --placeholder "password" --prompt "HTTP password: " --password)
+    else
+        export NODERED_HTTP_AUTH_ENABLED="false"
+    fi
+
+    # Context storage
+    echo ""
+    gum style --foreground 117 "──────────────────────────────────────────"
+    gum style --foreground 117 "💾 Context Storage"
+    gum style --foreground 117 "──────────────────────────────────────────"
+    echo ""
+    gum style --foreground 245 "Memory:    Fast, not persistent"
+    gum style --foreground 245 "File:      Persistent, no external deps"
+    gum style --foreground 245 "Redis:     HA/clustering, persistent"
+    echo ""
+
+    STORAGE_CHOICE=$(gum choose --header "Select context storage:" "Memory" "File" "Redis")
+
+    case "$STORAGE_CHOICE" in
+        "Memory")
+            export NODERED_CONTEXT_STORAGE="memory"
+            ;;
+        "File")
+            export NODERED_CONTEXT_STORAGE="file"
+            ;;
+        "Redis")
+            export NODERED_CONTEXT_STORAGE="redis"
+            echo ""
+            REDIS_HOST=$(gum input --placeholder "127.0.0.1" --value "${REDIS_HOST:-127.0.0.1}" --prompt "Redis host: ")
+            REDIS_PORT=$(gum input --placeholder "16379" --value "${REDIS_PORT:-16379}" --prompt "Redis port: ")
+            REDIS_DB=$(gum input --placeholder "0" --value "${REDIS_DB:-0}" --prompt "Redis DB: ")
+            REDIS_PASSWORD=$(gum input --placeholder "(optional)" --value "${REDIS_PASSWORD:-}" --prompt "Redis password: " --password)
+            ;;
+    esac
+
+    # Custom nodes
+    echo ""
+    gum style --foreground 117 "──────────────────────────────────────────"
+    gum style --foreground 117 "📦 Custom Nodes Installation"
+    gum style --foreground 117 "──────────────────────────────────────────"
+    echo ""
+    gum style --foreground 245 "Minimal: dashboard only"
+    gum style --foreground 245 "Common:  dashboard + email + influxdb + mysql + postgres"
+    gum style --foreground 245 "Custom:  specify your own package list"
+    echo ""
+
+    NODES_CHOICE=$(gum choose --header "Select custom nodes:" "Minimal" "Common" "Custom")
+
+    case "$NODES_CHOICE" in
+        "Minimal")
+            export NODERED_CUSTOM_NODES="minimal"
+            ;;
+        "Common")
+            export NODERED_CUSTOM_NODES="common"
+            ;;
+        "Custom")
+            export NODERED_CUSTOM_NODES="custom"
+            echo ""
+            gum style --foreground 245 "Enter npm package names (space-separated):"
+            NODERED_CUSTOM_NODES_LIST=$(gum input --placeholder "node-red-dashboard node-red-node-email" --prompt "Packages: ")
+            ;;
+    esac
+
+    # Projects feature
+    echo ""
+    gum style --foreground 117 "──────────────────────────────────────────"
+    gum style --foreground 117 "🔧 Projects Feature (Git Integration)"
+    gum style --foreground 117 "──────────────────────────────────────────"
+    echo ""
+    gum style --foreground 245 "Projects enable Git version control within the Node-RED editor"
+    echo ""
+
+    if gum confirm "Enable projects feature?" --default=true --affirmative="Yes" --negative="No"; then
+        export NODERED_PROJECTS_ENABLED="true"
+        echo ""
+        gum style --foreground 245 "Manual: Commit/push manually (recommended for learning)"
+        gum style --foreground 245 "Auto:   Auto-commit on deploy"
+        echo ""
+        WORKFLOW_CHOICE=$(gum choose --header "Workflow mode:" "Manual (recommended)" "Auto")
+        case "$WORKFLOW_CHOICE" in
+            "Manual (recommended)")
+                export NODERED_PROJECTS_WORKFLOW_MODE="manual"
+                ;;
+            "Auto")
+                export NODERED_PROJECTS_WORKFLOW_MODE="auto"
+                ;;
+        esac
+    else
+        export NODERED_PROJECTS_ENABLED="false"
+    fi
+
+    echo ""
+    gum style --foreground 46 "✅ Configuration complete!"
+    echo ""
+}
+
+install_custom_nodes() {
+    local NODES_INSTALLED_FLAG="$NODERED_DATA_DIR/.nodes_installed_$NODERED_CUSTOM_NODES"
+
+    # Check if already installed
+    if [ -f "$NODES_INSTALLED_FLAG" ]; then
+        return 0
+    fi
+
+    # Determine package list
+    local PACKAGES=""
+    case "$NODERED_CUSTOM_NODES" in
+        "minimal")
+            PACKAGES="@flowfuse/node-red-dashboard"
+            ;;
+        "common")
+            PACKAGES="@flowfuse/node-red-dashboard node-red-node-email node-red-contrib-influxdb node-red-node-mysql node-red-node-postgres"
+            ;;
+        "custom")
+            PACKAGES="$NODERED_CUSTOM_NODES_LIST"
+            ;;
+    esac
+
+    # Check if we need to install anything (custom nodes OR redis context)
+    local NEEDS_INSTALL=false
+    if [ -n "$PACKAGES" ]; then
+        NEEDS_INSTALL=true
+    fi
+    if [ "$NODERED_CONTEXT_STORAGE" = "redis" ]; then
+        NEEDS_INSTALL=true
+    fi
+
+    if [ "$NEEDS_INSTALL" = "false" ]; then
+        return 0
+    fi
+
+    echo ""
+    gum style --foreground 117 "📦 Installing custom nodes..."
+    echo ""
+
+    # Start Node-RED briefly to initialize userDir
+    timeout 10 node-red --userDir "$NODERED_DATA_DIR" --settings "$SETTINGS_FILE" &>/dev/null || true
+
+    # Wait for package.json to exist
+    for i in {1..30}; do
+        if [ -f "$NODERED_DATA_DIR/package.json" ]; then
+            break
+        fi
+        sleep 0.5
+    done
+
+    if [ ! -f "$NODERED_DATA_DIR/package.json" ]; then
+        gum style --foreground 196 "⚠️  Warning: Could not initialize Node-RED userDir"
+        gum style --foreground 245 "   Custom nodes will need to be installed manually"
+        return 1
+    fi
+
+    # Install nodes
+    cd "$NODERED_DATA_DIR"
+
+    # Install Redis context storage if needed
+    if [ "$NODERED_CONTEXT_STORAGE" = "redis" ]; then
+        echo "  Installing node-red-context-redis..."
+        npm install --silent --no-audit --no-fund node-red-context-redis 2>&1 | grep -v "npm WARN" || true
+    fi
+
+    # Install custom nodes
+    for pkg in $PACKAGES; do
+        echo "  Installing $pkg..."
+        npm install --silent --no-audit --no-fund "$pkg" 2>&1 | grep -v "npm WARN" || true
+    done
+
+    # Mark as installed
+    touch "$NODES_INSTALLED_FLAG"
+
+    echo ""
+    gum style --foreground 46 "✅ Custom nodes installed successfully"
+    echo ""
+}
+
+generate_settings_js() {
+    # Generate bcrypt hash for admin password if auth enabled
+    local ADMIN_PASSWORD_HASH=""
+    if [ "$NODERED_ADMIN_AUTH_ENABLED" = "true" ]; then
+        # Use node-red-admin to hash password
+        ADMIN_PASSWORD_HASH=$(echo "$NODERED_ADMIN_PASSWORD" | npx --yes node-red-admin hash-pw 2>/dev/null | tail -1 | sed 's/^Password: //')
+    fi
+
+    # Generate bcrypt hash for HTTP password if auth enabled
+    local HTTP_PASSWORD_HASH=""
+    if [ "$NODERED_HTTP_AUTH_ENABLED" = "true" ]; then
+        HTTP_PASSWORD_HASH=$(echo "$NODERED_HTTP_PASSWORD" | npx --yes node-red-admin hash-pw 2>/dev/null | tail -1 | sed 's/^Password: //')
+    fi
+
+    # Generate settings.js
+    cat > "$SETTINGS_FILE" << 'SETTINGS_EOF'
+module.exports = {
+    // Server settings
+    uiPort: process.env.NODERED_PORT || 1880,
+    uiHost: process.env.NODERED_HOST || "0.0.0.0",
+
+    // User directory
+    userDir: process.env.NODERED_DATA_DIR,
+
+    // Flow file
+    flowFile: process.env.NODERED_FLOW_FILE || "flows.json",
+
+    // Credential secret
+    credentialSecret: process.env.NODERED_CREDENTIAL_SECRET,
+SETTINGS_EOF
+
+    # Add admin authentication if enabled
+    if [ "$NODERED_ADMIN_AUTH_ENABLED" = "true" ]; then
+        cat >> "$SETTINGS_FILE" << SETTINGS_EOF
+
+    // Admin authentication
+    adminAuth: {
+        type: "credentials",
+        users: [{
+            username: "$NODERED_ADMIN_USER",
+            password: "$ADMIN_PASSWORD_HASH",
+            permissions: "*"
+        }]
+    },
+SETTINGS_EOF
+    fi
+
+    # Add HTTP node authentication if enabled
+    if [ "$NODERED_HTTP_AUTH_ENABLED" = "true" ]; then
+        cat >> "$SETTINGS_FILE" << SETTINGS_EOF
+
+    // HTTP node authentication
+    httpNodeAuth: {
+        user: "$NODERED_HTTP_USER",
+        pass: "$HTTP_PASSWORD_HASH"
+    },
+SETTINGS_EOF
+    fi
+
+    # Add context storage configuration
+    cat >> "$SETTINGS_FILE" << 'SETTINGS_EOF'
+
+    // Context storage
+    contextStorage: {
+SETTINGS_EOF
+
+    case "$NODERED_CONTEXT_STORAGE" in
+        "memory")
+            cat >> "$SETTINGS_FILE" << 'SETTINGS_EOF'
+        default: {
+            module: "memory"
+        }
+SETTINGS_EOF
+            ;;
+        "file")
+            cat >> "$SETTINGS_FILE" << 'SETTINGS_EOF'
+        default: "file",
+        file: {
+            module: "localfilesystem"
+        }
+SETTINGS_EOF
+            ;;
+        "redis")
+            cat >> "$SETTINGS_FILE" << SETTINGS_EOF
+        default: "redis",
+        redis: {
+            module: require("node-red-context-redis"),
+            config: {
+                host: "$REDIS_HOST",
+                port: $REDIS_PORT,
+                db: $REDIS_DB,
+                password: "$REDIS_PASSWORD",
+                prefix: "nodered"
+            }
+        }
+SETTINGS_EOF
+            ;;
+    esac
+
+    cat >> "$SETTINGS_FILE" << 'SETTINGS_EOF'
+    },
+
+    // Logging
+    logging: {
+        console: {
+            level: "info",
+            metrics: false,
+            audit: false
+        }
+    },
+SETTINGS_EOF
+
+    # Add projects configuration
+    if [ "$NODERED_PROJECTS_ENABLED" = "true" ]; then
+        cat >> "$SETTINGS_FILE" << SETTINGS_EOF
+
+    // Projects feature (Git integration)
+    editorTheme: {
+        projects: {
+            enabled: true,
+            workflow: {
+                mode: "$NODERED_PROJECTS_WORKFLOW_MODE"
+            }
+        }
+    },
+SETTINGS_EOF
+    fi
+
+    # Close settings object
+    cat >> "$SETTINGS_FILE" << 'SETTINGS_EOF'
+
+    // Function settings
+    functionGlobalContext: {
+        // Enable global context
+    },
+
+    // Export for http nodes
+    exportGlobalContextKeys: false,
+
+    // Dashboard path
+    ui: { path: "/ui" }
+}
+SETTINGS_EOF
+
+    chmod 644 "$SETTINGS_FILE"
+}
+
+initialize_nodered() {
+    # Ensure credential secret exists
+    ensure_credential_secret
+
+    # Generate settings.js
+    generate_settings_js
+
+    # Install custom nodes (also handles redis context storage)
+    install_custom_nodes
+}
+
+reconfigure_nodered() {
+    # Load current config
+    load_config
+
+    # Run wizard
+    prompt_for_config
+
+    # Save new config
+    save_config
+
+    # Reinitialize
+    initialize_nodered
+
+    echo ""
+    gum style --foreground 46 "✅ Reconfiguration complete!"
+    echo ""
+    gum style --foreground 245 "Restart services to apply changes:"
+    echo "  flox services restart"
+    echo ""
+}
+
+# === MAIN SETUP ===
+
+main() {
+    # Load or set config
+    load_config
+
+    if check_first_run; then
+        # First run - show welcome and run wizard
+        gum style --border double --padding "1 2" --border-foreground 117 "
+
+
+        🚀 Welcome to Node-RED!
+
+        Node-RED is a low-code programming platform for
+        event-driven applications, IoT, and workflow automation.
+
+
+        "
+
+        prompt_for_config
+        save_config
+        initialize_nodered
+    else
+        # Subsequent run - load config and initialize
+        ensure_credential_secret
+        generate_settings_js
+    fi
+
+    # Display summary
+    gum style --border double --padding "1 2" --border-foreground 46 "
+
+
+    ✅ Node-RED Environment Ready
+
+
+    "
+
+    echo "Port: $NODERED_PORT"
+    echo "URL: http://localhost:$NODERED_PORT"
+    echo "Dashboard: http://localhost:$NODERED_PORT/ui"
+    echo ""
+
+    if [ "$NODERED_ADMIN_AUTH_ENABLED" = "true" ]; then
+        echo "Admin Authentication: Enabled"
+        echo "  Username: $NODERED_ADMIN_USER"
+        echo "  Password: (set)"
+    else
+        gum style --foreground 208 "⚠️  Admin Authentication: Disabled"
+    fi
+
+    echo ""
+    echo "Context Storage: $NODERED_CONTEXT_STORAGE"
+
+    if [ "$NODERED_PROJECTS_ENABLED" = "true" ]; then
+        echo "Projects: Enabled ($NODERED_PROJECTS_WORKFLOW_MODE mode)"
+    else
+        echo "Projects: Disabled"
+    fi
+
+    echo ""
+    echo "Commands:"
+    echo "  flox activate -s        Start Node-RED services"
+    echo "  nodered-info            Show configuration"
+    echo "  nodered-reconfigure     Reconfigure environment"
+    echo "  nodered-hash-password   Generate bcrypt password hash"
+    echo ""
+}
+
+# Execute main
+main
+'''
+
+[services]
+nodered.command = '''
+# Ensure credential secret exists
+if [ -z "$NODERED_CREDENTIAL_SECRET" ]; then
+    echo "ERROR: NODERED_CREDENTIAL_SECRET not set"
+    return 1
+fi
+
+# Ensure settings.js exists
+if [ ! -f "$NODERED_DATA_DIR/settings.js" ]; then
+    echo "ERROR: settings.js not found in $NODERED_DATA_DIR"
+    return 1
+fi
+
+# Export credential secret
+export NODERED_CREDENTIAL_SECRET
+
+# Start Node-RED
+exec node-red \
+  --port "$NODERED_PORT" \
+  --userDir "$NODERED_DATA_DIR" \
+  --settings "$NODERED_DATA_DIR/settings.js"
+'''
+
+[profile]
+bash = '''
+nodered-info() {
+    echo "Node-RED Environment Configuration"
+    echo ""
+    echo "Server:"
+    echo "  URL: http://localhost:$NODERED_PORT"
+    echo "  Dashboard: http://localhost:$NODERED_PORT/ui"
+    echo "  Listen: $NODERED_HOST:$NODERED_PORT"
+    echo ""
+
+    if [ "$NODERED_ADMIN_AUTH_ENABLED" = "true" ]; then
+        echo "Authentication: Enabled"
+        echo "  Admin Username: $NODERED_ADMIN_USER"
+        echo "  Admin Password: (set)"
+    else
+        echo "⚠️  Authentication: Disabled"
+    fi
+
+    echo ""
+    echo "Context Storage: $NODERED_CONTEXT_STORAGE"
+
+    if [ "$NODERED_CONTEXT_STORAGE" = "redis" ]; then
+        echo "  Redis: $REDIS_HOST:$REDIS_PORT"
+        echo "  DB: $REDIS_DB"
+    fi
+
+    echo ""
+    if [ "$NODERED_PROJECTS_ENABLED" = "true" ]; then
+        echo "Projects: Enabled ($NODERED_PROJECTS_WORKFLOW_MODE mode)"
+    else
+        echo "Projects: Disabled"
+    fi
+
+    echo ""
+    echo "Paths:"
+    echo "  User Directory: $NODERED_DATA_DIR"
+    echo "  Settings: $NODERED_DATA_DIR/settings.js"
+    echo "  Credential Secret: $FLOX_ENV_CACHE/nodered-credential.key"
+
+    echo ""
+    echo "Commands:"
+    echo "  flox services status              Check service status"
+    echo "  flox services logs nodered        View Node-RED logs"
+    echo "  flox services restart             Restart services"
+    echo "  nodered-reconfigure               Reconfigure environment"
+    echo "  nodered-hash-password             Generate password hash"
+}
+export -f nodered-info
+
+nodered-reconfigure() {
+    reconfigure_nodered
+}
+export -f nodered-reconfigure
+
+nodered-hash-password() {
+    echo "Generate bcrypt password hash for Node-RED:"
+    echo ""
+    npx --yes node-red-admin hash-pw
+}
+export -f nodered-hash-password
+'''
+
+zsh = '''
+nodered-info() {
+    echo "Node-RED Environment Configuration"
+    echo ""
+    echo "Server:"
+    echo "  URL: http://localhost:$NODERED_PORT"
+    echo "  Dashboard: http://localhost:$NODERED_PORT/ui"
+    echo "  Listen: $NODERED_HOST:$NODERED_PORT"
+    echo ""
+
+    if [ "$NODERED_ADMIN_AUTH_ENABLED" = "true" ]; then
+        echo "Authentication: Enabled"
+        echo "  Admin Username: $NODERED_ADMIN_USER"
+        echo "  Admin Password: (set)"
+    else
+        echo "⚠️  Authentication: Disabled"
+    fi
+
+    echo ""
+    echo "Context Storage: $NODERED_CONTEXT_STORAGE"
+
+    if [ "$NODERED_CONTEXT_STORAGE" = "redis" ]; then
+        echo "  Redis: $REDIS_HOST:$REDIS_PORT"
+        echo "  DB: $REDIS_DB"
+    fi
+
+    echo ""
+    if [ "$NODERED_PROJECTS_ENABLED" = "true" ]; then
+        echo "Projects: Enabled ($NODERED_PROJECTS_WORKFLOW_MODE mode)"
+    else
+        echo "Projects: Disabled"
+    fi
+
+    echo ""
+    echo "Paths:"
+    echo "  User Directory: $NODERED_DATA_DIR"
+    echo "  Settings: $NODERED_DATA_DIR/settings.js"
+    echo "  Credential Secret: $FLOX_ENV_CACHE/nodered-credential.key"
+
+    echo ""
+    echo "Commands:"
+    echo "  flox services status              Check service status"
+    echo "  flox services logs nodered        View Node-RED logs"
+    echo "  flox services restart             Restart services"
+}
+
+nodered-reconfigure() {
+    reconfigure_nodered
+}
+
+nodered-hash-password() {
+    echo "Generate bcrypt password hash for Node-RED:"
+    echo ""
+    npx --yes node-red-admin hash-pw
+}
+'''
+
+fish = '''
+function nodered-info
+    echo "Node-RED Environment Configuration"
+    echo ""
+    echo "Server:"
+    echo "  URL: http://localhost:$NODERED_PORT"
+    echo "  Dashboard: http://localhost:$NODERED_PORT/ui"
+    echo "  Listen: $NODERED_HOST:$NODERED_PORT"
+    echo ""
+
+    if test "$NODERED_ADMIN_AUTH_ENABLED" = "true"
+        echo "Authentication: Enabled"
+        echo "  Admin Username: $NODERED_ADMIN_USER"
+        echo "  Admin Password: (set)"
+    else
+        echo "⚠️  Authentication: Disabled"
+    end
+
+    echo ""
+    echo "Context Storage: $NODERED_CONTEXT_STORAGE"
+
+    if test "$NODERED_CONTEXT_STORAGE" = "redis"
+        echo "  Redis: $REDIS_HOST:$REDIS_PORT"
+        echo "  DB: $REDIS_DB"
+    end
+
+    echo ""
+    if test "$NODERED_PROJECTS_ENABLED" = "true"
+        echo "Projects: Enabled ($NODERED_PROJECTS_WORKFLOW_MODE mode)"
+    else
+        echo "Projects: Disabled"
+    end
+
+    echo ""
+    echo "Paths:"
+    echo "  User Directory: $NODERED_DATA_DIR"
+    echo "  Settings: $NODERED_DATA_DIR/settings.js"
+    echo "  Credential Secret: $FLOX_ENV_CACHE/nodered-credential.key"
+
+    echo ""
+    echo "Commands:"
+    echo "  flox services status              Check service status"
+    echo "  flox services logs nodered        View Node-RED logs"
+    echo "  flox services restart             Restart services"
+end
+
+function nodered-reconfigure
+    reconfigure_nodered
+end
+
+function nodered-hash-password
+    echo "Generate bcrypt password hash for Node-RED:"
+    echo ""
+    npx --yes node-red-admin hash-pw
+end
+'''
+
+[options]
+systems = [
+  "aarch64-darwin",
+  "aarch64-linux",
+  "x86_64-darwin",
+  "x86_64-linux",
+]

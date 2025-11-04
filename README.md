@@ -77,6 +77,7 @@ cd postgres-headless && PGPORT=5432 PGDATABASE=mydb flox activate -s
 - [**airflow-k8s-executor**](./airflow-k8s-executor) - Airflow Kubernetes executor with RBAC and pod templates
 - [**airflow-stack**](./airflow-stack) - Enterprise Airflow stack with production-grade PostgreSQL, Redis, and Kubernetes
 - [**n8n**](./n8n) / [**n8n-headless**](./n8n-headless) - n8n workflow automation with PostgreSQL, Redis, and queue mode ⚡
+- [**nodered**](./nodered) / [**nodered-headless**](./nodered-headless) - Node-RED low-code programming for IoT and event-driven apps ⚡
 
 ### Data Science & Notebooks ⚡
 - [**jupyterlab**](./jupyterlab) / [**jupyterlab-headless**](./jupyterlab-headless) - JupyterLab notebook environment
