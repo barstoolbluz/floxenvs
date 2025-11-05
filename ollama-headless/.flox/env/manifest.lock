@@ -1,0 +1,165 @@
+{
+  "lockfile-version": 1,
+  "manifest": {
+    "version": 1,
+    "install": {
+      "ollama": {
+        "pkg-path": "ollama",
+        "systems": [
+          "x86_64-darwin",
+          "aarch64-darwin"
+        ]
+      },
+      "ollama-cuda": {
+        "flake": "github:barstoolbluz/ollama-cuda",
+        "priority": 7,
+        "systems": [
+          "x86_64-linux",
+          "aarch64-linux"
+        ]
+      }
+    },
+    "vars": {
+      "OLLAMA_MODELS_DIR": "$FLOX_ENV_CACHE/models"
+    },
+    "hook": {
+      "on-activate": "# Create required directories\nmkdir -p \"$FLOX_ENV_CACHE/models\"\n\n# === SERVER CONFIGURATION ===\nexport OLLAMA_HOST=\"${OLLAMA_HOST:-127.0.0.1:11434}\"\nexport OLLAMA_MODELS=\"${OLLAMA_MODELS:-$FLOX_ENV_CACHE/models}\"\nexport OLLAMA_ORIGINS=\"${OLLAMA_ORIGINS:-}\"  # Use Ollama defaults\n\n# === PERFORMANCE & MEMORY ===\nexport OLLAMA_CONTEXT_LENGTH=\"${OLLAMA_CONTEXT_LENGTH:-}\"  # Default: 4096\nexport OLLAMA_KEEP_ALIVE=\"${OLLAMA_KEEP_ALIVE:-}\"  # Default: 5m\nexport OLLAMA_MAX_LOADED_MODELS=\"${OLLAMA_MAX_LOADED_MODELS:-}\"  # Default: auto (3 * GPU count)\nexport OLLAMA_NUM_PARALLEL=\"${OLLAMA_NUM_PARALLEL:-}\"  # Default: 1\nexport OLLAMA_MAX_QUEUE=\"${OLLAMA_MAX_QUEUE:-}\"  # Default: 512\nexport OLLAMA_LOAD_TIMEOUT=\"${OLLAMA_LOAD_TIMEOUT:-}\"  # Default: 5m\n\n# === GPU CONFIGURATION ===\nexport OLLAMA_FLASH_ATTENTION=\"${OLLAMA_FLASH_ATTENTION:-}\"  # Experimental\nexport OLLAMA_KV_CACHE_TYPE=\"${OLLAMA_KV_CACHE_TYPE:-}\"  # Default: f16\nexport OLLAMA_GPU_OVERHEAD=\"${OLLAMA_GPU_OVERHEAD:-}\"  # Default: 0\nexport CUDA_VISIBLE_DEVICES=\"${CUDA_VISIBLE_DEVICES:-}\"  # Limit visible GPUs\n\n# === ADVANCED / EXPERIMENTAL ===\nexport OLLAMA_DEBUG=\"${OLLAMA_DEBUG:-0}\"  # 0 = disabled, 1 = enabled\nexport OLLAMA_SCHED_SPREAD=\"${OLLAMA_SCHED_SPREAD:-}\"  # Schedule across all GPUs\nexport OLLAMA_NOPRUNE=\"${OLLAMA_NOPRUNE:-}\"  # Don't prune model blobs\nexport OLLAMA_LLM_LIBRARY=\"${OLLAMA_LLM_LIBRARY:-}\"  # Bypass autodetection\nexport OLLAMA_AUTH=\"${OLLAMA_AUTH:-}\"  # Experimental authentication\n\n# === DISPLAY CONFIGURATION ===\necho \"\"\necho \"✅ Ollama environment ready (headless mode)\"\necho \"\"\necho \"Server:\"\necho \"  Host: ${OLLAMA_HOST}\"\necho \"  Models: ${OLLAMA_MODELS}\"\necho \"\"\necho \"Commands:\"\necho \"  flox activate -s        Start Ollama service\"\necho \"  ollama pull <model>     Download a model\"\necho \"  ollama list             List local models\"\necho \"  ollama-info             Show configuration\"\necho \"  ollama-health           Test API endpoint\"\necho \"\"\necho \"Examples:\"\necho \"  ollama pull llama2\"\necho \"  OLLAMA_HOST=0.0.0.0:11434 flox activate -s\"\necho \"\"\n"
+    },
+    "profile": {
+      "bash": "ollama-info() {\n    echo \"Ollama Headless Environment Configuration\"\n    echo \"\"\n    echo \"Server:\"\n    echo \"  Host: ${OLLAMA_HOST}\"\n    echo \"  Models: ${OLLAMA_MODELS}\"\n    echo \"\"\n    echo \"Performance:\"\n    if [ -n \"$OLLAMA_CONTEXT_LENGTH\" ]; then\n        echo \"  Context Length: ${OLLAMA_CONTEXT_LENGTH}\"\n    else\n        echo \"  Context Length: 4096 (default)\"\n    fi\n    if [ -n \"$OLLAMA_KEEP_ALIVE\" ]; then\n        echo \"  Keep Alive: ${OLLAMA_KEEP_ALIVE}\"\n    else\n        echo \"  Keep Alive: 5m (default)\"\n    fi\n    if [ -n \"$OLLAMA_NUM_PARALLEL\" ]; then\n        echo \"  Num Parallel: ${OLLAMA_NUM_PARALLEL}\"\n    else\n        echo \"  Num Parallel: 1 (default)\"\n    fi\n    if [ -n \"$OLLAMA_MAX_QUEUE\" ]; then\n        echo \"  Max Queue: ${OLLAMA_MAX_QUEUE}\"\n    else\n        echo \"  Max Queue: 512 (default)\"\n    fi\n    if [ -n \"$OLLAMA_MAX_LOADED_MODELS\" ]; then\n        echo \"  Max Loaded Models: ${OLLAMA_MAX_LOADED_MODELS}\"\n    else\n        echo \"  Max Loaded Models: auto (default)\"\n    fi\n    echo \"\"\n    echo \"GPU:\"\n    if [ -n \"$OLLAMA_FLASH_ATTENTION\" ]; then\n        echo \"  Flash Attention: enabled\"\n    else\n        echo \"  Flash Attention: disabled (default)\"\n    fi\n    if [ -n \"$OLLAMA_KV_CACHE_TYPE\" ]; then\n        echo \"  KV Cache Type: ${OLLAMA_KV_CACHE_TYPE}\"\n    else\n        echo \"  KV Cache Type: f16 (default)\"\n    fi\n    if [ -n \"$CUDA_VISIBLE_DEVICES\" ]; then\n        echo \"  CUDA Devices: ${CUDA_VISIBLE_DEVICES}\"\n    else\n        echo \"  CUDA Devices: all (default)\"\n    fi\n    echo \"\"\n    if [ \"$OLLAMA_DEBUG\" = \"1\" ]; then\n        echo \"Debug: enabled\"\n    else\n        echo \"Debug: disabled\"\n    fi\n    echo \"\"\n    echo \"Commands:\"\n    echo \"  ollama pull <model>       Download a model\"\n    echo \"  ollama list               List local models\"\n    echo \"  ollama ps                 List running models\"\n    echo \"  flox services status      Check service status\"\n    echo \"  flox services logs ollama View Ollama logs\"\n    echo \"  ollama-health             Test API endpoint\"\n    echo \"\"\n    echo \"Runtime Override Examples:\"\n    echo \"  OLLAMA_HOST=0.0.0.0:11434 flox activate -s\"\n    echo \"  OLLAMA_NUM_PARALLEL=4 flox activate -s\"\n    echo \"  OLLAMA_DEBUG=1 flox activate -s\"\n}\nexport -f ollama-info\n\nollama-health() {\n    local HOST=\"${OLLAMA_HOST:-127.0.0.1:11434}\"\n    # Remove http:// or https:// prefix if present\n    HOST=\"${HOST#http://}\"\n    HOST=\"${HOST#https://}\"\n\n    if curl -s \"http://${HOST}/\" | grep -q \"Ollama is running\"; then\n        echo \"✅ Ollama API is healthy at http://${HOST}\"\n        return 0\n    else\n        echo \"❌ Ollama API is not responding at http://${HOST}\"\n        echo \"   Try: flox services status\"\n        return 1\n    fi\n}\nexport -f ollama-health\n",
+      "zsh": "ollama-info() {\n    echo \"Ollama Headless Environment Configuration\"\n    echo \"\"\n    echo \"Server:\"\n    echo \"  Host: ${OLLAMA_HOST}\"\n    echo \"  Models: ${OLLAMA_MODELS}\"\n    echo \"\"\n    echo \"Performance:\"\n    if [ -n \"$OLLAMA_CONTEXT_LENGTH\" ]; then\n        echo \"  Context Length: ${OLLAMA_CONTEXT_LENGTH}\"\n    else\n        echo \"  Context Length: 4096 (default)\"\n    fi\n    if [ -n \"$OLLAMA_KEEP_ALIVE\" ]; then\n        echo \"  Keep Alive: ${OLLAMA_KEEP_ALIVE}\"\n    else\n        echo \"  Keep Alive: 5m (default)\"\n    fi\n    if [ -n \"$OLLAMA_NUM_PARALLEL\" ]; then\n        echo \"  Num Parallel: ${OLLAMA_NUM_PARALLEL}\"\n    else\n        echo \"  Num Parallel: 1 (default)\"\n    fi\n    if [ -n \"$OLLAMA_MAX_QUEUE\" ]; then\n        echo \"  Max Queue: ${OLLAMA_MAX_QUEUE}\"\n    else\n        echo \"  Max Queue: 512 (default)\"\n    fi\n    if [ -n \"$OLLAMA_MAX_LOADED_MODELS\" ]; then\n        echo \"  Max Loaded Models: ${OLLAMA_MAX_LOADED_MODELS}\"\n    else\n        echo \"  Max Loaded Models: auto (default)\"\n    fi\n    echo \"\"\n    echo \"GPU:\"\n    if [ -n \"$OLLAMA_FLASH_ATTENTION\" ]; then\n        echo \"  Flash Attention: enabled\"\n    else\n        echo \"  Flash Attention: disabled (default)\"\n    fi\n    if [ -n \"$OLLAMA_KV_CACHE_TYPE\" ]; then\n        echo \"  KV Cache Type: ${OLLAMA_KV_CACHE_TYPE}\"\n    else\n        echo \"  KV Cache Type: f16 (default)\"\n    fi\n    if [ -n \"$CUDA_VISIBLE_DEVICES\" ]; then\n        echo \"  CUDA Devices: ${CUDA_VISIBLE_DEVICES}\"\n    else\n        echo \"  CUDA Devices: all (default)\"\n    fi\n    echo \"\"\n    if [ \"$OLLAMA_DEBUG\" = \"1\" ]; then\n        echo \"Debug: enabled\"\n    else\n        echo \"Debug: disabled\"\n    fi\n    echo \"\"\n    echo \"Commands:\"\n    echo \"  ollama pull <model>       Download a model\"\n    echo \"  ollama list               List local models\"\n    echo \"  ollama ps                 List running models\"\n    echo \"  flox services status      Check service status\"\n    echo \"  flox services logs ollama View Ollama logs\"\n    echo \"  ollama-health             Test API endpoint\"\n    echo \"\"\n    echo \"Runtime Override Examples:\"\n    echo \"  OLLAMA_HOST=0.0.0.0:11434 flox activate -s\"\n    echo \"  OLLAMA_NUM_PARALLEL=4 flox activate -s\"\n    echo \"  OLLAMA_DEBUG=1 flox activate -s\"\n}\n\nollama-health() {\n    local HOST=\"${OLLAMA_HOST:-127.0.0.1:11434}\"\n    # Remove http:// or https:// prefix if present\n    HOST=\"${HOST#http://}\"\n    HOST=\"${HOST#https://}\"\n\n    if curl -s \"http://${HOST}/\" | grep -q \"Ollama is running\"; then\n        echo \"✅ Ollama API is healthy at http://${HOST}\"\n        return 0\n    else\n        echo \"❌ Ollama API is not responding at http://${HOST}\"\n        echo \"   Try: flox services status\"\n        return 1\n    fi\n}\n",
+      "fish": "function ollama-info\n    echo \"Ollama Headless Environment Configuration\"\n    echo \"\"\n    echo \"Server:\"\n    echo \"  Host: $OLLAMA_HOST\"\n    echo \"  Models: $OLLAMA_MODELS\"\n    echo \"\"\n    echo \"Performance:\"\n    if test -n \"$OLLAMA_CONTEXT_LENGTH\"\n        echo \"  Context Length: $OLLAMA_CONTEXT_LENGTH\"\n    else\n        echo \"  Context Length: 4096 (default)\"\n    end\n    if test -n \"$OLLAMA_KEEP_ALIVE\"\n        echo \"  Keep Alive: $OLLAMA_KEEP_ALIVE\"\n    else\n        echo \"  Keep Alive: 5m (default)\"\n    end\n    if test -n \"$OLLAMA_NUM_PARALLEL\"\n        echo \"  Num Parallel: $OLLAMA_NUM_PARALLEL\"\n    else\n        echo \"  Num Parallel: 1 (default)\"\n    end\n    if test -n \"$OLLAMA_MAX_QUEUE\"\n        echo \"  Max Queue: $OLLAMA_MAX_QUEUE\"\n    else\n        echo \"  Max Queue: 512 (default)\"\n    end\n    if test -n \"$OLLAMA_MAX_LOADED_MODELS\"\n        echo \"  Max Loaded Models: $OLLAMA_MAX_LOADED_MODELS\"\n    else\n        echo \"  Max Loaded Models: auto (default)\"\n    end\n    echo \"\"\n    echo \"GPU:\"\n    if test -n \"$OLLAMA_FLASH_ATTENTION\"\n        echo \"  Flash Attention: enabled\"\n    else\n        echo \"  Flash Attention: disabled (default)\"\n    end\n    if test -n \"$OLLAMA_KV_CACHE_TYPE\"\n        echo \"  KV Cache Type: $OLLAMA_KV_CACHE_TYPE\"\n    else\n        echo \"  KV Cache Type: f16 (default)\"\n    end\n    if test -n \"$CUDA_VISIBLE_DEVICES\"\n        echo \"  CUDA Devices: $CUDA_VISIBLE_DEVICES\"\n    else\n        echo \"  CUDA Devices: all (default)\"\n    end\n    echo \"\"\n    if test \"$OLLAMA_DEBUG\" = \"1\"\n        echo \"Debug: enabled\"\n    else\n        echo \"Debug: disabled\"\n    end\n    echo \"\"\n    echo \"Commands:\"\n    echo \"  ollama pull <model>       Download a model\"\n    echo \"  ollama list               List local models\"\n    echo \"  ollama ps                 List running models\"\n    echo \"  flox services status      Check service status\"\n    echo \"  flox services logs ollama View Ollama logs\"\n    echo \"  ollama-health             Test API endpoint\"\n    echo \"\"\n    echo \"Runtime Override Examples:\"\n    echo \"  OLLAMA_HOST=0.0.0.0:11434 flox activate -s\"\n    echo \"  OLLAMA_NUM_PARALLEL=4 flox activate -s\"\n    echo \"  OLLAMA_DEBUG=1 flox activate -s\"\nend\n\nfunction ollama-health\n    set -l HOST (string replace -r '^https?://' '' $OLLAMA_HOST)\n\n    if curl -s \"http://$HOST/\" | grep -q \"Ollama is running\"\n        echo \"✅ Ollama API is healthy at http://$HOST\"\n        return 0\n    else\n        echo \"❌ Ollama API is not responding at http://$HOST\"\n        echo \"   Try: flox services status\"\n        return 1\n    end\nend\n"
+    },
+    "options": {
+      "systems": [
+        "aarch64-darwin",
+        "aarch64-linux",
+        "x86_64-darwin",
+        "x86_64-linux"
+      ]
+    },
+    "services": {
+      "ollama": {
+        "command": "ollama serve"
+      }
+    }
+  },
+  "packages": [
+    {
+      "attr_path": "ollama",
+      "broken": false,
+      "derivation": "/nix/store/h22cxs60lyasgam3897kzvcj8bx1z6ch-ollama-0.12.6.drv",
+      "description": "Get up and running with large language models locally",
+      "install_id": "ollama",
+      "license": "MIT",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=6a08e6bb4e46ff7fcbb53d409b253f6bad8a28ce",
+      "name": "ollama-0.12.6",
+      "pname": "ollama",
+      "rev": "6a08e6bb4e46ff7fcbb53d409b253f6bad8a28ce",
+      "rev_count": 883951,
+      "rev_date": "2025-10-25T06:24:58Z",
+      "scrape_date": "2025-10-27T02:08:40.266194Z",
+      "stabilities": [
+        "unstable"
+      ],
+      "unfree": false,
+      "version": "0.12.6",
+      "outputs_to_install": [
+        "out"
+      ],
+      "outputs": {
+        "out": "/nix/store/qmj8pj0xc62ch9km72i9yhzrkn677jsd-ollama-0.12.6"
+      },
+      "system": "aarch64-darwin",
+      "group": "toplevel",
+      "priority": 5
+    },
+    {
+      "attr_path": "ollama",
+      "broken": false,
+      "derivation": "/nix/store/x3zdhhfj9n66asgn5d58xfhg60yxmva8-ollama-0.12.6.drv",
+      "description": "Get up and running with large language models locally",
+      "install_id": "ollama",
+      "license": "MIT",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=6a08e6bb4e46ff7fcbb53d409b253f6bad8a28ce",
+      "name": "ollama-0.12.6",
+      "pname": "ollama",
+      "rev": "6a08e6bb4e46ff7fcbb53d409b253f6bad8a28ce",
+      "rev_count": 883951,
+      "rev_date": "2025-10-25T06:24:58Z",
+      "scrape_date": "2025-10-27T02:29:45.973234Z",
+      "stabilities": [
+        "unstable"
+      ],
+      "unfree": false,
+      "version": "0.12.6",
+      "outputs_to_install": [
+        "out"
+      ],
+      "outputs": {
+        "out": "/nix/store/a0h583zbxl2kpzc1rnpjgxhw3d94khhc-ollama-0.12.6"
+      },
+      "system": "x86_64-darwin",
+      "group": "toplevel",
+      "priority": 5
+    },
+    {
+      "install_id": "ollama-cuda",
+      "locked-url": "github:barstoolbluz/ollama-cuda/1fd7a44f65d61bf7f984d20f79bd20a9cd601d60?narHash=sha256-/2GdU2%2BtDzFd62/9QWgfMAezHmtS0o/ZdFm%2BDgxxe%2Bo%3D",
+      "flake-description": "Ollama with CUDA support for RTX 5090 (Blackwell) - RUNPATH stub fix for non-NixOS",
+      "locked-flake-attr-path": "packages.x86_64-linux.default",
+      "derivation": "/nix/store/68qvgmycs0cc469l8bcsg4qifj8098zc-ollama-0.12.6.drv",
+      "outputs": {
+        "out": "/nix/store/6b85km9zbmn47vbkdsdim6nryvpljyvw-ollama-0.12.6"
+      },
+      "output-names": [
+        "out"
+      ],
+      "outputs-to-install": [
+        "out"
+      ],
+      "requested-outputs-to-install": [],
+      "package-system": "x86_64-linux",
+      "system": "x86_64-linux",
+      "name": "ollama-0.12.6",
+      "pname": "ollama",
+      "version": "0.12.6",
+      "description": "Get up and running with large language models locally, using CUDA for NVIDIA GPU acceleration",
+      "licenses": [
+        "MIT"
+      ],
+      "broken": false,
+      "unfree": false,
+      "priority": 7
+    },
+    {
+      "install_id": "ollama-cuda",
+      "locked-url": "github:barstoolbluz/ollama-cuda/1fd7a44f65d61bf7f984d20f79bd20a9cd601d60?narHash=sha256-/2GdU2%2BtDzFd62/9QWgfMAezHmtS0o/ZdFm%2BDgxxe%2Bo%3D",
+      "flake-description": "Ollama with CUDA support for RTX 5090 (Blackwell) - RUNPATH stub fix for non-NixOS",
+      "locked-flake-attr-path": "packages.aarch64-linux.default",
+      "derivation": "/nix/store/5gqmb7dapk6cjzalls26bx3mfgh1gkz1-ollama-0.12.6.drv",
+      "outputs": {
+        "out": "/nix/store/96w0lwrwl80ncp97j7iwvpbdy98fs0xp-ollama-0.12.6"
+      },
+      "output-names": [
+        "out"
+      ],
+      "outputs-to-install": [
+        "out"
+      ],
+      "requested-outputs-to-install": [],
+      "package-system": "aarch64-linux",
+      "system": "aarch64-linux",
+      "name": "ollama-0.12.6",
+      "pname": "ollama",
+      "version": "0.12.6",
+      "description": "Get up and running with large language models locally, using CUDA for NVIDIA GPU acceleration",
+      "licenses": [
+        "MIT"
+      ],
+      "broken": false,
+      "unfree": false,
+      "priority": 7
+    }
+  ]
+}
