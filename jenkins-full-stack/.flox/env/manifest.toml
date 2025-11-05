@@ -1,0 +1,332 @@
+version = 1
+
+[include]
+environments = [
+  { remote = "barstoolbluz/nginx-headless" },
+  { dir = "../jenkins-headless" },
+  # TODO: Change to remote once jenkins-headless is pushed:
+  # { remote = "barstoolbluz/jenkins-headless" },
+]
+
+[vars]
+# Invariant paths - shared across all activations
+JENKINS_FULL_STACK_DIR = "$FLOX_ENV_CACHE"
+
+[hook]
+on-activate = '''
+# === JENKINS-FULL-STACK CONFIGURATION ===
+# This environment combines nginx-headless and jenkins-headless
+# to create a production-ready Jenkins setup with nginx as a reverse proxy.
+
+# Create directories
+mkdir -p "$FLOX_ENV_CACHE/logs"
+
+# === STACK CONFIGURATION (all runtime-overridable) ===
+
+# Jenkins Configuration (inherited from jenkins-headless, can override here)
+# Note: Set this first so nginx can reference it
+export JENKINS_PORT="${JENKINS_PORT:-8080}"           # Jenkins runs on port 8080 (internal)
+export JENKINS_PREFIX="${JENKINS_PREFIX:-/}"          # URL prefix
+export JENKINS_PLUGINS="${JENKINS_PLUGINS:-git workflow-aggregator docker-workflow github configuration-as-code}"
+
+# Nginx Configuration
+export NGINX_PORT="${NGINX_PORT:-8000}"               # Nginx listens on port 8000 (use 80 for production with root)
+export NGINX_HOST="${NGINX_HOST:-0.0.0.0}"            # Listen on all interfaces
+export NGINX_MODE="${NGINX_MODE:-proxy}"              # Reverse proxy mode (default)
+export NGINX_BACKEND_HOST="${NGINX_BACKEND_HOST:-127.0.0.1}"  # Proxy to localhost
+# Synchronize NGINX_BACKEND_PORT with JENKINS_PORT (unless user explicitly set it)
+# If NGINX_BACKEND_PORT is still at nginx-headless default (8080), update it to match JENKINS_PORT
+if [ "$NGINX_BACKEND_PORT" = "8080" ]; then
+  export NGINX_BACKEND_PORT="$JENKINS_PORT"
+fi
+export NGINX_WEBSOCKET_ENABLED="${NGINX_WEBSOCKET_ENABLED:-true}"  # Enable WebSocket for Jenkins agents
+export NGINX_GZIP_ENABLED="${NGINX_GZIP_ENABLED:-true}"        # Enable compression
+export NGINX_PROXY_TIMEOUT="${NGINX_PROXY_TIMEOUT:-300s}"      # 5-minute timeout for long builds
+
+# Optional nginx features (disabled by default)
+export NGINX_RATE_LIMIT_ENABLED="${NGINX_RATE_LIMIT_ENABLED:-false}"
+export NGINX_RATE_LIMIT_RATE="${NGINX_RATE_LIMIT_RATE:-100r/s}"
+export NGINX_SECURITY_HEADERS_ENABLED="${NGINX_SECURITY_HEADERS_ENABLED:-false}"
+
+# Display stack information
+echo ""
+echo "✅ Jenkins Full Stack Environment Ready"
+echo ""
+echo "Stack Configuration:"
+echo "  Nginx:          http://localhost:${NGINX_PORT}${JENKINS_PREFIX}"
+echo "  Jenkins:        http://localhost:${JENKINS_PORT}${JENKINS_PREFIX} (internal)"
+echo "  Proxy:          nginx → Jenkins"
+echo "  WebSocket:      ${NGINX_WEBSOCKET_ENABLED}"
+echo "  Gzip:           ${NGINX_GZIP_ENABLED}"
+echo ""
+echo "Access Jenkins via nginx:"
+echo "  URL:            http://localhost:${NGINX_PORT}${JENKINS_PREFIX}"
+echo "  Admin:          admin / changeme"
+echo ""
+echo "Commands:"
+echo "  flox activate -s              Start all services"
+echo "  jenkins-stack-info            Show configuration"
+echo "  jenkins-stack-health          Check all services"
+echo "  jenkins-stack-url             Get nginx URL"
+echo "  flox services status          Service status"
+echo "  flox services logs nginx      View nginx logs"
+echo "  flox services logs jenkins    View Jenkins logs"
+echo ""
+echo "Examples:"
+echo "  NGINX_PORT=80 flox activate -s"
+echo "  NGINX_RATE_LIMIT_ENABLED=true NGINX_RATE_LIMIT_RATE=50r/s flox activate -s"
+echo "  NGINX_SECURITY_HEADERS_ENABLED=true flox activate -s"
+echo ""
+
+cd "$FLOX_ENV_PROJECT"
+'''
+
+[profile]
+bash = '''
+jenkins-stack-info() {
+  echo "Jenkins Full Stack Configuration"
+  echo ""
+  echo "Nginx (Reverse Proxy):"
+  echo "  Public URL:     http://localhost:${NGINX_PORT}${JENKINS_PREFIX}"
+  echo "  Listen:         ${NGINX_HOST}:${NGINX_PORT}"
+  echo "  Mode:           ${NGINX_MODE}"
+  echo "  Backend:        ${NGINX_BACKEND_HOST}:${NGINX_BACKEND_PORT}"
+  echo "  WebSocket:      ${NGINX_WEBSOCKET_ENABLED}"
+  echo "  Gzip:           ${NGINX_GZIP_ENABLED}"
+  echo "  Proxy Timeout:  ${NGINX_PROXY_TIMEOUT}"
+  if [ "$NGINX_RATE_LIMIT_ENABLED" = "true" ]; then
+    echo "  Rate Limit:     ${NGINX_RATE_LIMIT_RATE} (burst: ${NGINX_RATE_LIMIT_BURST:-20})"
+  fi
+  if [ "$NGINX_SECURITY_HEADERS_ENABLED" = "true" ]; then
+    echo "  Security:       Headers enabled"
+  fi
+  echo ""
+  echo "Jenkins:"
+  echo "  Internal URL:   http://localhost:${JENKINS_PORT}${JENKINS_PREFIX}"
+  echo "  JENKINS_HOME:   ${JENKINS_HOME}"
+  echo "  Admin User:     ${JENKINS_ADMIN_USER}"
+  echo "  Plugins:        ${JENKINS_PLUGINS}"
+  echo ""
+  echo "Service Status:"
+  flox services status 2>/dev/null || echo "  Services not started (use: flox activate -s)"
+}
+export -f jenkins-stack-info
+
+jenkins-stack-health() {
+  echo "Checking Jenkins Full Stack health..."
+  echo ""
+
+  # Check nginx
+  if curl -sf "http://localhost:${NGINX_PORT}/" >/dev/null 2>&1; then
+    echo "✅ Nginx is responding at http://localhost:${NGINX_PORT}/"
+  else
+    echo "❌ Nginx is not responding at http://localhost:${NGINX_PORT}/"
+    echo "   Try: flox services status"
+    echo "   Try: flox services logs nginx"
+    return 1
+  fi
+
+  # Check Jenkins through nginx
+  if curl -sf "http://localhost:${NGINX_PORT}/login" >/dev/null 2>&1; then
+    echo "✅ Jenkins is accessible through nginx"
+  else
+    echo "❌ Jenkins is not accessible through nginx"
+    echo "   Try: flox services logs jenkins"
+    return 1
+  fi
+
+  # Check Jenkins API through nginx
+  if curl -sf -u admin:changeme "http://localhost:${NGINX_PORT}/api/json" >/dev/null 2>&1; then
+    echo "✅ Jenkins API is responding"
+  else
+    echo "⚠️  Jenkins API not responding (may still be starting)"
+  fi
+
+  echo ""
+  echo "Stack is healthy!"
+  echo "Access Jenkins: http://localhost:${NGINX_PORT}/"
+}
+export -f jenkins-stack-health
+
+jenkins-stack-url() {
+  echo "http://localhost:${NGINX_PORT}${JENKINS_PREFIX}"
+}
+export -f jenkins-stack-url
+
+jenkins-stack-logs() {
+  echo "Jenkins Full Stack Logs"
+  echo ""
+  echo "=== Nginx Logs ==="
+  flox services logs nginx | tail -20
+  echo ""
+  echo "=== Jenkins Logs ==="
+  flox services logs jenkins | tail -20
+}
+export -f jenkins-stack-logs
+'''
+
+zsh = '''
+jenkins-stack-info() {
+  echo "Jenkins Full Stack Configuration"
+  echo ""
+  echo "Nginx (Reverse Proxy):"
+  echo "  Public URL:     http://localhost:${NGINX_PORT}${JENKINS_PREFIX}"
+  echo "  Listen:         ${NGINX_HOST}:${NGINX_PORT}"
+  echo "  Mode:           ${NGINX_MODE}"
+  echo "  Backend:        ${NGINX_BACKEND_HOST}:${NGINX_BACKEND_PORT}"
+  echo "  WebSocket:      ${NGINX_WEBSOCKET_ENABLED}"
+  echo "  Gzip:           ${NGINX_GZIP_ENABLED}"
+  echo "  Proxy Timeout:  ${NGINX_PROXY_TIMEOUT}"
+  if [ "$NGINX_RATE_LIMIT_ENABLED" = "true" ]; then
+    echo "  Rate Limit:     ${NGINX_RATE_LIMIT_RATE} (burst: ${NGINX_RATE_LIMIT_BURST:-20})"
+  fi
+  if [ "$NGINX_SECURITY_HEADERS_ENABLED" = "true" ]; then
+    echo "  Security:       Headers enabled"
+  fi
+  echo ""
+  echo "Jenkins:"
+  echo "  Internal URL:   http://localhost:${JENKINS_PORT}${JENKINS_PREFIX}"
+  echo "  JENKINS_HOME:   ${JENKINS_HOME}"
+  echo "  Admin User:     ${JENKINS_ADMIN_USER}"
+  echo "  Plugins:        ${JENKINS_PLUGINS}"
+  echo ""
+  echo "Service Status:"
+  flox services status 2>/dev/null || echo "  Services not started (use: flox activate -s)"
+}
+
+jenkins-stack-health() {
+  echo "Checking Jenkins Full Stack health..."
+  echo ""
+
+  # Check nginx
+  if curl -sf "http://localhost:${NGINX_PORT}/" >/dev/null 2>&1; then
+    echo "✅ Nginx is responding at http://localhost:${NGINX_PORT}/"
+  else
+    echo "❌ Nginx is not responding at http://localhost:${NGINX_PORT}/"
+    echo "   Try: flox services status"
+    echo "   Try: flox services logs nginx"
+    return 1
+  fi
+
+  # Check Jenkins through nginx
+  if curl -sf "http://localhost:${NGINX_PORT}/login" >/dev/null 2>&1; then
+    echo "✅ Jenkins is accessible through nginx"
+  else
+    echo "❌ Jenkins is not accessible through nginx"
+    echo "   Try: flox services logs jenkins"
+    return 1
+  fi
+
+  # Check Jenkins API through nginx
+  if curl -sf -u admin:changeme "http://localhost:${NGINX_PORT}/api/json" >/dev/null 2>&1; then
+    echo "✅ Jenkins API is responding"
+  else
+    echo "⚠️  Jenkins API not responding (may still be starting)"
+  fi
+
+  echo ""
+  echo "Stack is healthy!"
+  echo "Access Jenkins: http://localhost:${NGINX_PORT}/"
+}
+
+jenkins-stack-url() {
+  echo "http://localhost:${NGINX_PORT}${JENKINS_PREFIX}"
+}
+
+jenkins-stack-logs() {
+  echo "Jenkins Full Stack Logs"
+  echo ""
+  echo "=== Nginx Logs ==="
+  flox services logs nginx | tail -20
+  echo ""
+  echo "=== Jenkins Logs ==="
+  flox services logs jenkins | tail -20
+}
+'''
+
+fish = '''
+function jenkins-stack-info
+  echo "Jenkins Full Stack Configuration"
+  echo ""
+  echo "Nginx (Reverse Proxy):"
+  echo "  Public URL:     http://localhost:$NGINX_PORT$JENKINS_PREFIX"
+  echo "  Listen:         $NGINX_HOST:$NGINX_PORT"
+  echo "  Mode:           $NGINX_MODE"
+  echo "  Backend:        $NGINX_BACKEND_HOST:$NGINX_BACKEND_PORT"
+  echo "  WebSocket:      $NGINX_WEBSOCKET_ENABLED"
+  echo "  Gzip:           $NGINX_GZIP_ENABLED"
+  echo "  Proxy Timeout:  $NGINX_PROXY_TIMEOUT"
+  if test "$NGINX_RATE_LIMIT_ENABLED" = "true"
+    echo "  Rate Limit:     $NGINX_RATE_LIMIT_RATE (burst: "(set -q NGINX_RATE_LIMIT_BURST && echo $NGINX_RATE_LIMIT_BURST || echo 20)")"
+  end
+  if test "$NGINX_SECURITY_HEADERS_ENABLED" = "true"
+    echo "  Security:       Headers enabled"
+  end
+  echo ""
+  echo "Jenkins:"
+  echo "  Internal URL:   http://localhost:$JENKINS_PORT$JENKINS_PREFIX"
+  echo "  JENKINS_HOME:   $JENKINS_HOME"
+  echo "  Admin User:     $JENKINS_ADMIN_USER"
+  echo "  Plugins:        $JENKINS_PLUGINS"
+  echo ""
+  echo "Service Status:"
+  flox services status 2>/dev/null || echo "  Services not started (use: flox activate -s)"
+end
+
+function jenkins-stack-health
+  echo "Checking Jenkins Full Stack health..."
+  echo ""
+
+  # Check nginx
+  if curl -sf "http://localhost:$NGINX_PORT/" >/dev/null 2>&1
+    echo "✅ Nginx is responding at http://localhost:$NGINX_PORT/"
+  else
+    echo "❌ Nginx is not responding at http://localhost:$NGINX_PORT/"
+    echo "   Try: flox services status"
+    echo "   Try: flox services logs nginx"
+    return 1
+  end
+
+  # Check Jenkins through nginx
+  if curl -sf "http://localhost:$NGINX_PORT/login" >/dev/null 2>&1
+    echo "✅ Jenkins is accessible through nginx"
+  else
+    echo "❌ Jenkins is not accessible through nginx"
+    echo "   Try: flox services logs jenkins"
+    return 1
+  end
+
+  # Check Jenkins API through nginx
+  if curl -sf -u admin:changeme "http://localhost:$NGINX_PORT/api/json" >/dev/null 2>&1
+    echo "✅ Jenkins API is responding"
+  else
+    echo "⚠️  Jenkins API not responding (may still be starting)"
+  end
+
+  echo ""
+  echo "Stack is healthy!"
+  echo "Access Jenkins: http://localhost:$NGINX_PORT/"
+end
+
+function jenkins-stack-url
+  echo "http://localhost:$NGINX_PORT$JENKINS_PREFIX"
+end
+
+function jenkins-stack-logs
+  echo "Jenkins Full Stack Logs"
+  echo ""
+  echo "=== Nginx Logs ==="
+  flox services logs nginx | tail -20
+  echo ""
+  echo "=== Jenkins Logs ==="
+  flox services logs jenkins | tail -20
+end
+'''
+
+[options]
+systems = [
+  "aarch64-darwin",
+  "aarch64-linux",
+  "x86_64-darwin",
+  "x86_64-linux",
+]

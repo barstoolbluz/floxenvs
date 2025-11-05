@@ -77,6 +77,10 @@ cd postgres-headless && PGPORT=5432 PGDATABASE=mydb flox activate -s
 ### Web Servers & Reverse Proxies ⚡
 - [**nginx**](./nginx) / [**nginx-headless**](./nginx-headless) - nginx reverse proxy with port/path-based routing and WebSocket support (interactive wizard) or multi-mode server with SSL, rate limiting, caching, and security features (headless)
 
+### CI/CD & Automation
+- [**jenkins-headless**](./jenkins-headless) - Jenkins CI/CD server with JCasC and Kubernetes agent support (headless, automation-ready)
+- [**jenkins-full-stack**](./jenkins-full-stack) - Production Jenkins with nginx reverse proxy (WebSocket, gzip, SSL, rate limiting)
+
 ### Workflow Orchestration
 - [**airflow-local-dev**](./airflow-local-dev) - Apache Airflow 3.1.1 with LocalExecutor, CeleryExecutor, and KubernetesExecutor
 - [**airflow-k8s-executor**](./airflow-k8s-executor) - Airflow Kubernetes executor with RBAC and pod templates

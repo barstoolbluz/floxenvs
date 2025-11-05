@@ -1,0 +1,289 @@
+{
+  "lockfile-version": 1,
+  "manifest": {
+    "version": 1,
+    "install": {
+      "gettext": {
+        "pkg-path": "gettext"
+      },
+      "nginx": {
+        "pkg-path": "nginx"
+      }
+    },
+    "vars": {
+      "NGINX_CONFIG_DIR": "$FLOX_ENV_CACHE/config",
+      "NGINX_LOG_DIR": "$FLOX_ENV_CACHE/logs",
+      "NGINX_WWW_DIR": "$FLOX_ENV_CACHE/www"
+    },
+    "hook": {
+      "on-activate": "mkdir -p \"$FLOX_ENV_CACHE/config\"\nmkdir -p \"$FLOX_ENV_CACHE/logs\"\nmkdir -p \"$FLOX_ENV_CACHE/www\"\n\n# === COMMON CONFIGURATION ===\nexport NGINX_PORT=\"${NGINX_PORT:-80}\"\nexport NGINX_HOST=\"${NGINX_HOST:-0.0.0.0}\"\n\n# === MODE SELECTION ===\nexport NGINX_MODE=\"${NGINX_MODE:-proxy}\"\nexport NGINX_WORKER_PROCESSES=\"${NGINX_WORKER_PROCESSES:-auto}\"\nexport NGINX_WORKER_CONNECTIONS=\"${NGINX_WORKER_CONNECTIONS:-1024}\"\n\n# === PROXY MODE ===\nexport NGINX_BACKEND_HOST=\"${NGINX_BACKEND_HOST:-127.0.0.1}\"\nexport NGINX_BACKEND_PORT=\"${NGINX_BACKEND_PORT:-8080}\"\nexport NGINX_PROXY_TIMEOUT=\"${NGINX_PROXY_TIMEOUT:-60s}\"\n\n# === STATIC MODE ===\nexport NGINX_ROOT=\"${NGINX_ROOT:-$FLOX_ENV_CACHE/www}\"\nexport NGINX_INDEX=\"${NGINX_INDEX:-index.html index.htm}\"\n\n# === LOAD BALANCER MODE ===\nexport NGINX_UPSTREAM_SERVERS=\"${NGINX_UPSTREAM_SERVERS:-}\"\nexport NGINX_LB_METHOD=\"${NGINX_LB_METHOD:-round_robin}\"\n\n# === SSL/TLS FEATURE ===\nexport NGINX_SSL_ENABLED=\"${NGINX_SSL_ENABLED:-false}\"\nexport NGINX_SSL_CERT=\"${NGINX_SSL_CERT:-}\"\nexport NGINX_SSL_KEY=\"${NGINX_SSL_KEY:-}\"\nexport NGINX_SSL_PROTOCOLS=\"${NGINX_SSL_PROTOCOLS:-TLSv1.2 TLSv1.3}\"\n\n# === RATE LIMITING FEATURE ===\nexport NGINX_RATE_LIMIT_ENABLED=\"${NGINX_RATE_LIMIT_ENABLED:-false}\"\nexport NGINX_RATE_LIMIT_RATE=\"${NGINX_RATE_LIMIT_RATE:-10r/s}\"\nexport NGINX_RATE_LIMIT_BURST=\"${NGINX_RATE_LIMIT_BURST:-20}\"\n\n# === GZIP COMPRESSION FEATURE ===\nexport NGINX_GZIP_ENABLED=\"${NGINX_GZIP_ENABLED:-false}\"\nexport NGINX_GZIP_LEVEL=\"${NGINX_GZIP_LEVEL:-6}\"\nexport NGINX_GZIP_MIN_LENGTH=\"${NGINX_GZIP_MIN_LENGTH:-1000}\"\nexport NGINX_GZIP_TYPES=\"${NGINX_GZIP_TYPES:-text/plain text/css application/json application/javascript text/xml application/xml application/xml+rss text/javascript}\"\n\n# === SECURITY HEADERS FEATURE ===\nexport NGINX_SECURITY_HEADERS_ENABLED=\"${NGINX_SECURITY_HEADERS_ENABLED:-false}\"\n\n# === CACHING FEATURE ===\nexport NGINX_CACHE_ENABLED=\"${NGINX_CACHE_ENABLED:-false}\"\nexport NGINX_CACHE_STATIC_EXPIRE=\"${NGINX_CACHE_STATIC_EXPIRE:-7d}\"\nexport NGINX_CACHE_HTML_EXPIRE=\"${NGINX_CACHE_HTML_EXPIRE:-1h}\"\n\n# === WEBSOCKET FEATURE ===\nexport NGINX_WEBSOCKET_ENABLED=\"${NGINX_WEBSOCKET_ENABLED:-false}\"\n\n# === URL REWRITING FEATURE ===\nexport NGINX_FORCE_HTTPS=\"${NGINX_FORCE_HTTPS:-false}\"\nexport NGINX_FORCE_WWW=\"${NGINX_FORCE_WWW:-none}\"\n\n# Create templates (one-time)\ncreate_templates() {\n  local CONFIG_DIR=\"$FLOX_ENV_CACHE/config\"\n\n  # Proxy mode template\n  if [ ! -f \"$CONFIG_DIR/nginx-proxy.template\" ]; then\n    cat > \"$CONFIG_DIR/nginx-proxy.template\" << 'TEMPLATE'\nworker_processes ${NGINX_WORKER_PROCESSES};\nerror_log ${NGINX_LOG_DIR}/error.log;\npid ${NGINX_LOG_DIR}/nginx.pid;\n\nevents {\n    worker_connections ${NGINX_WORKER_CONNECTIONS};\n}\n\nhttp {\n    access_log ${NGINX_LOG_DIR}/access.log;\n\n    ${GZIP_CONFIG}\n\n    ${RATE_LIMIT_ZONE}\n\n    server {\n        listen ${NGINX_HOST}:${NGINX_PORT}${SSL_LISTEN};\n\n        ${SSL_CONFIG}\n\n        ${SECURITY_HEADERS}\n\n        ${REWRITE_RULES}\n\n        location / {\n            ${RATE_LIMIT_REQ}\n\n            proxy_pass http://${NGINX_BACKEND_HOST}:${NGINX_BACKEND_PORT};\n            proxy_set_header Host $host;\n            proxy_set_header X-Real-IP $remote_addr;\n            proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;\n            proxy_set_header X-Forwarded-Proto $scheme;\n            proxy_connect_timeout ${NGINX_PROXY_TIMEOUT};\n            proxy_send_timeout ${NGINX_PROXY_TIMEOUT};\n            proxy_read_timeout ${NGINX_PROXY_TIMEOUT};\n            ${WEBSOCKET_CONFIG}\n        }\n    }\n}\nTEMPLATE\n  fi\n\n  # Static mode template\n  if [ ! -f \"$CONFIG_DIR/nginx-static.template\" ]; then\n    cat > \"$CONFIG_DIR/nginx-static.template\" << 'TEMPLATE'\nworker_processes ${NGINX_WORKER_PROCESSES};\nerror_log ${NGINX_LOG_DIR}/error.log;\npid ${NGINX_LOG_DIR}/nginx.pid;\n\nevents {\n    worker_connections ${NGINX_WORKER_CONNECTIONS};\n}\n\nhttp {\n    include ${NGINX_MIME_TYPES};\n    default_type application/octet-stream;\n\n    access_log ${NGINX_LOG_DIR}/access.log;\n\n    sendfile on;\n    tcp_nopush on;\n    tcp_nodelay on;\n    keepalive_timeout 65;\n\n    ${GZIP_CONFIG}\n\n    ${RATE_LIMIT_ZONE}\n\n    server {\n        listen ${NGINX_HOST}:${NGINX_PORT}${SSL_LISTEN};\n\n        ${SSL_CONFIG}\n\n        ${SECURITY_HEADERS}\n\n        ${REWRITE_RULES}\n\n        root ${NGINX_ROOT};\n        index ${NGINX_INDEX};\n\n        location / {\n            ${RATE_LIMIT_REQ}\n            ${CACHE_HTML}\n            try_files $uri $uri/ =404;\n        }\n\n        ${CACHE_STATIC}\n    }\n}\nTEMPLATE\n  fi\n\n  # Load balancer mode template\n  if [ ! -f \"$CONFIG_DIR/nginx-loadbalancer.template\" ]; then\n    cat > \"$CONFIG_DIR/nginx-loadbalancer.template\" << 'TEMPLATE'\nworker_processes ${NGINX_WORKER_PROCESSES};\nerror_log ${NGINX_LOG_DIR}/error.log;\npid ${NGINX_LOG_DIR}/nginx.pid;\n\nevents {\n    worker_connections ${NGINX_WORKER_CONNECTIONS};\n}\n\nhttp {\n    access_log ${NGINX_LOG_DIR}/access.log;\n\n    ${GZIP_CONFIG}\n\n    ${RATE_LIMIT_ZONE}\n\n    ${UPSTREAM_BLOCK}\n\n    server {\n        listen ${NGINX_HOST}:${NGINX_PORT}${SSL_LISTEN};\n\n        ${SSL_CONFIG}\n\n        ${SECURITY_HEADERS}\n\n        ${REWRITE_RULES}\n\n        location / {\n            ${RATE_LIMIT_REQ}\n\n            proxy_pass http://backend;\n            proxy_set_header Host $host;\n            proxy_set_header X-Real-IP $remote_addr;\n            proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;\n            proxy_set_header X-Forwarded-Proto $scheme;\n            ${WEBSOCKET_CONFIG}\n        }\n    }\n}\nTEMPLATE\n  fi\n\n  # Create sample index.html for static mode\n  if [ ! -f \"$FLOX_ENV_CACHE/www/index.html\" ]; then\n    cat > \"$FLOX_ENV_CACHE/www/index.html\" << 'HTML'\n<!DOCTYPE html>\n<html>\n<head>\n    <title>nginx-headless</title>\n</head>\n<body>\n    <h1>nginx-headless</h1>\n    <p>Static file serving is working!</p>\n</body>\n</html>\nHTML\n  fi\n}\n\ncreate_templates\n\ncd \"$FLOX_ENV_PROJECT\"\n"
+    },
+    "options": {
+      "systems": [
+        "aarch64-darwin",
+        "aarch64-linux",
+        "x86_64-darwin",
+        "x86_64-linux"
+      ]
+    },
+    "services": {
+      "nginx": {
+        "command": "set -e\nmkdir -p \"$FLOX_ENV_CACHE/logs\"\n\nCONFIG_DIR=\"$FLOX_ENV_CACHE/config\"\nFINAL_CONF=\"$CONFIG_DIR/nginx.conf\"\n\n# Compute nginx mime.types path\nNGINX_BIN=$(which nginx)\nNGINX_PREFIX=$(dirname $(dirname \"$NGINX_BIN\"))\nexport NGINX_MIME_TYPES=\"$NGINX_PREFIX/conf/mime.types\"\n\n# Generate feature configuration blocks\ngenerate_features() {\n  # SSL/TLS Configuration\n  if [ \"$NGINX_SSL_ENABLED\" = \"true\" ]; then\n    if [ -z \"$NGINX_SSL_CERT\" ] || [ -z \"$NGINX_SSL_KEY\" ]; then\n      echo \"Error: NGINX_SSL_ENABLED=true but NGINX_SSL_CERT or NGINX_SSL_KEY not set\"\n      return 1\n    fi\n    if [ ! -f \"$NGINX_SSL_CERT\" ]; then\n      echo \"Error: SSL certificate not found: $NGINX_SSL_CERT\"\n      return 1\n    fi\n    if [ ! -f \"$NGINX_SSL_KEY\" ]; then\n      echo \"Error: SSL key not found: $NGINX_SSL_KEY\"\n      return 1\n    fi\n    export SSL_LISTEN=\" ssl\"\n    export SSL_CONFIG=\"ssl_certificate $NGINX_SSL_CERT;\n    ssl_certificate_key $NGINX_SSL_KEY;\n    ssl_protocols $NGINX_SSL_PROTOCOLS;\n    ssl_ciphers HIGH:!aNULL:!MD5;\"\n  else\n    export SSL_LISTEN=\"\"\n    export SSL_CONFIG=\"\"\n  fi\n\n  # Rate Limiting Configuration\n  if [ \"$NGINX_RATE_LIMIT_ENABLED\" = \"true\" ]; then\n    export RATE_LIMIT_ZONE=\"limit_req_zone \"'$binary_remote_addr'\" zone=ratelimit:10m rate=$NGINX_RATE_LIMIT_RATE;\"\n    export RATE_LIMIT_REQ=\"limit_req zone=ratelimit burst=$NGINX_RATE_LIMIT_BURST nodelay;\"\n  else\n    export RATE_LIMIT_ZONE=\"\"\n    export RATE_LIMIT_REQ=\"\"\n  fi\n\n  # Load Balancer Upstream Block\n  if [ \"$NGINX_MODE\" = \"load_balancer\" ]; then\n    if [ -z \"$NGINX_UPSTREAM_SERVERS\" ]; then\n      echo \"Error: NGINX_MODE=load_balancer but NGINX_UPSTREAM_SERVERS not set\"\n      echo \"Example: NGINX_UPSTREAM_SERVERS=\\\"app1:8080,app2:8080,app3:8080\\\"\"\n      return 1\n    fi\n\n    # Determine load balancing directive\n    case \"$NGINX_LB_METHOD\" in\n      round_robin)\n        LB_DIRECTIVE=\"\"\n        ;;\n      least_conn)\n        LB_DIRECTIVE=\"least_conn;\"\n        ;;\n      ip_hash)\n        LB_DIRECTIVE=\"ip_hash;\"\n        ;;\n      *)\n        echo \"Error: Unknown NGINX_LB_METHOD: $NGINX_LB_METHOD\"\n        echo \"Supported: round_robin, least_conn, ip_hash\"\n        return 1\n        ;;\n    esac\n\n    # Generate upstream block\n    UPSTREAM=\"upstream backend {\"$'\\n'\"    $LB_DIRECTIVE\"$'\\n'\n    IFS=',' read -ra SERVERS <<< \"$NGINX_UPSTREAM_SERVERS\"\n    for server in \"${SERVERS[@]}\"; do\n      server=$(echo \"$server\" | xargs)  # Trim whitespace\n      UPSTREAM+=\"    server $server;\"$'\\n'\n    done\n    UPSTREAM+=\"}\"\n    export UPSTREAM_BLOCK=\"$UPSTREAM\"\n  else\n    export UPSTREAM_BLOCK=\"\"\n  fi\n\n  # Gzip Compression Configuration\n  if [ \"$NGINX_GZIP_ENABLED\" = \"true\" ]; then\n    export GZIP_CONFIG=\"gzip on;\n    gzip_vary on;\n    gzip_proxied any;\n    gzip_comp_level $NGINX_GZIP_LEVEL;\n    gzip_min_length $NGINX_GZIP_MIN_LENGTH;\n    gzip_types $NGINX_GZIP_TYPES;\"\n  else\n    export GZIP_CONFIG=\"\"\n  fi\n\n  # Security Headers Configuration\n  if [ \"$NGINX_SECURITY_HEADERS_ENABLED\" = \"true\" ]; then\n    HEADERS=\"add_header X-Frame-Options SAMEORIGIN always;\n    add_header X-Content-Type-Options nosniff always;\n    add_header X-XSS-Protection \\\"1; mode=block\\\" always;\n    add_header Referrer-Policy no-referrer-when-downgrade always;\"\n\n    # Add HSTS if SSL is enabled\n    if [ \"$NGINX_SSL_ENABLED\" = \"true\" ]; then\n      HEADERS+=$'\\n'\"    add_header Strict-Transport-Security \\\"max-age=31536000; includeSubDomains\\\" always;\"\n    fi\n\n    export SECURITY_HEADERS=\"$HEADERS\"\n  else\n    export SECURITY_HEADERS=\"\"\n  fi\n\n  # Caching Configuration (for static mode)\n  if [ \"$NGINX_CACHE_ENABLED\" = \"true\" ]; then\n    export CACHE_HTML=\"add_header Cache-Control \\\"public, max-age=3600\\\";\n            expires $NGINX_CACHE_HTML_EXPIRE;\"\n\n    export CACHE_STATIC=\"location ~* \\.(jpg|jpeg|png|gif|ico|css|js|svg|woff|woff2|ttf|eot)$ {\n            expires $NGINX_CACHE_STATIC_EXPIRE;\n            add_header Cache-Control \\\"public, immutable\\\";\n        }\"\n  else\n    export CACHE_HTML=\"\"\n    export CACHE_STATIC=\"\"\n  fi\n\n  # WebSocket Configuration (for proxy and load_balancer modes)\n  if [ \"$NGINX_WEBSOCKET_ENABLED\" = \"true\" ]; then\n    export WEBSOCKET_CONFIG=\"proxy_http_version 1.1;\n            proxy_set_header Upgrade \\$http_upgrade;\n            proxy_set_header Connection \\\"upgrade\\\";\"\n  else\n    export WEBSOCKET_CONFIG=\"\"\n  fi\n\n  # URL Rewriting Configuration\n  REWRITE=\"\"\n\n  # Force HTTPS redirect\n  if [ \"$NGINX_FORCE_HTTPS\" = \"true\" ]; then\n    REWRITE+=\"if (\\$scheme != \\\"https\\\") {\"$'\\n'\n    REWRITE+=\"            return 301 https://\\$host\\$request_uri;\"$'\\n'\n    REWRITE+=\"        }\"$'\\n'\n  fi\n\n  # Force WWW or non-WWW\n  if [ \"$NGINX_FORCE_WWW\" = \"add_www\" ]; then\n    REWRITE+=\"if (\\$host !~* ^www\\\\.) {\"$'\\n'\n    REWRITE+=\"            return 301 \\$scheme://www.\\$host\\$request_uri;\"$'\\n'\n    REWRITE+=\"        }\"$'\\n'\n  elif [ \"$NGINX_FORCE_WWW\" = \"remove_www\" ]; then\n    REWRITE+=\"if (\\$host ~* ^www\\\\.(.*)) {\"$'\\n'\n    REWRITE+=\"            return 301 \\$scheme://\\$1\\$request_uri;\"$'\\n'\n    REWRITE+=\"        }\"$'\\n'\n  fi\n\n  export REWRITE_RULES=\"$REWRITE\"\n}\n\n# Select mode template\ncase \"$NGINX_MODE\" in\n  proxy)\n    TEMPLATE=\"$CONFIG_DIR/nginx-proxy.template\"\n    ;;\n  static)\n    TEMPLATE=\"$CONFIG_DIR/nginx-static.template\"\n    ;;\n  load_balancer)\n    TEMPLATE=\"$CONFIG_DIR/nginx-loadbalancer.template\"\n    ;;\n  *)\n    echo \"Error: Unknown NGINX_MODE: $NGINX_MODE\"\n    echo \"Supported modes: proxy, static, load_balancer\"\n    exit 1\n    ;;\nesac\n\nif [ ! -f \"$TEMPLATE\" ]; then\n  echo \"Error: Template not found: $TEMPLATE\"\n  exit 1\nfi\n\n# Generate feature configurations\ngenerate_features || exit 1\n\n# Apply envsubst with explicit variable list (preserves nginx variables)\nenvsubst '${NGINX_WORKER_PROCESSES} ${NGINX_LOG_DIR} ${NGINX_WORKER_CONNECTIONS} ${NGINX_MIME_TYPES} ${GZIP_CONFIG} ${RATE_LIMIT_ZONE} ${NGINX_HOST} ${NGINX_PORT} ${SSL_LISTEN} ${SSL_CONFIG} ${SECURITY_HEADERS} ${RATE_LIMIT_REQ} ${NGINX_BACKEND_HOST} ${NGINX_BACKEND_PORT} ${NGINX_PROXY_TIMEOUT} ${NGINX_ROOT} ${NGINX_INDEX} ${UPSTREAM_BLOCK} ${CACHE_HTML} ${CACHE_STATIC} ${WEBSOCKET_CONFIG} ${REWRITE_RULES}' < \"$TEMPLATE\" > \"$FINAL_CONF\"\n\n# Validate configuration\nif ! nginx -t -c \"$FINAL_CONF\"; then\n  echo \"Error: nginx configuration validation failed\"\n  echo \"Configuration file: $FINAL_CONF\"\n  exit 1\nfi\n\n# Start nginx\nexec nginx -c \"$FINAL_CONF\" -g \"daemon off;\" 2>&1 | tee -a \"$FLOX_ENV_CACHE/logs/nginx.log\"\n"
+      }
+    }
+  },
+  "packages": [
+    {
+      "attr_path": "gettext",
+      "broken": false,
+      "derivation": "/nix/store/fw7fp2y0adydhq2k7b79hvpc3za1dpiv-gettext-0.25.1.drv",
+      "description": "Well integrated set of translation tools and documentation",
+      "install_id": "gettext",
+      "license": "GPL-2.0-or-later",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=6a08e6bb4e46ff7fcbb53d409b253f6bad8a28ce",
+      "name": "gettext-0.25.1",
+      "pname": "gettext",
+      "rev": "6a08e6bb4e46ff7fcbb53d409b253f6bad8a28ce",
+      "rev_count": 883951,
+      "rev_date": "2025-10-25T06:24:58Z",
+      "scrape_date": "2025-10-27T02:08:16.415332Z",
+      "stabilities": [
+        "unstable"
+      ],
+      "unfree": false,
+      "version": "0.25.1",
+      "outputs_to_install": [
+        "man",
+        "out"
+      ],
+      "outputs": {
+        "doc": "/nix/store/xmal1m0kq50a4zbcpskzicmz5vm5fmzc-gettext-0.25.1-doc",
+        "info": "/nix/store/1xf1baaxdd3gnnadz5bw35r84mdr2fm8-gettext-0.25.1-info",
+        "man": "/nix/store/vr5sj38sp1h35l3wn04hb90si0bx8skk-gettext-0.25.1-man",
+        "out": "/nix/store/jl1421wiawqdgasrqqwd4d4jznvimfma-gettext-0.25.1"
+      },
+      "system": "aarch64-darwin",
+      "group": "toplevel",
+      "priority": 5
+    },
+    {
+      "attr_path": "gettext",
+      "broken": false,
+      "derivation": "/nix/store/83ck901079gq26vr61lsjr09s8p9ydc6-gettext-0.25.1.drv",
+      "description": "Well integrated set of translation tools and documentation",
+      "install_id": "gettext",
+      "license": "GPL-2.0-or-later",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=6a08e6bb4e46ff7fcbb53d409b253f6bad8a28ce",
+      "name": "gettext-0.25.1",
+      "pname": "gettext",
+      "rev": "6a08e6bb4e46ff7fcbb53d409b253f6bad8a28ce",
+      "rev_count": 883951,
+      "rev_date": "2025-10-25T06:24:58Z",
+      "scrape_date": "2025-10-27T02:18:27.321807Z",
+      "stabilities": [
+        "unstable"
+      ],
+      "unfree": false,
+      "version": "0.25.1",
+      "outputs_to_install": [
+        "man",
+        "out"
+      ],
+      "outputs": {
+        "doc": "/nix/store/iz7xzdddv7m1flkya2dlzm26lb371sxp-gettext-0.25.1-doc",
+        "info": "/nix/store/qd5w10l4g86jzxzs861smqzba67zbn5x-gettext-0.25.1-info",
+        "man": "/nix/store/0gr8ah7z6qhypspsp3bjv8ld2pa5b59i-gettext-0.25.1-man",
+        "out": "/nix/store/zzn5w3wi2gw15h59vpylmkl8b64lmbxr-gettext-0.25.1"
+      },
+      "system": "aarch64-linux",
+      "group": "toplevel",
+      "priority": 5
+    },
+    {
+      "attr_path": "gettext",
+      "broken": false,
+      "derivation": "/nix/store/glkcn72kprb8j2iicmmi30yldlsd1cwy-gettext-0.25.1.drv",
+      "description": "Well integrated set of translation tools and documentation",
+      "install_id": "gettext",
+      "license": "GPL-2.0-or-later",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=6a08e6bb4e46ff7fcbb53d409b253f6bad8a28ce",
+      "name": "gettext-0.25.1",
+      "pname": "gettext",
+      "rev": "6a08e6bb4e46ff7fcbb53d409b253f6bad8a28ce",
+      "rev_count": 883951,
+      "rev_date": "2025-10-25T06:24:58Z",
+      "scrape_date": "2025-10-27T02:29:22.264420Z",
+      "stabilities": [
+        "unstable"
+      ],
+      "unfree": false,
+      "version": "0.25.1",
+      "outputs_to_install": [
+        "man",
+        "out"
+      ],
+      "outputs": {
+        "doc": "/nix/store/il9rgrblzzgim9fgy15m7jadigg90gc9-gettext-0.25.1-doc",
+        "info": "/nix/store/20pmnjr88f748mnfjvz3c3bksjff5pvl-gettext-0.25.1-info",
+        "man": "/nix/store/2xrbyji0c3z2cha1r95w07432nh5hzfb-gettext-0.25.1-man",
+        "out": "/nix/store/08l09pgc582k9fkrrjxdhpyl5qmgrahj-gettext-0.25.1"
+      },
+      "system": "x86_64-darwin",
+      "group": "toplevel",
+      "priority": 5
+    },
+    {
+      "attr_path": "gettext",
+      "broken": false,
+      "derivation": "/nix/store/sqa27jrdiki6jdmg47fir9rya3mb3kgb-gettext-0.25.1.drv",
+      "description": "Well integrated set of translation tools and documentation",
+      "install_id": "gettext",
+      "license": "GPL-2.0-or-later",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=6a08e6bb4e46ff7fcbb53d409b253f6bad8a28ce",
+      "name": "gettext-0.25.1",
+      "pname": "gettext",
+      "rev": "6a08e6bb4e46ff7fcbb53d409b253f6bad8a28ce",
+      "rev_count": 883951,
+      "rev_date": "2025-10-25T06:24:58Z",
+      "scrape_date": "2025-10-27T03:00:55.638509Z",
+      "stabilities": [
+        "unstable"
+      ],
+      "unfree": false,
+      "version": "0.25.1",
+      "outputs_to_install": [
+        "man",
+        "out"
+      ],
+      "outputs": {
+        "doc": "/nix/store/zg1vabkzsk6as7h9wr7riha8x16isghj-gettext-0.25.1-doc",
+        "info": "/nix/store/qaf0zyc1hp2z9zqg0wcfzl4c9pvhn1r8-gettext-0.25.1-info",
+        "man": "/nix/store/5q5xdws2jy4sv40qaqmyar8lblkmlfxv-gettext-0.25.1-man",
+        "out": "/nix/store/m5zldis61kjiylqpxf7jaxs0jsmfq6j4-gettext-0.25.1"
+      },
+      "system": "x86_64-linux",
+      "group": "toplevel",
+      "priority": 5
+    },
+    {
+      "attr_path": "nginx",
+      "broken": false,
+      "derivation": "/nix/store/p2nzcn18r4ryksyqlc38x1bipq9srd51-nginx-1.28.0.drv",
+      "description": "Reverse proxy and lightweight webserver",
+      "install_id": "nginx",
+      "license": "[ BSD-2-Clause, BSD-2-Clause, BSD-2-Clause, BSD-2-Clause ]",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=6a08e6bb4e46ff7fcbb53d409b253f6bad8a28ce",
+      "name": "nginx-1.28.0",
+      "pname": "nginx",
+      "rev": "6a08e6bb4e46ff7fcbb53d409b253f6bad8a28ce",
+      "rev_count": 883951,
+      "rev_date": "2025-10-25T06:24:58Z",
+      "scrape_date": "2025-10-27T02:08:36.609387Z",
+      "stabilities": [
+        "unstable"
+      ],
+      "unfree": false,
+      "version": "1.28.0",
+      "outputs_to_install": [
+        "out"
+      ],
+      "outputs": {
+        "doc": "/nix/store/hr3mqr8j5yb9s8vjwsgmjzywnch5cb7y-nginx-1.28.0-doc",
+        "out": "/nix/store/s3f7m4l4pb6baddzax1bk2grr0kg0m97-nginx-1.28.0"
+      },
+      "system": "aarch64-darwin",
+      "group": "toplevel",
+      "priority": 5
+    },
+    {
+      "attr_path": "nginx",
+      "broken": false,
+      "derivation": "/nix/store/2v2a58v2z7kwqffb7pa79b4l8ypx5vkq-nginx-1.28.0.drv",
+      "description": "Reverse proxy and lightweight webserver",
+      "install_id": "nginx",
+      "license": "[ BSD-2-Clause, BSD-2-Clause, BSD-2-Clause, BSD-2-Clause ]",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=6a08e6bb4e46ff7fcbb53d409b253f6bad8a28ce",
+      "name": "nginx-1.28.0",
+      "pname": "nginx",
+      "rev": "6a08e6bb4e46ff7fcbb53d409b253f6bad8a28ce",
+      "rev_count": 883951,
+      "rev_date": "2025-10-25T06:24:58Z",
+      "scrape_date": "2025-10-27T02:19:00.850915Z",
+      "stabilities": [
+        "unstable"
+      ],
+      "unfree": false,
+      "version": "1.28.0",
+      "outputs_to_install": [
+        "out"
+      ],
+      "outputs": {
+        "doc": "/nix/store/s6k46asj3pvw28h871wkzcqkb9k0a2bb-nginx-1.28.0-doc",
+        "out": "/nix/store/2waby6yghzimz36nny9hxckada05d17f-nginx-1.28.0"
+      },
+      "system": "aarch64-linux",
+      "group": "toplevel",
+      "priority": 5
+    },
+    {
+      "attr_path": "nginx",
+      "broken": false,
+      "derivation": "/nix/store/96348lsw6amy218jvlk60svzzwdq1g9x-nginx-1.28.0.drv",
+      "description": "Reverse proxy and lightweight webserver",
+      "install_id": "nginx",
+      "license": "[ BSD-2-Clause, BSD-2-Clause, BSD-2-Clause, BSD-2-Clause ]",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=6a08e6bb4e46ff7fcbb53d409b253f6bad8a28ce",
+      "name": "nginx-1.28.0",
+      "pname": "nginx",
+      "rev": "6a08e6bb4e46ff7fcbb53d409b253f6bad8a28ce",
+      "rev_count": 883951,
+      "rev_date": "2025-10-25T06:24:58Z",
+      "scrape_date": "2025-10-27T02:29:42.394674Z",
+      "stabilities": [
+        "unstable"
+      ],
+      "unfree": false,
+      "version": "1.28.0",
+      "outputs_to_install": [
+        "out"
+      ],
+      "outputs": {
+        "doc": "/nix/store/3ys3bh567khkwk05dsgq9s7zr2r7alcs-nginx-1.28.0-doc",
+        "out": "/nix/store/d185zjpszlsqj0jnqyav4z2m56l7hh7b-nginx-1.28.0"
+      },
+      "system": "x86_64-darwin",
+      "group": "toplevel",
+      "priority": 5
+    },
+    {
+      "attr_path": "nginx",
+      "broken": false,
+      "derivation": "/nix/store/j2xx0yjfqq189szvcz097qsqqs1ffhn5-nginx-1.28.0.drv",
+      "description": "Reverse proxy and lightweight webserver",
+      "install_id": "nginx",
+      "license": "[ BSD-2-Clause, BSD-2-Clause, BSD-2-Clause, BSD-2-Clause ]",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=6a08e6bb4e46ff7fcbb53d409b253f6bad8a28ce",
+      "name": "nginx-1.28.0",
+      "pname": "nginx",
+      "rev": "6a08e6bb4e46ff7fcbb53d409b253f6bad8a28ce",
+      "rev_count": 883951,
+      "rev_date": "2025-10-25T06:24:58Z",
+      "scrape_date": "2025-10-27T03:01:33.024525Z",
+      "stabilities": [
+        "unstable"
+      ],
+      "unfree": false,
+      "version": "1.28.0",
+      "outputs_to_install": [
+        "out"
+      ],
+      "outputs": {
+        "doc": "/nix/store/ppgwgwhpznz66i2inhcn5k2zdbg37iws-nginx-1.28.0-doc",
+        "out": "/nix/store/qn26z61kdr1vja62x2l5iif6xmp3wag9-nginx-1.28.0"
+      },
+      "system": "x86_64-linux",
+      "group": "toplevel",
+      "priority": 5
+    }
+  ]
+}

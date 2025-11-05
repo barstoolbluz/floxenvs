@@ -1,0 +1,1090 @@
+{
+  "lockfile-version": 1,
+  "manifest": {
+    "version": 1,
+    "install": {
+      "curl": {
+        "pkg-path": "curl"
+      },
+      "gettext": {
+        "pkg-path": "gettext"
+      },
+      "git": {
+        "pkg-path": "git"
+      },
+      "jenkins": {
+        "pkg-path": "jenkins"
+      },
+      "jq": {
+        "pkg-path": "jq"
+      },
+      "nginx": {
+        "pkg-path": "nginx"
+      },
+      "openjdk21": {
+        "pkg-path": "openjdk21"
+      }
+    },
+    "vars": {
+      "JENKINS_DATA_DIR": "$FLOX_ENV_CACHE/data/jenkins-home",
+      "JENKINS_FULL_STACK_DIR": "$FLOX_ENV_CACHE",
+      "NGINX_CONFIG_DIR": "$FLOX_ENV_CACHE/config",
+      "NGINX_LOG_DIR": "$FLOX_ENV_CACHE/logs",
+      "NGINX_WWW_DIR": "$FLOX_ENV_CACHE/www",
+      "PLUGIN_MGR_DIR": "$FLOX_ENV_CACHE/cache"
+    },
+    "hook": {
+      "on-activate": "mkdir -p \"$FLOX_ENV_CACHE/config\"\nmkdir -p \"$FLOX_ENV_CACHE/logs\"\nmkdir -p \"$FLOX_ENV_CACHE/www\"\n\n# === COMMON CONFIGURATION ===\nexport NGINX_PORT=\"${NGINX_PORT:-80}\"\nexport NGINX_HOST=\"${NGINX_HOST:-0.0.0.0}\"\n\n# === MODE SELECTION ===\nexport NGINX_MODE=\"${NGINX_MODE:-proxy}\"\nexport NGINX_WORKER_PROCESSES=\"${NGINX_WORKER_PROCESSES:-auto}\"\nexport NGINX_WORKER_CONNECTIONS=\"${NGINX_WORKER_CONNECTIONS:-1024}\"\n\n# === PROXY MODE ===\nexport NGINX_BACKEND_HOST=\"${NGINX_BACKEND_HOST:-127.0.0.1}\"\nexport NGINX_BACKEND_PORT=\"${NGINX_BACKEND_PORT:-8080}\"\nexport NGINX_PROXY_TIMEOUT=\"${NGINX_PROXY_TIMEOUT:-60s}\"\n\n# === STATIC MODE ===\nexport NGINX_ROOT=\"${NGINX_ROOT:-$FLOX_ENV_CACHE/www}\"\nexport NGINX_INDEX=\"${NGINX_INDEX:-index.html index.htm}\"\n\n# === LOAD BALANCER MODE ===\nexport NGINX_UPSTREAM_SERVERS=\"${NGINX_UPSTREAM_SERVERS:-}\"\nexport NGINX_LB_METHOD=\"${NGINX_LB_METHOD:-round_robin}\"\n\n# === SSL/TLS FEATURE ===\nexport NGINX_SSL_ENABLED=\"${NGINX_SSL_ENABLED:-false}\"\nexport NGINX_SSL_CERT=\"${NGINX_SSL_CERT:-}\"\nexport NGINX_SSL_KEY=\"${NGINX_SSL_KEY:-}\"\nexport NGINX_SSL_PROTOCOLS=\"${NGINX_SSL_PROTOCOLS:-TLSv1.2 TLSv1.3}\"\n\n# === RATE LIMITING FEATURE ===\nexport NGINX_RATE_LIMIT_ENABLED=\"${NGINX_RATE_LIMIT_ENABLED:-false}\"\nexport NGINX_RATE_LIMIT_RATE=\"${NGINX_RATE_LIMIT_RATE:-10r/s}\"\nexport NGINX_RATE_LIMIT_BURST=\"${NGINX_RATE_LIMIT_BURST:-20}\"\n\n# === GZIP COMPRESSION FEATURE ===\nexport NGINX_GZIP_ENABLED=\"${NGINX_GZIP_ENABLED:-false}\"\nexport NGINX_GZIP_LEVEL=\"${NGINX_GZIP_LEVEL:-6}\"\nexport NGINX_GZIP_MIN_LENGTH=\"${NGINX_GZIP_MIN_LENGTH:-1000}\"\nexport NGINX_GZIP_TYPES=\"${NGINX_GZIP_TYPES:-text/plain text/css application/json application/javascript text/xml application/xml application/xml+rss text/javascript}\"\n\n# === SECURITY HEADERS FEATURE ===\nexport NGINX_SECURITY_HEADERS_ENABLED=\"${NGINX_SECURITY_HEADERS_ENABLED:-false}\"\n\n# === CACHING FEATURE ===\nexport NGINX_CACHE_ENABLED=\"${NGINX_CACHE_ENABLED:-false}\"\nexport NGINX_CACHE_STATIC_EXPIRE=\"${NGINX_CACHE_STATIC_EXPIRE:-7d}\"\nexport NGINX_CACHE_HTML_EXPIRE=\"${NGINX_CACHE_HTML_EXPIRE:-1h}\"\n\n# === WEBSOCKET FEATURE ===\nexport NGINX_WEBSOCKET_ENABLED=\"${NGINX_WEBSOCKET_ENABLED:-false}\"\n\n# === URL REWRITING FEATURE ===\nexport NGINX_FORCE_HTTPS=\"${NGINX_FORCE_HTTPS:-false}\"\nexport NGINX_FORCE_WWW=\"${NGINX_FORCE_WWW:-none}\"\n\n# Create templates (one-time)\ncreate_templates() {\n  local CONFIG_DIR=\"$FLOX_ENV_CACHE/config\"\n\n  # Proxy mode template\n  if [ ! -f \"$CONFIG_DIR/nginx-proxy.template\" ]; then\n    cat > \"$CONFIG_DIR/nginx-proxy.template\" << 'TEMPLATE'\nworker_processes ${NGINX_WORKER_PROCESSES};\nerror_log ${NGINX_LOG_DIR}/error.log;\npid ${NGINX_LOG_DIR}/nginx.pid;\n\nevents {\n    worker_connections ${NGINX_WORKER_CONNECTIONS};\n}\n\nhttp {\n    access_log ${NGINX_LOG_DIR}/access.log;\n\n    ${GZIP_CONFIG}\n\n    ${RATE_LIMIT_ZONE}\n\n    server {\n        listen ${NGINX_HOST}:${NGINX_PORT}${SSL_LISTEN};\n\n        ${SSL_CONFIG}\n\n        ${SECURITY_HEADERS}\n\n        ${REWRITE_RULES}\n\n        location / {\n            ${RATE_LIMIT_REQ}\n\n            proxy_pass http://${NGINX_BACKEND_HOST}:${NGINX_BACKEND_PORT};\n            proxy_set_header Host $host;\n            proxy_set_header X-Real-IP $remote_addr;\n            proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;\n            proxy_set_header X-Forwarded-Proto $scheme;\n            proxy_connect_timeout ${NGINX_PROXY_TIMEOUT};\n            proxy_send_timeout ${NGINX_PROXY_TIMEOUT};\n            proxy_read_timeout ${NGINX_PROXY_TIMEOUT};\n            ${WEBSOCKET_CONFIG}\n        }\n    }\n}\nTEMPLATE\n  fi\n\n  # Static mode template\n  if [ ! -f \"$CONFIG_DIR/nginx-static.template\" ]; then\n    cat > \"$CONFIG_DIR/nginx-static.template\" << 'TEMPLATE'\nworker_processes ${NGINX_WORKER_PROCESSES};\nerror_log ${NGINX_LOG_DIR}/error.log;\npid ${NGINX_LOG_DIR}/nginx.pid;\n\nevents {\n    worker_connections ${NGINX_WORKER_CONNECTIONS};\n}\n\nhttp {\n    include ${NGINX_MIME_TYPES};\n    default_type application/octet-stream;\n\n    access_log ${NGINX_LOG_DIR}/access.log;\n\n    sendfile on;\n    tcp_nopush on;\n    tcp_nodelay on;\n    keepalive_timeout 65;\n\n    ${GZIP_CONFIG}\n\n    ${RATE_LIMIT_ZONE}\n\n    server {\n        listen ${NGINX_HOST}:${NGINX_PORT}${SSL_LISTEN};\n\n        ${SSL_CONFIG}\n\n        ${SECURITY_HEADERS}\n\n        ${REWRITE_RULES}\n\n        root ${NGINX_ROOT};\n        index ${NGINX_INDEX};\n\n        location / {\n            ${RATE_LIMIT_REQ}\n            ${CACHE_HTML}\n            try_files $uri $uri/ =404;\n        }\n\n        ${CACHE_STATIC}\n    }\n}\nTEMPLATE\n  fi\n\n  # Load balancer mode template\n  if [ ! -f \"$CONFIG_DIR/nginx-loadbalancer.template\" ]; then\n    cat > \"$CONFIG_DIR/nginx-loadbalancer.template\" << 'TEMPLATE'\nworker_processes ${NGINX_WORKER_PROCESSES};\nerror_log ${NGINX_LOG_DIR}/error.log;\npid ${NGINX_LOG_DIR}/nginx.pid;\n\nevents {\n    worker_connections ${NGINX_WORKER_CONNECTIONS};\n}\n\nhttp {\n    access_log ${NGINX_LOG_DIR}/access.log;\n\n    ${GZIP_CONFIG}\n\n    ${RATE_LIMIT_ZONE}\n\n    ${UPSTREAM_BLOCK}\n\n    server {\n        listen ${NGINX_HOST}:${NGINX_PORT}${SSL_LISTEN};\n\n        ${SSL_CONFIG}\n\n        ${SECURITY_HEADERS}\n\n        ${REWRITE_RULES}\n\n        location / {\n            ${RATE_LIMIT_REQ}\n\n            proxy_pass http://backend;\n            proxy_set_header Host $host;\n            proxy_set_header X-Real-IP $remote_addr;\n            proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;\n            proxy_set_header X-Forwarded-Proto $scheme;\n            ${WEBSOCKET_CONFIG}\n        }\n    }\n}\nTEMPLATE\n  fi\n\n  # Create sample index.html for static mode\n  if [ ! -f \"$FLOX_ENV_CACHE/www/index.html\" ]; then\n    cat > \"$FLOX_ENV_CACHE/www/index.html\" << 'HTML'\n<!DOCTYPE html>\n<html>\n<head>\n    <title>nginx-headless</title>\n</head>\n<body>\n    <h1>nginx-headless</h1>\n    <p>Static file serving is working!</p>\n</body>\n</html>\nHTML\n  fi\n}\n\ncreate_templates\n\ncd \"$FLOX_ENV_PROJECT\"\n\n# CRITICAL: Use 'return' not 'exit' to keep environment active\n\n# === Directory Structure Setup ===\nsetup_directories() {\n  mkdir -p \"$FLOX_ENV_CACHE/config\"\n  mkdir -p \"$FLOX_ENV_CACHE/data/jenkins-home\"\n  mkdir -p \"$FLOX_ENV_CACHE/logs\"\n  mkdir -p \"$FLOX_ENV_CACHE/cache\"\n}\n\n# === Runtime Configuration (Override with env vars) ===\nconfigure_runtime() {\n  export JENKINS_HOME=\"${JENKINS_HOME:-$FLOX_ENV_CACHE/data/jenkins-home}\"\n  export JENKINS_PORT=\"${JENKINS_PORT:-8080}\"\n  export JENKINS_PREFIX=\"${JENKINS_PREFIX:-/}\"\n  export JENKINS_ADMIN_USER=\"${JENKINS_ADMIN_USER:-admin}\"\n\n  # Admin password from env var or config file\n  CREDS_FILE=\"$HOME/.config/jenkins/credentials\"\n  if [ -z \"$JENKINS_ADMIN_PASSWORD\" ] && [ -f \"$CREDS_FILE\" ]; then\n    source \"$CREDS_FILE\"\n  fi\n\n  # Java options\n  export JENKINS_JAVA_OPTS=\"${JENKINS_JAVA_OPTS:--Xmx1g -Djava.awt.headless=true}\"\n\n  # Plugin selection (space-separated list)\n  export JENKINS_PLUGINS=\"${JENKINS_PLUGINS:-git workflow-aggregator docker-workflow github configuration-as-code}\"\n\n  # JCasC configuration file\n  export JENKINS_CASC_CONFIG=\"${JENKINS_CASC_CONFIG:-$FLOX_ENV_CACHE/config/jenkins.yaml}\"\n}\n\n# === Plugin Installation Manager Setup ===\nsetup_plugin_manager() {\n  PLUGIN_MGR_VERSION=\"2.13.0\"\n  PLUGIN_MGR_JAR=\"$FLOX_ENV_CACHE/cache/jenkins-plugin-manager-${PLUGIN_MGR_VERSION}.jar\"\n  PLUGIN_MGR_URL=\"https://github.com/jenkinsci/plugin-installation-manager-tool/releases/download/${PLUGIN_MGR_VERSION}/jenkins-plugin-manager-${PLUGIN_MGR_VERSION}.jar\"\n\n  if [ ! -f \"$PLUGIN_MGR_JAR\" ]; then\n    echo \"⬇️  Downloading Jenkins Plugin Installation Manager v${PLUGIN_MGR_VERSION}...\"\n    if curl -fsSL \"$PLUGIN_MGR_URL\" -o \"$PLUGIN_MGR_JAR\"; then\n      echo \"✓ Plugin manager downloaded\"\n    else\n      echo \"⚠️  Failed to download plugin manager\"\n      echo \"   Plugins can still be installed manually or via jenkins-cli\"\n      return 1\n    fi\n  fi\n\n  # Export for use in functions\n  export JENKINS_PLUGIN_MGR_JAR=\"$PLUGIN_MGR_JAR\"\n}\n\n# === Find Jenkins WAR File ===\nfind_jenkins_war() {\n  # Find jenkins.war from installed package via jenkins-cli path\n  JENKINS_CLI_PATH=$(which jenkins-cli 2>/dev/null)\n\n  if [ -z \"$JENKINS_CLI_PATH\" ]; then\n    echo \"❌ Could not find jenkins-cli\"\n    echo \"   Make sure jenkins package is installed\"\n    return 1\n  fi\n\n  # Get the package directory and find webapps/jenkins.war\n  JENKINS_PKG_DIR=$(dirname \"$(dirname \"$JENKINS_CLI_PATH\")\")\n  JENKINS_WAR=\"$JENKINS_PKG_DIR/webapps/jenkins.war\"\n\n  if [ ! -f \"$JENKINS_WAR\" ]; then\n    echo \"❌ Could not find jenkins.war at $JENKINS_WAR\"\n    echo \"   Jenkins package structure may have changed\"\n    return 1\n  fi\n\n  export JENKINS_WAR\n}\n\n# === Generate Default JCasC Configuration ===\ngenerate_jcasc_config() {\n  JCASC_FILE=\"$FLOX_ENV_CACHE/config/jenkins.yaml\"\n\n  # Only generate if it doesn't exist\n  if [ ! -f \"$JCASC_FILE\" ]; then\n    cat > \"$JCASC_FILE\" << 'EOF'\njenkins:\n  systemMessage: \"Jenkins Headless Environment (Flox)\"\n  numExecutors: 0  # Best practice: no builds on controller\n  mode: EXCLUSIVE\n\n  securityRealm:\n    local:\n      allowsSignup: false\n      users:\n        - id: \"${JENKINS_ADMIN_USER}\"\n          password: \"${JENKINS_ADMIN_PASSWORD:-changeme}\"\n\n  authorizationStrategy:\n    loggedInUsersCanDoAnything:\n      allowAnonymousRead: false\n\nunclassified:\n  location:\n    url: \"http://localhost:${JENKINS_PORT}${JENKINS_PREFIX}\"\n    adminAddress: \"jenkins@localhost\"\nEOF\n    echo \"✓ Generated default JCasC configuration: $JCASC_FILE\"\n  fi\n}\n\n# === Main Setup Function ===\nmain_setup() {\n  setup_directories\n  configure_runtime\n  find_jenkins_war || return 1\n  setup_plugin_manager\n  generate_jcasc_config\n\n  # Display configuration\n  echo \"\"\n  echo \"✅ Jenkins Headless Environment Ready\"\n  echo \"\"\n  echo \"Configuration:\"\n  echo \"  JENKINS_HOME:   $JENKINS_HOME\"\n  echo \"  Port:           $JENKINS_PORT\"\n  echo \"  Prefix:         $JENKINS_PREFIX\"\n  echo \"  Admin User:     $JENKINS_ADMIN_USER\"\n  echo \"  Plugins:        $JENKINS_PLUGINS\"\n  echo \"\"\n  echo \"Commands:\"\n  echo \"  flox activate -s        Start Jenkins service\"\n  echo \"  jenkins-info           Show detailed configuration\"\n  echo \"  jenkins-health         Check Jenkins health\"\n  echo \"  jenkins-logs           Tail Jenkins logs\"\n  echo \"\"\n  echo \"Runtime Overrides:\"\n  echo \"  JENKINS_PORT=9090 flox activate -s\"\n  echo \"  JENKINS_PLUGINS=\\\"git pipeline\\\" flox activate -s\"\n  echo \"\"\n\n  # Return to project directory\n  cd \"$FLOX_ENV_PROJECT\"\n}\n\n# Execute main setup\nmain_setup\n\n# === JENKINS-FULL-STACK CONFIGURATION ===\n# This environment combines nginx-headless and jenkins-headless\n# to create a production-ready Jenkins setup with nginx as a reverse proxy.\n\n# Create directories\nmkdir -p \"$FLOX_ENV_CACHE/logs\"\n\n# === STACK CONFIGURATION (all runtime-overridable) ===\n\n# Jenkins Configuration (inherited from jenkins-headless, can override here)\n# Note: Set this first so nginx can reference it\nexport JENKINS_PORT=\"${JENKINS_PORT:-8080}\"           # Jenkins runs on port 8080 (internal)\nexport JENKINS_PREFIX=\"${JENKINS_PREFIX:-/}\"          # URL prefix\nexport JENKINS_PLUGINS=\"${JENKINS_PLUGINS:-git workflow-aggregator docker-workflow github configuration-as-code}\"\n\n# Nginx Configuration\nexport NGINX_PORT=\"${NGINX_PORT:-8000}\"               # Nginx listens on port 8000 (use 80 for production with root)\nexport NGINX_HOST=\"${NGINX_HOST:-0.0.0.0}\"            # Listen on all interfaces\nexport NGINX_MODE=\"${NGINX_MODE:-proxy}\"              # Reverse proxy mode (default)\nexport NGINX_BACKEND_HOST=\"${NGINX_BACKEND_HOST:-127.0.0.1}\"  # Proxy to localhost\n# Synchronize NGINX_BACKEND_PORT with JENKINS_PORT (unless user explicitly set it)\n# If NGINX_BACKEND_PORT is still at nginx-headless default (8080), update it to match JENKINS_PORT\nif [ \"$NGINX_BACKEND_PORT\" = \"8080\" ]; then\n  export NGINX_BACKEND_PORT=\"$JENKINS_PORT\"\nfi\nexport NGINX_WEBSOCKET_ENABLED=\"${NGINX_WEBSOCKET_ENABLED:-true}\"  # Enable WebSocket for Jenkins agents\nexport NGINX_GZIP_ENABLED=\"${NGINX_GZIP_ENABLED:-true}\"        # Enable compression\nexport NGINX_PROXY_TIMEOUT=\"${NGINX_PROXY_TIMEOUT:-300s}\"      # 5-minute timeout for long builds\n\n# Optional nginx features (disabled by default)\nexport NGINX_RATE_LIMIT_ENABLED=\"${NGINX_RATE_LIMIT_ENABLED:-false}\"\nexport NGINX_RATE_LIMIT_RATE=\"${NGINX_RATE_LIMIT_RATE:-100r/s}\"\nexport NGINX_SECURITY_HEADERS_ENABLED=\"${NGINX_SECURITY_HEADERS_ENABLED:-false}\"\n\n# Display stack information\necho \"\"\necho \"✅ Jenkins Full Stack Environment Ready\"\necho \"\"\necho \"Stack Configuration:\"\necho \"  Nginx:          http://localhost:${NGINX_PORT}${JENKINS_PREFIX}\"\necho \"  Jenkins:        http://localhost:${JENKINS_PORT}${JENKINS_PREFIX} (internal)\"\necho \"  Proxy:          nginx → Jenkins\"\necho \"  WebSocket:      ${NGINX_WEBSOCKET_ENABLED}\"\necho \"  Gzip:           ${NGINX_GZIP_ENABLED}\"\necho \"\"\necho \"Access Jenkins via nginx:\"\necho \"  URL:            http://localhost:${NGINX_PORT}${JENKINS_PREFIX}\"\necho \"  Admin:          admin / changeme\"\necho \"\"\necho \"Commands:\"\necho \"  flox activate -s              Start all services\"\necho \"  jenkins-stack-info            Show configuration\"\necho \"  jenkins-stack-health          Check all services\"\necho \"  jenkins-stack-url             Get nginx URL\"\necho \"  flox services status          Service status\"\necho \"  flox services logs nginx      View nginx logs\"\necho \"  flox services logs jenkins    View Jenkins logs\"\necho \"\"\necho \"Examples:\"\necho \"  NGINX_PORT=80 flox activate -s\"\necho \"  NGINX_RATE_LIMIT_ENABLED=true NGINX_RATE_LIMIT_RATE=50r/s flox activate -s\"\necho \"  NGINX_SECURITY_HEADERS_ENABLED=true flox activate -s\"\necho \"\"\n\ncd \"$FLOX_ENV_PROJECT\"\n"
+    },
+    "profile": {
+      "bash": "# Show Jenkins configuration\njenkins-info() {\n  echo \"Jenkins Headless Environment Configuration\"\n  echo \"\"\n  echo \"Version:\"\n  if [ -f \"$JENKINS_WAR\" ]; then\n    java -jar \"$JENKINS_WAR\" --version 2>&1 | head -1 || echo \"  (Jenkins WAR found)\"\n  else\n    echo \"  Jenkins package installed\"\n  fi\n  echo \"\"\n  echo \"Server:\"\n  echo \"  URL:            http://localhost:${JENKINS_PORT}${JENKINS_PREFIX}\"\n  echo \"  JENKINS_HOME:   ${JENKINS_HOME}\"\n  echo \"  Admin User:     ${JENKINS_ADMIN_USER}\"\n  echo \"\"\n  echo \"Configuration:\"\n  echo \"  Java Options:   ${JENKINS_JAVA_OPTS}\"\n  echo \"  JCasC Config:   ${JENKINS_CASC_CONFIG}\"\n  echo \"  Plugins:        ${JENKINS_PLUGINS}\"\n  echo \"\"\n  echo \"Logs:\"\n  echo \"  Service Log:    $FLOX_ENV_CACHE/logs/jenkins.log\"\n  echo \"  Jenkins Logs:   $JENKINS_HOME/logs/\"\n  echo \"\"\n}\nexport -f jenkins-info\n\n# Check Jenkins health\njenkins-health() {\n  local url=\"http://localhost:${JENKINS_PORT}${JENKINS_PREFIX}/login\"\n\n  if curl -sf \"$url\" >/dev/null 2>&1; then\n    echo \"✅ Jenkins is healthy\"\n    echo \"   URL: http://localhost:${JENKINS_PORT}${JENKINS_PREFIX}\"\n    return 0\n  else\n    echo \"❌ Jenkins is not responding\"\n    echo \"   URL: $url\"\n    echo \"\"\n    echo \"Troubleshooting:\"\n    echo \"  1. Check if service is running: flox services status\"\n    echo \"  2. View logs: jenkins-logs\"\n    echo \"  3. Check port: netstat -tlnp | grep ${JENKINS_PORT}\"\n    return 1\n  fi\n}\nexport -f jenkins-health\n\n# Tail Jenkins logs\njenkins-logs() {\n  local logfile=\"$FLOX_ENV_CACHE/logs/jenkins.log\"\n\n  if [ -f \"$logfile\" ]; then\n    tail -f \"$logfile\"\n  else\n    echo \"❌ Log file not found: $logfile\"\n    echo \"   Start Jenkins first: flox activate -s\"\n    return 1\n  fi\n}\nexport -f jenkins-logs\n\n# Install additional plugin\njenkins-plugin-install() {\n  if [ $# -eq 0 ]; then\n    echo \"Usage: jenkins-plugin-install <plugin-name> [plugin-name...]\"\n    echo \"\"\n    echo \"Examples:\"\n    echo \"  jenkins-plugin-install prometheus\"\n    echo \"  jenkins-plugin-install slack role-strategy\"\n    return 1\n  fi\n\n  if [ ! -f \"$JENKINS_PLUGIN_MGR_JAR\" ]; then\n    echo \"❌ Plugin manager not available\"\n    echo \"   Download manually or use jenkins-cli\"\n    return 1\n  fi\n\n  echo \"📦 Installing plugins: $*\"\n\n  java -jar \"$JENKINS_PLUGIN_MGR_JAR\" \\\n    --war \"$JENKINS_WAR\" \\\n    --plugin-download-directory \"$JENKINS_HOME/plugins\" \\\n    --plugins \"$*\" \\\n    --verbose\n\n  echo \"\"\n  echo \"✓ Plugins installed\"\n  echo \"⚠️  Restart Jenkins for changes to take effect:\"\n  echo \"   flox services restart jenkins\"\n}\nexport -f jenkins-plugin-install\n\n# Open Jenkins in browser\njenkins-url() {\n  local url=\"http://localhost:${JENKINS_PORT}${JENKINS_PREFIX}\"\n  echo \"$url\"\n\n  # Try to open in browser (optional)\n  if command -v xdg-open >/dev/null 2>&1; then\n    xdg-open \"$url\" 2>/dev/null || true\n  elif command -v open >/dev/null 2>&1; then\n    open \"$url\" 2>/dev/null || true\n  fi\n}\nexport -f jenkins-url\n\njenkins-stack-info() {\n  echo \"Jenkins Full Stack Configuration\"\n  echo \"\"\n  echo \"Nginx (Reverse Proxy):\"\n  echo \"  Public URL:     http://localhost:${NGINX_PORT}${JENKINS_PREFIX}\"\n  echo \"  Listen:         ${NGINX_HOST}:${NGINX_PORT}\"\n  echo \"  Mode:           ${NGINX_MODE}\"\n  echo \"  Backend:        ${NGINX_BACKEND_HOST}:${NGINX_BACKEND_PORT}\"\n  echo \"  WebSocket:      ${NGINX_WEBSOCKET_ENABLED}\"\n  echo \"  Gzip:           ${NGINX_GZIP_ENABLED}\"\n  echo \"  Proxy Timeout:  ${NGINX_PROXY_TIMEOUT}\"\n  if [ \"$NGINX_RATE_LIMIT_ENABLED\" = \"true\" ]; then\n    echo \"  Rate Limit:     ${NGINX_RATE_LIMIT_RATE} (burst: ${NGINX_RATE_LIMIT_BURST:-20})\"\n  fi\n  if [ \"$NGINX_SECURITY_HEADERS_ENABLED\" = \"true\" ]; then\n    echo \"  Security:       Headers enabled\"\n  fi\n  echo \"\"\n  echo \"Jenkins:\"\n  echo \"  Internal URL:   http://localhost:${JENKINS_PORT}${JENKINS_PREFIX}\"\n  echo \"  JENKINS_HOME:   ${JENKINS_HOME}\"\n  echo \"  Admin User:     ${JENKINS_ADMIN_USER}\"\n  echo \"  Plugins:        ${JENKINS_PLUGINS}\"\n  echo \"\"\n  echo \"Service Status:\"\n  flox services status 2>/dev/null || echo \"  Services not started (use: flox activate -s)\"\n}\nexport -f jenkins-stack-info\n\njenkins-stack-health() {\n  echo \"Checking Jenkins Full Stack health...\"\n  echo \"\"\n\n  # Check nginx\n  if curl -sf \"http://localhost:${NGINX_PORT}/\" >/dev/null 2>&1; then\n    echo \"✅ Nginx is responding at http://localhost:${NGINX_PORT}/\"\n  else\n    echo \"❌ Nginx is not responding at http://localhost:${NGINX_PORT}/\"\n    echo \"   Try: flox services status\"\n    echo \"   Try: flox services logs nginx\"\n    return 1\n  fi\n\n  # Check Jenkins through nginx\n  if curl -sf \"http://localhost:${NGINX_PORT}/login\" >/dev/null 2>&1; then\n    echo \"✅ Jenkins is accessible through nginx\"\n  else\n    echo \"❌ Jenkins is not accessible through nginx\"\n    echo \"   Try: flox services logs jenkins\"\n    return 1\n  fi\n\n  # Check Jenkins API through nginx\n  if curl -sf -u admin:changeme \"http://localhost:${NGINX_PORT}/api/json\" >/dev/null 2>&1; then\n    echo \"✅ Jenkins API is responding\"\n  else\n    echo \"⚠️  Jenkins API not responding (may still be starting)\"\n  fi\n\n  echo \"\"\n  echo \"Stack is healthy!\"\n  echo \"Access Jenkins: http://localhost:${NGINX_PORT}/\"\n}\nexport -f jenkins-stack-health\n\njenkins-stack-url() {\n  echo \"http://localhost:${NGINX_PORT}${JENKINS_PREFIX}\"\n}\nexport -f jenkins-stack-url\n\njenkins-stack-logs() {\n  echo \"Jenkins Full Stack Logs\"\n  echo \"\"\n  echo \"=== Nginx Logs ===\"\n  flox services logs nginx | tail -20\n  echo \"\"\n  echo \"=== Jenkins Logs ===\"\n  flox services logs jenkins | tail -20\n}\nexport -f jenkins-stack-logs\n",
+      "zsh": "# Show Jenkins configuration\njenkins-info() {\n  echo \"Jenkins Headless Environment Configuration\"\n  echo \"\"\n  echo \"Version:\"\n  if [ -f \"$JENKINS_WAR\" ]; then\n    java -jar \"$JENKINS_WAR\" --version 2>&1 | head -1 || echo \"  (Jenkins WAR found)\"\n  else\n    echo \"  Jenkins package installed\"\n  fi\n  echo \"\"\n  echo \"Server:\"\n  echo \"  URL:            http://localhost:${JENKINS_PORT}${JENKINS_PREFIX}\"\n  echo \"  JENKINS_HOME:   ${JENKINS_HOME}\"\n  echo \"  Admin User:     ${JENKINS_ADMIN_USER}\"\n  echo \"\"\n  echo \"Configuration:\"\n  echo \"  Java Options:   ${JENKINS_JAVA_OPTS}\"\n  echo \"  JCasC Config:   ${JENKINS_CASC_CONFIG}\"\n  echo \"  Plugins:        ${JENKINS_PLUGINS}\"\n  echo \"\"\n  echo \"Logs:\"\n  echo \"  Service Log:    $FLOX_ENV_CACHE/logs/jenkins.log\"\n  echo \"  Jenkins Logs:   $JENKINS_HOME/logs/\"\n  echo \"\"\n}\n\n# Check Jenkins health\njenkins-health() {\n  local url=\"http://localhost:${JENKINS_PORT}${JENKINS_PREFIX}/login\"\n\n  if curl -sf \"$url\" >/dev/null 2>&1; then\n    echo \"✅ Jenkins is healthy\"\n    echo \"   URL: http://localhost:${JENKINS_PORT}${JENKINS_PREFIX}\"\n    return 0\n  else\n    echo \"❌ Jenkins is not responding\"\n    echo \"   URL: $url\"\n    echo \"\"\n    echo \"Troubleshooting:\"\n    echo \"  1. Check if service is running: flox services status\"\n    echo \"  2. View logs: jenkins-logs\"\n    echo \"  3. Check port: netstat -tlnp | grep ${JENKINS_PORT}\"\n    return 1\n  fi\n}\n\n# Tail Jenkins logs\njenkins-logs() {\n  local logfile=\"$FLOX_ENV_CACHE/logs/jenkins.log\"\n\n  if [ -f \"$logfile\" ]; then\n    tail -f \"$logfile\"\n  else\n    echo \"❌ Log file not found: $logfile\"\n    echo \"   Start Jenkins first: flox activate -s\"\n    return 1\n  fi\n}\n\n# Install additional plugin\njenkins-plugin-install() {\n  if [ $# -eq 0 ]; then\n    echo \"Usage: jenkins-plugin-install <plugin-name> [plugin-name...]\"\n    echo \"\"\n    echo \"Examples:\"\n    echo \"  jenkins-plugin-install prometheus\"\n    echo \"  jenkins-plugin-install slack role-strategy\"\n    return 1\n  fi\n\n  if [ ! -f \"$JENKINS_PLUGIN_MGR_JAR\" ]; then\n    echo \"❌ Plugin manager not available\"\n    echo \"   Download manually or use jenkins-cli\"\n    return 1\n  fi\n\n  echo \"📦 Installing plugins: $*\"\n\n  java -jar \"$JENKINS_PLUGIN_MGR_JAR\" \\\n    --war \"$JENKINS_WAR\" \\\n    --plugin-download-directory \"$JENKINS_HOME/plugins\" \\\n    --plugins \"$*\" \\\n    --verbose\n\n  echo \"\"\n  echo \"✓ Plugins installed\"\n  echo \"⚠️  Restart Jenkins for changes to take effect:\"\n  echo \"   flox services restart jenkins\"\n}\n\n# Open Jenkins in browser\njenkins-url() {\n  local url=\"http://localhost:${JENKINS_PORT}${JENKINS_PREFIX}\"\n  echo \"$url\"\n\n  # Try to open in browser (optional)\n  if command -v xdg-open >/dev/null 2>&1; then\n    xdg-open \"$url\" 2>/dev/null || true\n  elif command -v open >/dev/null 2>&1; then\n    open \"$url\" 2>/dev/null || true\n  fi\n}\n\njenkins-stack-info() {\n  echo \"Jenkins Full Stack Configuration\"\n  echo \"\"\n  echo \"Nginx (Reverse Proxy):\"\n  echo \"  Public URL:     http://localhost:${NGINX_PORT}${JENKINS_PREFIX}\"\n  echo \"  Listen:         ${NGINX_HOST}:${NGINX_PORT}\"\n  echo \"  Mode:           ${NGINX_MODE}\"\n  echo \"  Backend:        ${NGINX_BACKEND_HOST}:${NGINX_BACKEND_PORT}\"\n  echo \"  WebSocket:      ${NGINX_WEBSOCKET_ENABLED}\"\n  echo \"  Gzip:           ${NGINX_GZIP_ENABLED}\"\n  echo \"  Proxy Timeout:  ${NGINX_PROXY_TIMEOUT}\"\n  if [ \"$NGINX_RATE_LIMIT_ENABLED\" = \"true\" ]; then\n    echo \"  Rate Limit:     ${NGINX_RATE_LIMIT_RATE} (burst: ${NGINX_RATE_LIMIT_BURST:-20})\"\n  fi\n  if [ \"$NGINX_SECURITY_HEADERS_ENABLED\" = \"true\" ]; then\n    echo \"  Security:       Headers enabled\"\n  fi\n  echo \"\"\n  echo \"Jenkins:\"\n  echo \"  Internal URL:   http://localhost:${JENKINS_PORT}${JENKINS_PREFIX}\"\n  echo \"  JENKINS_HOME:   ${JENKINS_HOME}\"\n  echo \"  Admin User:     ${JENKINS_ADMIN_USER}\"\n  echo \"  Plugins:        ${JENKINS_PLUGINS}\"\n  echo \"\"\n  echo \"Service Status:\"\n  flox services status 2>/dev/null || echo \"  Services not started (use: flox activate -s)\"\n}\n\njenkins-stack-health() {\n  echo \"Checking Jenkins Full Stack health...\"\n  echo \"\"\n\n  # Check nginx\n  if curl -sf \"http://localhost:${NGINX_PORT}/\" >/dev/null 2>&1; then\n    echo \"✅ Nginx is responding at http://localhost:${NGINX_PORT}/\"\n  else\n    echo \"❌ Nginx is not responding at http://localhost:${NGINX_PORT}/\"\n    echo \"   Try: flox services status\"\n    echo \"   Try: flox services logs nginx\"\n    return 1\n  fi\n\n  # Check Jenkins through nginx\n  if curl -sf \"http://localhost:${NGINX_PORT}/login\" >/dev/null 2>&1; then\n    echo \"✅ Jenkins is accessible through nginx\"\n  else\n    echo \"❌ Jenkins is not accessible through nginx\"\n    echo \"   Try: flox services logs jenkins\"\n    return 1\n  fi\n\n  # Check Jenkins API through nginx\n  if curl -sf -u admin:changeme \"http://localhost:${NGINX_PORT}/api/json\" >/dev/null 2>&1; then\n    echo \"✅ Jenkins API is responding\"\n  else\n    echo \"⚠️  Jenkins API not responding (may still be starting)\"\n  fi\n\n  echo \"\"\n  echo \"Stack is healthy!\"\n  echo \"Access Jenkins: http://localhost:${NGINX_PORT}/\"\n}\n\njenkins-stack-url() {\n  echo \"http://localhost:${NGINX_PORT}${JENKINS_PREFIX}\"\n}\n\njenkins-stack-logs() {\n  echo \"Jenkins Full Stack Logs\"\n  echo \"\"\n  echo \"=== Nginx Logs ===\"\n  flox services logs nginx | tail -20\n  echo \"\"\n  echo \"=== Jenkins Logs ===\"\n  flox services logs jenkins | tail -20\n}\n",
+      "fish": "# Show Jenkins configuration\nfunction jenkins-info\n  echo \"Jenkins Headless Environment Configuration\"\n  echo \"\"\n  echo \"Version:\"\n  if test -f \"$JENKINS_WAR\"\n    java -jar \"$JENKINS_WAR\" --version 2>&1 | head -1; or echo \"  (Jenkins WAR found)\"\n  else\n    echo \"  Jenkins package installed\"\n  end\n  echo \"\"\n  echo \"Server:\"\n  echo \"  URL:            http://localhost:$JENKINS_PORT$JENKINS_PREFIX\"\n  echo \"  JENKINS_HOME:   $JENKINS_HOME\"\n  echo \"  Admin User:     $JENKINS_ADMIN_USER\"\n  echo \"\"\n  echo \"Configuration:\"\n  echo \"  Java Options:   $JENKINS_JAVA_OPTS\"\n  echo \"  JCasC Config:   $JENKINS_CASC_CONFIG\"\n  echo \"  Plugins:        $JENKINS_PLUGINS\"\n  echo \"\"\n  echo \"Logs:\"\n  echo \"  Service Log:    $FLOX_ENV_CACHE/logs/jenkins.log\"\n  echo \"  Jenkins Logs:   $JENKINS_HOME/logs/\"\n  echo \"\"\nend\n\n# Check Jenkins health\nfunction jenkins-health\n  set url \"http://localhost:$JENKINS_PORT$JENKINS_PREFIX/login\"\n\n  if curl -sf \"$url\" >/dev/null 2>&1\n    echo \"✅ Jenkins is healthy\"\n    echo \"   URL: http://localhost:$JENKINS_PORT$JENKINS_PREFIX\"\n    return 0\n  else\n    echo \"❌ Jenkins is not responding\"\n    echo \"   URL: $url\"\n    echo \"\"\n    echo \"Troubleshooting:\"\n    echo \"  1. Check if service is running: flox services status\"\n    echo \"  2. View logs: jenkins-logs\"\n    echo \"  3. Check port: netstat -tlnp | grep $JENKINS_PORT\"\n    return 1\n  end\nend\n\n# Tail Jenkins logs\nfunction jenkins-logs\n  set logfile \"$FLOX_ENV_CACHE/logs/jenkins.log\"\n\n  if test -f \"$logfile\"\n    tail -f \"$logfile\"\n  else\n    echo \"❌ Log file not found: $logfile\"\n    echo \"   Start Jenkins first: flox activate -s\"\n    return 1\n  end\nend\n\n# Install additional plugin\nfunction jenkins-plugin-install\n  if test (count $argv) -eq 0\n    echo \"Usage: jenkins-plugin-install <plugin-name> [plugin-name...]\"\n    echo \"\"\n    echo \"Examples:\"\n    echo \"  jenkins-plugin-install prometheus\"\n    echo \"  jenkins-plugin-install slack role-strategy\"\n    return 1\n  end\n\n  if not test -f \"$JENKINS_PLUGIN_MGR_JAR\"\n    echo \"❌ Plugin manager not available\"\n    echo \"   Download manually or use jenkins-cli\"\n    return 1\n  end\n\n  echo \"📦 Installing plugins: $argv\"\n\n  java -jar \"$JENKINS_PLUGIN_MGR_JAR\" \\\n    --war \"$JENKINS_WAR\" \\\n    --plugin-download-directory \"$JENKINS_HOME/plugins\" \\\n    --plugins \"$argv\" \\\n    --verbose\n\n  echo \"\"\n  echo \"✓ Plugins installed\"\n  echo \"⚠️  Restart Jenkins for changes to take effect:\"\n  echo \"   flox services restart jenkins\"\nend\n\n# Open Jenkins in browser\nfunction jenkins-url\n  set url \"http://localhost:$JENKINS_PORT$JENKINS_PREFIX\"\n  echo \"$url\"\n\n  # Try to open in browser (optional)\n  if command -v xdg-open >/dev/null 2>&1\n    xdg-open \"$url\" 2>/dev/null; or true\n  else if command -v open >/dev/null 2>&1\n    open \"$url\" 2>/dev/null; or true\n  end\nend\n\nfunction jenkins-stack-info\n  echo \"Jenkins Full Stack Configuration\"\n  echo \"\"\n  echo \"Nginx (Reverse Proxy):\"\n  echo \"  Public URL:     http://localhost:$NGINX_PORT$JENKINS_PREFIX\"\n  echo \"  Listen:         $NGINX_HOST:$NGINX_PORT\"\n  echo \"  Mode:           $NGINX_MODE\"\n  echo \"  Backend:        $NGINX_BACKEND_HOST:$NGINX_BACKEND_PORT\"\n  echo \"  WebSocket:      $NGINX_WEBSOCKET_ENABLED\"\n  echo \"  Gzip:           $NGINX_GZIP_ENABLED\"\n  echo \"  Proxy Timeout:  $NGINX_PROXY_TIMEOUT\"\n  if test \"$NGINX_RATE_LIMIT_ENABLED\" = \"true\"\n    echo \"  Rate Limit:     $NGINX_RATE_LIMIT_RATE (burst: \"(set -q NGINX_RATE_LIMIT_BURST && echo $NGINX_RATE_LIMIT_BURST || echo 20)\")\"\n  end\n  if test \"$NGINX_SECURITY_HEADERS_ENABLED\" = \"true\"\n    echo \"  Security:       Headers enabled\"\n  end\n  echo \"\"\n  echo \"Jenkins:\"\n  echo \"  Internal URL:   http://localhost:$JENKINS_PORT$JENKINS_PREFIX\"\n  echo \"  JENKINS_HOME:   $JENKINS_HOME\"\n  echo \"  Admin User:     $JENKINS_ADMIN_USER\"\n  echo \"  Plugins:        $JENKINS_PLUGINS\"\n  echo \"\"\n  echo \"Service Status:\"\n  flox services status 2>/dev/null || echo \"  Services not started (use: flox activate -s)\"\nend\n\nfunction jenkins-stack-health\n  echo \"Checking Jenkins Full Stack health...\"\n  echo \"\"\n\n  # Check nginx\n  if curl -sf \"http://localhost:$NGINX_PORT/\" >/dev/null 2>&1\n    echo \"✅ Nginx is responding at http://localhost:$NGINX_PORT/\"\n  else\n    echo \"❌ Nginx is not responding at http://localhost:$NGINX_PORT/\"\n    echo \"   Try: flox services status\"\n    echo \"   Try: flox services logs nginx\"\n    return 1\n  end\n\n  # Check Jenkins through nginx\n  if curl -sf \"http://localhost:$NGINX_PORT/login\" >/dev/null 2>&1\n    echo \"✅ Jenkins is accessible through nginx\"\n  else\n    echo \"❌ Jenkins is not accessible through nginx\"\n    echo \"   Try: flox services logs jenkins\"\n    return 1\n  end\n\n  # Check Jenkins API through nginx\n  if curl -sf -u admin:changeme \"http://localhost:$NGINX_PORT/api/json\" >/dev/null 2>&1\n    echo \"✅ Jenkins API is responding\"\n  else\n    echo \"⚠️  Jenkins API not responding (may still be starting)\"\n  end\n\n  echo \"\"\n  echo \"Stack is healthy!\"\n  echo \"Access Jenkins: http://localhost:$NGINX_PORT/\"\nend\n\nfunction jenkins-stack-url\n  echo \"http://localhost:$NGINX_PORT$JENKINS_PREFIX\"\nend\n\nfunction jenkins-stack-logs\n  echo \"Jenkins Full Stack Logs\"\n  echo \"\"\n  echo \"=== Nginx Logs ===\"\n  flox services logs nginx | tail -20\n  echo \"\"\n  echo \"=== Jenkins Logs ===\"\n  flox services logs jenkins | tail -20\nend\n"
+    },
+    "options": {
+      "systems": [
+        "aarch64-darwin",
+        "aarch64-linux",
+        "x86_64-darwin",
+        "x86_64-linux"
+      ]
+    },
+    "services": {
+      "jenkins": {
+        "command": "# Ensure JENKINS_HOME exists\nmkdir -p \"$JENKINS_HOME\"\nmkdir -p \"$FLOX_ENV_CACHE/logs\"\n\n# Install plugins if JENKINS_PLUGIN_MGR_JAR is available\nif [ -n \"$JENKINS_PLUGIN_MGR_JAR\" ] && [ -f \"$JENKINS_PLUGIN_MGR_JAR\" ] && [ -n \"$JENKINS_PLUGINS\" ]; then\n  echo \"📦 Installing Jenkins plugins...\"\n  echo \"   Plugins: $JENKINS_PLUGINS\"\n\n  java -jar \"$JENKINS_PLUGIN_MGR_JAR\" \\\n    --war \"$JENKINS_WAR\" \\\n    --plugin-download-directory \"$JENKINS_HOME/plugins\" \\\n    --plugins $JENKINS_PLUGINS \\\n    --verbose || echo \"⚠️  Some plugins may have failed to install\"\n\n  echo \"✓ Plugin installation complete\"\nfi\n\n# Start Jenkins\necho \"🚀 Starting Jenkins...\"\necho \"   URL: http://localhost:${JENKINS_PORT}${JENKINS_PREFIX}\"\necho \"   JENKINS_HOME: $JENKINS_HOME\"\necho \"\"\n\nexec java $JENKINS_JAVA_OPTS \\\n  -Djenkins.install.runSetupWizard=false \\\n  -DJENKINS_HOME=\"$JENKINS_HOME\" \\\n  -Dcasc.jenkins.config=\"$JENKINS_CASC_CONFIG\" \\\n  -jar \"$JENKINS_WAR\" \\\n  --httpPort=\"$JENKINS_PORT\" \\\n  --prefix=\"$JENKINS_PREFIX\" \\\n  2>&1 | tee -a \"$FLOX_ENV_CACHE/logs/jenkins.log\"\n"
+      },
+      "nginx": {
+        "command": "set -e\nmkdir -p \"$FLOX_ENV_CACHE/logs\"\n\nCONFIG_DIR=\"$FLOX_ENV_CACHE/config\"\nFINAL_CONF=\"$CONFIG_DIR/nginx.conf\"\n\n# Compute nginx mime.types path\nNGINX_BIN=$(which nginx)\nNGINX_PREFIX=$(dirname $(dirname \"$NGINX_BIN\"))\nexport NGINX_MIME_TYPES=\"$NGINX_PREFIX/conf/mime.types\"\n\n# Generate feature configuration blocks\ngenerate_features() {\n  # SSL/TLS Configuration\n  if [ \"$NGINX_SSL_ENABLED\" = \"true\" ]; then\n    if [ -z \"$NGINX_SSL_CERT\" ] || [ -z \"$NGINX_SSL_KEY\" ]; then\n      echo \"Error: NGINX_SSL_ENABLED=true but NGINX_SSL_CERT or NGINX_SSL_KEY not set\"\n      return 1\n    fi\n    if [ ! -f \"$NGINX_SSL_CERT\" ]; then\n      echo \"Error: SSL certificate not found: $NGINX_SSL_CERT\"\n      return 1\n    fi\n    if [ ! -f \"$NGINX_SSL_KEY\" ]; then\n      echo \"Error: SSL key not found: $NGINX_SSL_KEY\"\n      return 1\n    fi\n    export SSL_LISTEN=\" ssl\"\n    export SSL_CONFIG=\"ssl_certificate $NGINX_SSL_CERT;\n    ssl_certificate_key $NGINX_SSL_KEY;\n    ssl_protocols $NGINX_SSL_PROTOCOLS;\n    ssl_ciphers HIGH:!aNULL:!MD5;\"\n  else\n    export SSL_LISTEN=\"\"\n    export SSL_CONFIG=\"\"\n  fi\n\n  # Rate Limiting Configuration\n  if [ \"$NGINX_RATE_LIMIT_ENABLED\" = \"true\" ]; then\n    export RATE_LIMIT_ZONE=\"limit_req_zone \"'$binary_remote_addr'\" zone=ratelimit:10m rate=$NGINX_RATE_LIMIT_RATE;\"\n    export RATE_LIMIT_REQ=\"limit_req zone=ratelimit burst=$NGINX_RATE_LIMIT_BURST nodelay;\"\n  else\n    export RATE_LIMIT_ZONE=\"\"\n    export RATE_LIMIT_REQ=\"\"\n  fi\n\n  # Load Balancer Upstream Block\n  if [ \"$NGINX_MODE\" = \"load_balancer\" ]; then\n    if [ -z \"$NGINX_UPSTREAM_SERVERS\" ]; then\n      echo \"Error: NGINX_MODE=load_balancer but NGINX_UPSTREAM_SERVERS not set\"\n      echo \"Example: NGINX_UPSTREAM_SERVERS=\\\"app1:8080,app2:8080,app3:8080\\\"\"\n      return 1\n    fi\n\n    # Determine load balancing directive\n    case \"$NGINX_LB_METHOD\" in\n      round_robin)\n        LB_DIRECTIVE=\"\"\n        ;;\n      least_conn)\n        LB_DIRECTIVE=\"least_conn;\"\n        ;;\n      ip_hash)\n        LB_DIRECTIVE=\"ip_hash;\"\n        ;;\n      *)\n        echo \"Error: Unknown NGINX_LB_METHOD: $NGINX_LB_METHOD\"\n        echo \"Supported: round_robin, least_conn, ip_hash\"\n        return 1\n        ;;\n    esac\n\n    # Generate upstream block\n    UPSTREAM=\"upstream backend {\"$'\\n'\"    $LB_DIRECTIVE\"$'\\n'\n    IFS=',' read -ra SERVERS <<< \"$NGINX_UPSTREAM_SERVERS\"\n    for server in \"${SERVERS[@]}\"; do\n      server=$(echo \"$server\" | xargs)  # Trim whitespace\n      UPSTREAM+=\"    server $server;\"$'\\n'\n    done\n    UPSTREAM+=\"}\"\n    export UPSTREAM_BLOCK=\"$UPSTREAM\"\n  else\n    export UPSTREAM_BLOCK=\"\"\n  fi\n\n  # Gzip Compression Configuration\n  if [ \"$NGINX_GZIP_ENABLED\" = \"true\" ]; then\n    export GZIP_CONFIG=\"gzip on;\n    gzip_vary on;\n    gzip_proxied any;\n    gzip_comp_level $NGINX_GZIP_LEVEL;\n    gzip_min_length $NGINX_GZIP_MIN_LENGTH;\n    gzip_types $NGINX_GZIP_TYPES;\"\n  else\n    export GZIP_CONFIG=\"\"\n  fi\n\n  # Security Headers Configuration\n  if [ \"$NGINX_SECURITY_HEADERS_ENABLED\" = \"true\" ]; then\n    HEADERS=\"add_header X-Frame-Options SAMEORIGIN always;\n    add_header X-Content-Type-Options nosniff always;\n    add_header X-XSS-Protection \\\"1; mode=block\\\" always;\n    add_header Referrer-Policy no-referrer-when-downgrade always;\"\n\n    # Add HSTS if SSL is enabled\n    if [ \"$NGINX_SSL_ENABLED\" = \"true\" ]; then\n      HEADERS+=$'\\n'\"    add_header Strict-Transport-Security \\\"max-age=31536000; includeSubDomains\\\" always;\"\n    fi\n\n    export SECURITY_HEADERS=\"$HEADERS\"\n  else\n    export SECURITY_HEADERS=\"\"\n  fi\n\n  # Caching Configuration (for static mode)\n  if [ \"$NGINX_CACHE_ENABLED\" = \"true\" ]; then\n    export CACHE_HTML=\"add_header Cache-Control \\\"public, max-age=3600\\\";\n            expires $NGINX_CACHE_HTML_EXPIRE;\"\n\n    export CACHE_STATIC=\"location ~* \\.(jpg|jpeg|png|gif|ico|css|js|svg|woff|woff2|ttf|eot)$ {\n            expires $NGINX_CACHE_STATIC_EXPIRE;\n            add_header Cache-Control \\\"public, immutable\\\";\n        }\"\n  else\n    export CACHE_HTML=\"\"\n    export CACHE_STATIC=\"\"\n  fi\n\n  # WebSocket Configuration (for proxy and load_balancer modes)\n  if [ \"$NGINX_WEBSOCKET_ENABLED\" = \"true\" ]; then\n    export WEBSOCKET_CONFIG=\"proxy_http_version 1.1;\n            proxy_set_header Upgrade \\$http_upgrade;\n            proxy_set_header Connection \\\"upgrade\\\";\"\n  else\n    export WEBSOCKET_CONFIG=\"\"\n  fi\n\n  # URL Rewriting Configuration\n  REWRITE=\"\"\n\n  # Force HTTPS redirect\n  if [ \"$NGINX_FORCE_HTTPS\" = \"true\" ]; then\n    REWRITE+=\"if (\\$scheme != \\\"https\\\") {\"$'\\n'\n    REWRITE+=\"            return 301 https://\\$host\\$request_uri;\"$'\\n'\n    REWRITE+=\"        }\"$'\\n'\n  fi\n\n  # Force WWW or non-WWW\n  if [ \"$NGINX_FORCE_WWW\" = \"add_www\" ]; then\n    REWRITE+=\"if (\\$host !~* ^www\\\\.) {\"$'\\n'\n    REWRITE+=\"            return 301 \\$scheme://www.\\$host\\$request_uri;\"$'\\n'\n    REWRITE+=\"        }\"$'\\n'\n  elif [ \"$NGINX_FORCE_WWW\" = \"remove_www\" ]; then\n    REWRITE+=\"if (\\$host ~* ^www\\\\.(.*)) {\"$'\\n'\n    REWRITE+=\"            return 301 \\$scheme://\\$1\\$request_uri;\"$'\\n'\n    REWRITE+=\"        }\"$'\\n'\n  fi\n\n  export REWRITE_RULES=\"$REWRITE\"\n}\n\n# Select mode template\ncase \"$NGINX_MODE\" in\n  proxy)\n    TEMPLATE=\"$CONFIG_DIR/nginx-proxy.template\"\n    ;;\n  static)\n    TEMPLATE=\"$CONFIG_DIR/nginx-static.template\"\n    ;;\n  load_balancer)\n    TEMPLATE=\"$CONFIG_DIR/nginx-loadbalancer.template\"\n    ;;\n  *)\n    echo \"Error: Unknown NGINX_MODE: $NGINX_MODE\"\n    echo \"Supported modes: proxy, static, load_balancer\"\n    exit 1\n    ;;\nesac\n\nif [ ! -f \"$TEMPLATE\" ]; then\n  echo \"Error: Template not found: $TEMPLATE\"\n  exit 1\nfi\n\n# Generate feature configurations\ngenerate_features || exit 1\n\n# Apply envsubst with explicit variable list (preserves nginx variables)\nenvsubst '${NGINX_WORKER_PROCESSES} ${NGINX_LOG_DIR} ${NGINX_WORKER_CONNECTIONS} ${NGINX_MIME_TYPES} ${GZIP_CONFIG} ${RATE_LIMIT_ZONE} ${NGINX_HOST} ${NGINX_PORT} ${SSL_LISTEN} ${SSL_CONFIG} ${SECURITY_HEADERS} ${RATE_LIMIT_REQ} ${NGINX_BACKEND_HOST} ${NGINX_BACKEND_PORT} ${NGINX_PROXY_TIMEOUT} ${NGINX_ROOT} ${NGINX_INDEX} ${UPSTREAM_BLOCK} ${CACHE_HTML} ${CACHE_STATIC} ${WEBSOCKET_CONFIG} ${REWRITE_RULES}' < \"$TEMPLATE\" > \"$FINAL_CONF\"\n\n# Validate configuration\nif ! nginx -t -c \"$FINAL_CONF\"; then\n  echo \"Error: nginx configuration validation failed\"\n  echo \"Configuration file: $FINAL_CONF\"\n  exit 1\nfi\n\n# Start nginx\nexec nginx -c \"$FINAL_CONF\" -g \"daemon off;\" 2>&1 | tee -a \"$FLOX_ENV_CACHE/logs/nginx.log\"\n"
+      }
+    }
+  },
+  "packages": [
+    {
+      "attr_path": "curl",
+      "broken": false,
+      "derivation": "/nix/store/cfq3y8vdnkw626yx70f8dd92gxmkbzzb-curl-8.16.0.drv",
+      "description": "Command line tool for transferring files with URL syntax",
+      "install_id": "curl",
+      "license": "curl",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=b3d51a0365f6695e7dd5cdf3e180604530ed33b4",
+      "name": "curl-8.16.0",
+      "pname": "curl",
+      "rev": "b3d51a0365f6695e7dd5cdf3e180604530ed33b4",
+      "rev_count": 888552,
+      "rev_date": "2025-11-02T19:18:41Z",
+      "scrape_date": "2025-11-04T00:35:18.499679Z",
+      "stabilities": [
+        "unstable"
+      ],
+      "unfree": false,
+      "version": "8.16.0",
+      "outputs_to_install": [
+        "bin",
+        "man"
+      ],
+      "outputs": {
+        "bin": "/nix/store/982cq6ga80yn9nghx479fbqqwf7kf8n1-curl-8.16.0-bin",
+        "dev": "/nix/store/qxzi15y4apihsg2infxn66b6hz5lws3h-curl-8.16.0-dev",
+        "devdoc": "/nix/store/bz1ap1ahksz62gz79h8anfhsyz1ir0jw-curl-8.16.0-devdoc",
+        "man": "/nix/store/rsdippinyvz3myz505vi6sgx8vmh30px-curl-8.16.0-man",
+        "out": "/nix/store/8fgfydjv40m1pw8bpwm30kxw24284fvg-curl-8.16.0"
+      },
+      "system": "aarch64-darwin",
+      "group": "toplevel",
+      "priority": 5
+    },
+    {
+      "attr_path": "curl",
+      "broken": false,
+      "derivation": "/nix/store/lf1pb40nkl3lx7ww85r1pbc8gg89yihb-curl-8.16.0.drv",
+      "description": "Command line tool for transferring files with URL syntax",
+      "install_id": "curl",
+      "license": "curl",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=b3d51a0365f6695e7dd5cdf3e180604530ed33b4",
+      "name": "curl-8.16.0",
+      "pname": "curl",
+      "rev": "b3d51a0365f6695e7dd5cdf3e180604530ed33b4",
+      "rev_count": 888552,
+      "rev_date": "2025-11-02T19:18:41Z",
+      "scrape_date": "2025-11-05T16:28:57.869212Z",
+      "stabilities": [
+        "unstable"
+      ],
+      "unfree": false,
+      "version": "8.16.0",
+      "outputs_to_install": [
+        "bin",
+        "man"
+      ],
+      "outputs": {
+        "bin": "/nix/store/qnakzidljavpz27az7gjkyydb7ckjg6r-curl-8.16.0-bin",
+        "debug": "/nix/store/zxlv6n85qw1lzmx4xblgc0lz1vv0hg1f-curl-8.16.0-debug",
+        "dev": "/nix/store/aypq6najvfyhzx4k80a1vy329qmqj9zb-curl-8.16.0-dev",
+        "devdoc": "/nix/store/b7w1516fx1mywmkl9dqsm1rnjmpvz7a3-curl-8.16.0-devdoc",
+        "man": "/nix/store/dfgh660rbbj8s3l3xvy8klmkks4pkg3w-curl-8.16.0-man",
+        "out": "/nix/store/pl917hpmpx64fisdisv2zjmk09grvm4g-curl-8.16.0"
+      },
+      "system": "aarch64-linux",
+      "group": "toplevel",
+      "priority": 5
+    },
+    {
+      "attr_path": "curl",
+      "broken": false,
+      "derivation": "/nix/store/djn6c12nnlc62i4akzdrg0i2gylndr4a-curl-8.16.0.drv",
+      "description": "Command line tool for transferring files with URL syntax",
+      "install_id": "curl",
+      "license": "curl",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=b3d51a0365f6695e7dd5cdf3e180604530ed33b4",
+      "name": "curl-8.16.0",
+      "pname": "curl",
+      "rev": "b3d51a0365f6695e7dd5cdf3e180604530ed33b4",
+      "rev_count": 888552,
+      "rev_date": "2025-11-02T19:18:41Z",
+      "scrape_date": "2025-11-05T16:54:57.545728Z",
+      "stabilities": [
+        "unstable"
+      ],
+      "unfree": false,
+      "version": "8.16.0",
+      "outputs_to_install": [
+        "bin",
+        "man"
+      ],
+      "outputs": {
+        "bin": "/nix/store/irf7vpckgi9128jh7by1438ns3qgvfqz-curl-8.16.0-bin",
+        "dev": "/nix/store/sv8p7spya9zf0163xb454wvl7jbmws57-curl-8.16.0-dev",
+        "devdoc": "/nix/store/85fm556955nskhdr8q66ny2fk4fggzh1-curl-8.16.0-devdoc",
+        "man": "/nix/store/a6znnvphjwyzhxjq8vbkr35ng6xglbfb-curl-8.16.0-man",
+        "out": "/nix/store/sfr307vn71cyfnfmgckhwggq251rnrfr-curl-8.16.0"
+      },
+      "system": "x86_64-darwin",
+      "group": "toplevel",
+      "priority": 5
+    },
+    {
+      "attr_path": "curl",
+      "broken": false,
+      "derivation": "/nix/store/cgjg8cb7pdgsqswv5p5n9pr1sm920d8d-curl-8.16.0.drv",
+      "description": "Command line tool for transferring files with URL syntax",
+      "install_id": "curl",
+      "license": "curl",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=b3d51a0365f6695e7dd5cdf3e180604530ed33b4",
+      "name": "curl-8.16.0",
+      "pname": "curl",
+      "rev": "b3d51a0365f6695e7dd5cdf3e180604530ed33b4",
+      "rev_count": 888552,
+      "rev_date": "2025-11-02T19:18:41Z",
+      "scrape_date": "2025-11-05T17:20:47.204008Z",
+      "stabilities": [
+        "unstable"
+      ],
+      "unfree": false,
+      "version": "8.16.0",
+      "outputs_to_install": [
+        "bin",
+        "man"
+      ],
+      "outputs": {
+        "bin": "/nix/store/xvh4bi0cc2cw18lpn6ax9m4zwnn1s9lj-curl-8.16.0-bin",
+        "debug": "/nix/store/33lwk5v78214pmlnhphbijpvbh8gjbbq-curl-8.16.0-debug",
+        "dev": "/nix/store/b65dj8iryqd1bss2qlg5ipxqndngcl9n-curl-8.16.0-dev",
+        "devdoc": "/nix/store/bz67f9xwj2i7zanwkrxb6dy9bbm2283d-curl-8.16.0-devdoc",
+        "man": "/nix/store/q4jbdyq7f0zks4i9xhfyx2pj6x92g9dj-curl-8.16.0-man",
+        "out": "/nix/store/8np9zvwqmwsnbkbrwm8x7jq4ygdkjz5g-curl-8.16.0"
+      },
+      "system": "x86_64-linux",
+      "group": "toplevel",
+      "priority": 5
+    },
+    {
+      "attr_path": "gettext",
+      "broken": false,
+      "derivation": "/nix/store/98phm0vqamz9i95z0am002ssskra20lx-gettext-0.25.1.drv",
+      "description": "Well integrated set of translation tools and documentation",
+      "install_id": "gettext",
+      "license": "GPL-2.0-or-later",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=b3d51a0365f6695e7dd5cdf3e180604530ed33b4",
+      "name": "gettext-0.25.1",
+      "pname": "gettext",
+      "rev": "b3d51a0365f6695e7dd5cdf3e180604530ed33b4",
+      "rev_count": 888552,
+      "rev_date": "2025-11-02T19:18:41Z",
+      "scrape_date": "2025-11-04T00:35:19.088730Z",
+      "stabilities": [
+        "unstable"
+      ],
+      "unfree": false,
+      "version": "0.25.1",
+      "outputs_to_install": [
+        "man",
+        "out"
+      ],
+      "outputs": {
+        "doc": "/nix/store/xmal1m0kq50a4zbcpskzicmz5vm5fmzc-gettext-0.25.1-doc",
+        "info": "/nix/store/1xf1baaxdd3gnnadz5bw35r84mdr2fm8-gettext-0.25.1-info",
+        "man": "/nix/store/vr5sj38sp1h35l3wn04hb90si0bx8skk-gettext-0.25.1-man",
+        "out": "/nix/store/jl1421wiawqdgasrqqwd4d4jznvimfma-gettext-0.25.1"
+      },
+      "system": "aarch64-darwin",
+      "group": "toplevel",
+      "priority": 5
+    },
+    {
+      "attr_path": "gettext",
+      "broken": false,
+      "derivation": "/nix/store/83ck901079gq26vr61lsjr09s8p9ydc6-gettext-0.25.1.drv",
+      "description": "Well integrated set of translation tools and documentation",
+      "install_id": "gettext",
+      "license": "GPL-2.0-or-later",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=b3d51a0365f6695e7dd5cdf3e180604530ed33b4",
+      "name": "gettext-0.25.1",
+      "pname": "gettext",
+      "rev": "b3d51a0365f6695e7dd5cdf3e180604530ed33b4",
+      "rev_count": 888552,
+      "rev_date": "2025-11-02T19:18:41Z",
+      "scrape_date": "2025-11-05T16:28:58.768462Z",
+      "stabilities": [
+        "unstable"
+      ],
+      "unfree": false,
+      "version": "0.25.1",
+      "outputs_to_install": [
+        "man",
+        "out"
+      ],
+      "outputs": {
+        "doc": "/nix/store/iz7xzdddv7m1flkya2dlzm26lb371sxp-gettext-0.25.1-doc",
+        "info": "/nix/store/qd5w10l4g86jzxzs861smqzba67zbn5x-gettext-0.25.1-info",
+        "man": "/nix/store/0gr8ah7z6qhypspsp3bjv8ld2pa5b59i-gettext-0.25.1-man",
+        "out": "/nix/store/zzn5w3wi2gw15h59vpylmkl8b64lmbxr-gettext-0.25.1"
+      },
+      "system": "aarch64-linux",
+      "group": "toplevel",
+      "priority": 5
+    },
+    {
+      "attr_path": "gettext",
+      "broken": false,
+      "derivation": "/nix/store/zc5xhqs06v58044l7phl4lrnmnv9ynqz-gettext-0.25.1.drv",
+      "description": "Well integrated set of translation tools and documentation",
+      "install_id": "gettext",
+      "license": "GPL-2.0-or-later",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=b3d51a0365f6695e7dd5cdf3e180604530ed33b4",
+      "name": "gettext-0.25.1",
+      "pname": "gettext",
+      "rev": "b3d51a0365f6695e7dd5cdf3e180604530ed33b4",
+      "rev_count": 888552,
+      "rev_date": "2025-11-02T19:18:41Z",
+      "scrape_date": "2025-11-05T16:54:58.117797Z",
+      "stabilities": [
+        "unstable"
+      ],
+      "unfree": false,
+      "version": "0.25.1",
+      "outputs_to_install": [
+        "man",
+        "out"
+      ],
+      "outputs": {
+        "doc": "/nix/store/il9rgrblzzgim9fgy15m7jadigg90gc9-gettext-0.25.1-doc",
+        "info": "/nix/store/20pmnjr88f748mnfjvz3c3bksjff5pvl-gettext-0.25.1-info",
+        "man": "/nix/store/2xrbyji0c3z2cha1r95w07432nh5hzfb-gettext-0.25.1-man",
+        "out": "/nix/store/08l09pgc582k9fkrrjxdhpyl5qmgrahj-gettext-0.25.1"
+      },
+      "system": "x86_64-darwin",
+      "group": "toplevel",
+      "priority": 5
+    },
+    {
+      "attr_path": "gettext",
+      "broken": false,
+      "derivation": "/nix/store/sqa27jrdiki6jdmg47fir9rya3mb3kgb-gettext-0.25.1.drv",
+      "description": "Well integrated set of translation tools and documentation",
+      "install_id": "gettext",
+      "license": "GPL-2.0-or-later",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=b3d51a0365f6695e7dd5cdf3e180604530ed33b4",
+      "name": "gettext-0.25.1",
+      "pname": "gettext",
+      "rev": "b3d51a0365f6695e7dd5cdf3e180604530ed33b4",
+      "rev_count": 888552,
+      "rev_date": "2025-11-02T19:18:41Z",
+      "scrape_date": "2025-11-05T17:20:48.198920Z",
+      "stabilities": [
+        "unstable"
+      ],
+      "unfree": false,
+      "version": "0.25.1",
+      "outputs_to_install": [
+        "man",
+        "out"
+      ],
+      "outputs": {
+        "doc": "/nix/store/zg1vabkzsk6as7h9wr7riha8x16isghj-gettext-0.25.1-doc",
+        "info": "/nix/store/qaf0zyc1hp2z9zqg0wcfzl4c9pvhn1r8-gettext-0.25.1-info",
+        "man": "/nix/store/5q5xdws2jy4sv40qaqmyar8lblkmlfxv-gettext-0.25.1-man",
+        "out": "/nix/store/m5zldis61kjiylqpxf7jaxs0jsmfq6j4-gettext-0.25.1"
+      },
+      "system": "x86_64-linux",
+      "group": "toplevel",
+      "priority": 5
+    },
+    {
+      "attr_path": "git",
+      "broken": false,
+      "derivation": "/nix/store/0mw57m2x2xqcik05j8xbgjp40h1792a8-git-2.51.0.drv",
+      "description": "Distributed version control system",
+      "install_id": "git",
+      "license": "GPL-2.0",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=b3d51a0365f6695e7dd5cdf3e180604530ed33b4",
+      "name": "git-2.51.0",
+      "pname": "git",
+      "rev": "b3d51a0365f6695e7dd5cdf3e180604530ed33b4",
+      "rev_count": 888552,
+      "rev_date": "2025-11-02T19:18:41Z",
+      "scrape_date": "2025-11-04T00:35:19.124516Z",
+      "stabilities": [
+        "unstable"
+      ],
+      "unfree": false,
+      "version": "2.51.0",
+      "outputs_to_install": [
+        "out"
+      ],
+      "outputs": {
+        "doc": "/nix/store/fwx23zsz09rirgfp0r5kzsh7nbg6d9ff-git-2.51.0-doc",
+        "out": "/nix/store/1xqc4nc97vwmx6dqrk0zns79xncb5chw-git-2.51.0"
+      },
+      "system": "aarch64-darwin",
+      "group": "toplevel",
+      "priority": 5
+    },
+    {
+      "attr_path": "git",
+      "broken": false,
+      "derivation": "/nix/store/8gg43r4nhx865690q0awrpkayxmhpass-git-2.51.0.drv",
+      "description": "Distributed version control system",
+      "install_id": "git",
+      "license": "GPL-2.0",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=b3d51a0365f6695e7dd5cdf3e180604530ed33b4",
+      "name": "git-2.51.0",
+      "pname": "git",
+      "rev": "b3d51a0365f6695e7dd5cdf3e180604530ed33b4",
+      "rev_count": 888552,
+      "rev_date": "2025-11-02T19:18:41Z",
+      "scrape_date": "2025-11-05T16:28:58.821047Z",
+      "stabilities": [
+        "unstable"
+      ],
+      "unfree": false,
+      "version": "2.51.0",
+      "outputs_to_install": [
+        "out"
+      ],
+      "outputs": {
+        "debug": "/nix/store/h5r9901ms52cxfqvm4pb0d2y24ddc9vv-git-2.51.0-debug",
+        "doc": "/nix/store/0dp21kpx7d2xh0y29y79wwggrhgnjks5-git-2.51.0-doc",
+        "out": "/nix/store/1xrbd5mmc64lx3hwm07kq27f445rs4xh-git-2.51.0"
+      },
+      "system": "aarch64-linux",
+      "group": "toplevel",
+      "priority": 5
+    },
+    {
+      "attr_path": "git",
+      "broken": false,
+      "derivation": "/nix/store/q2yad2kg3vpj0nrni028h99076hhpgr6-git-2.51.0.drv",
+      "description": "Distributed version control system",
+      "install_id": "git",
+      "license": "GPL-2.0",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=b3d51a0365f6695e7dd5cdf3e180604530ed33b4",
+      "name": "git-2.51.0",
+      "pname": "git",
+      "rev": "b3d51a0365f6695e7dd5cdf3e180604530ed33b4",
+      "rev_count": 888552,
+      "rev_date": "2025-11-02T19:18:41Z",
+      "scrape_date": "2025-11-05T16:54:58.153579Z",
+      "stabilities": [
+        "unstable"
+      ],
+      "unfree": false,
+      "version": "2.51.0",
+      "outputs_to_install": [
+        "out"
+      ],
+      "outputs": {
+        "doc": "/nix/store/sl8z2ijj21c8r4dxaa0vi4bv8xyavq26-git-2.51.0-doc",
+        "out": "/nix/store/wcnaxbjl7fkdfy20jgyj4pf6jarc36p8-git-2.51.0"
+      },
+      "system": "x86_64-darwin",
+      "group": "toplevel",
+      "priority": 5
+    },
+    {
+      "attr_path": "git",
+      "broken": false,
+      "derivation": "/nix/store/dxy3pa9y8gbvnmbvggpl84wnd9idfb4r-git-2.51.0.drv",
+      "description": "Distributed version control system",
+      "install_id": "git",
+      "license": "GPL-2.0",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=b3d51a0365f6695e7dd5cdf3e180604530ed33b4",
+      "name": "git-2.51.0",
+      "pname": "git",
+      "rev": "b3d51a0365f6695e7dd5cdf3e180604530ed33b4",
+      "rev_count": 888552,
+      "rev_date": "2025-11-02T19:18:41Z",
+      "scrape_date": "2025-11-05T17:20:48.256092Z",
+      "stabilities": [
+        "unstable"
+      ],
+      "unfree": false,
+      "version": "2.51.0",
+      "outputs_to_install": [
+        "out"
+      ],
+      "outputs": {
+        "debug": "/nix/store/n2qv18fvl3d4jn4y1828mk89zpl83840-git-2.51.0-debug",
+        "doc": "/nix/store/b7382m8mvzm3336f6lj8wdbqwsclc0yx-git-2.51.0-doc",
+        "out": "/nix/store/60440kg5c51rrlpinkk2rkg020q5q6kv-git-2.51.0"
+      },
+      "system": "x86_64-linux",
+      "group": "toplevel",
+      "priority": 5
+    },
+    {
+      "attr_path": "jenkins",
+      "broken": false,
+      "derivation": "/nix/store/50414r6c02qnfa7kdf2v24bdzq6jm5kz-jenkins-2.528.1.drv",
+      "description": "Extendable open source continuous integration server",
+      "install_id": "jenkins",
+      "license": "MIT",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=b3d51a0365f6695e7dd5cdf3e180604530ed33b4",
+      "name": "jenkins-2.528.1",
+      "pname": "jenkins",
+      "rev": "b3d51a0365f6695e7dd5cdf3e180604530ed33b4",
+      "rev_count": 888552,
+      "rev_date": "2025-11-02T19:18:41Z",
+      "scrape_date": "2025-11-04T00:35:33.070843Z",
+      "stabilities": [
+        "unstable"
+      ],
+      "unfree": false,
+      "version": "2.528.1",
+      "outputs_to_install": [
+        "out"
+      ],
+      "outputs": {
+        "out": "/nix/store/g02p0zhm0pxbzrgwl6ajyvajqm7iwbmn-jenkins-2.528.1"
+      },
+      "system": "aarch64-darwin",
+      "group": "toplevel",
+      "priority": 5
+    },
+    {
+      "attr_path": "jenkins",
+      "broken": false,
+      "derivation": "/nix/store/gr24475xfkcsq77ry9qhxpzwxbq73485-jenkins-2.528.1.drv",
+      "description": "Extendable open source continuous integration server",
+      "install_id": "jenkins",
+      "license": "MIT",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=b3d51a0365f6695e7dd5cdf3e180604530ed33b4",
+      "name": "jenkins-2.528.1",
+      "pname": "jenkins",
+      "rev": "b3d51a0365f6695e7dd5cdf3e180604530ed33b4",
+      "rev_count": 888552,
+      "rev_date": "2025-11-02T19:18:41Z",
+      "scrape_date": "2025-11-05T16:29:18.437201Z",
+      "stabilities": [
+        "unstable"
+      ],
+      "unfree": false,
+      "version": "2.528.1",
+      "outputs_to_install": [
+        "out"
+      ],
+      "outputs": {
+        "out": "/nix/store/kl2qpcc03avbg8mql72d08w5iqhbk3zf-jenkins-2.528.1"
+      },
+      "system": "aarch64-linux",
+      "group": "toplevel",
+      "priority": 5
+    },
+    {
+      "attr_path": "jenkins",
+      "broken": false,
+      "derivation": "/nix/store/klpavl2c5rmwcziwwkqkncdnii63xqpc-jenkins-2.528.1.drv",
+      "description": "Extendable open source continuous integration server",
+      "install_id": "jenkins",
+      "license": "MIT",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=b3d51a0365f6695e7dd5cdf3e180604530ed33b4",
+      "name": "jenkins-2.528.1",
+      "pname": "jenkins",
+      "rev": "b3d51a0365f6695e7dd5cdf3e180604530ed33b4",
+      "rev_count": 888552,
+      "rev_date": "2025-11-02T19:18:41Z",
+      "scrape_date": "2025-11-05T16:55:12.935599Z",
+      "stabilities": [
+        "unstable"
+      ],
+      "unfree": false,
+      "version": "2.528.1",
+      "outputs_to_install": [
+        "out"
+      ],
+      "outputs": {
+        "out": "/nix/store/8671bfih53kypdinhh0ml74gnkassiyi-jenkins-2.528.1"
+      },
+      "system": "x86_64-darwin",
+      "group": "toplevel",
+      "priority": 5
+    },
+    {
+      "attr_path": "jenkins",
+      "broken": false,
+      "derivation": "/nix/store/kpl7lhrpj5qbivvmyccnwm83ib04sb5r-jenkins-2.528.1.drv",
+      "description": "Extendable open source continuous integration server",
+      "install_id": "jenkins",
+      "license": "MIT",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=b3d51a0365f6695e7dd5cdf3e180604530ed33b4",
+      "name": "jenkins-2.528.1",
+      "pname": "jenkins",
+      "rev": "b3d51a0365f6695e7dd5cdf3e180604530ed33b4",
+      "rev_count": 888552,
+      "rev_date": "2025-11-02T19:18:41Z",
+      "scrape_date": "2025-11-05T17:21:09.015463Z",
+      "stabilities": [
+        "unstable"
+      ],
+      "unfree": false,
+      "version": "2.528.1",
+      "outputs_to_install": [
+        "out"
+      ],
+      "outputs": {
+        "out": "/nix/store/b0w9rn1z96d9k6ai91aw3pbcb2zmgpr6-jenkins-2.528.1"
+      },
+      "system": "x86_64-linux",
+      "group": "toplevel",
+      "priority": 5
+    },
+    {
+      "attr_path": "jq",
+      "broken": false,
+      "derivation": "/nix/store/a50a7kjf83i6i4n2d1bhmkjf3gvx5kg6-jq-1.8.1.drv",
+      "description": "Lightweight and flexible command-line JSON processor",
+      "install_id": "jq",
+      "license": "MIT",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=b3d51a0365f6695e7dd5cdf3e180604530ed33b4",
+      "name": "jq-1.8.1",
+      "pname": "jq",
+      "rev": "b3d51a0365f6695e7dd5cdf3e180604530ed33b4",
+      "rev_count": 888552,
+      "rev_date": "2025-11-02T19:18:41Z",
+      "scrape_date": "2025-11-04T00:35:33.201623Z",
+      "stabilities": [
+        "unstable"
+      ],
+      "unfree": false,
+      "version": "1.8.1",
+      "outputs_to_install": [
+        "bin",
+        "man"
+      ],
+      "outputs": {
+        "bin": "/nix/store/vh3xibzhaz3nl5m97ka2i5sxivv59sgn-jq-1.8.1-bin",
+        "dev": "/nix/store/ni42jbsfngy5l81p2lz9v5wcl4kwl9nf-jq-1.8.1-dev",
+        "doc": "/nix/store/hy9hxygqscjkz0faz5xlxwkj7sn6v74i-jq-1.8.1-doc",
+        "man": "/nix/store/k9swya8a42jsa59jd2xcw0pvacj0xxyn-jq-1.8.1-man",
+        "out": "/nix/store/qabxprfzl0lygph7yg3kq6b8si410syd-jq-1.8.1"
+      },
+      "system": "aarch64-darwin",
+      "group": "toplevel",
+      "priority": 5
+    },
+    {
+      "attr_path": "jq",
+      "broken": false,
+      "derivation": "/nix/store/f2yda9q3f7miq3md0r47d25cbbwqwacw-jq-1.8.1.drv",
+      "description": "Lightweight and flexible command-line JSON processor",
+      "install_id": "jq",
+      "license": "MIT",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=b3d51a0365f6695e7dd5cdf3e180604530ed33b4",
+      "name": "jq-1.8.1",
+      "pname": "jq",
+      "rev": "b3d51a0365f6695e7dd5cdf3e180604530ed33b4",
+      "rev_count": 888552,
+      "rev_date": "2025-11-02T19:18:41Z",
+      "scrape_date": "2025-11-05T16:29:18.638953Z",
+      "stabilities": [
+        "unstable"
+      ],
+      "unfree": false,
+      "version": "1.8.1",
+      "outputs_to_install": [
+        "bin",
+        "man"
+      ],
+      "outputs": {
+        "bin": "/nix/store/pqr9gww8fksrllfr38k9jvl7k5q5awf7-jq-1.8.1-bin",
+        "dev": "/nix/store/qqcccyr96a1p4j7ywgzhqi06n5y47mk0-jq-1.8.1-dev",
+        "doc": "/nix/store/ankng0jgm40wkgwiz3n8rj6hanmgdsx7-jq-1.8.1-doc",
+        "man": "/nix/store/n0y7a3f5hmglwifndimclg99mpn554bl-jq-1.8.1-man",
+        "out": "/nix/store/6h1mv44dhnq2jb94373cab59yaq5y8wz-jq-1.8.1"
+      },
+      "system": "aarch64-linux",
+      "group": "toplevel",
+      "priority": 5
+    },
+    {
+      "attr_path": "jq",
+      "broken": false,
+      "derivation": "/nix/store/i9y8592ghv69f3djcq8fki41ml5b4a6x-jq-1.8.1.drv",
+      "description": "Lightweight and flexible command-line JSON processor",
+      "install_id": "jq",
+      "license": "MIT",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=b3d51a0365f6695e7dd5cdf3e180604530ed33b4",
+      "name": "jq-1.8.1",
+      "pname": "jq",
+      "rev": "b3d51a0365f6695e7dd5cdf3e180604530ed33b4",
+      "rev_count": 888552,
+      "rev_date": "2025-11-02T19:18:41Z",
+      "scrape_date": "2025-11-05T16:55:13.062148Z",
+      "stabilities": [
+        "unstable"
+      ],
+      "unfree": false,
+      "version": "1.8.1",
+      "outputs_to_install": [
+        "bin",
+        "man"
+      ],
+      "outputs": {
+        "bin": "/nix/store/r52fkpag200agnznp2var2p0f0d0i4ch-jq-1.8.1-bin",
+        "dev": "/nix/store/ijwpwk35g7l8amallvhqymwnnspmxgcy-jq-1.8.1-dev",
+        "doc": "/nix/store/zci6xwc00v98flb0jqhdaac0231pmgvb-jq-1.8.1-doc",
+        "man": "/nix/store/xbvg59a0kdin1fibnqrw4l445a5dh9bc-jq-1.8.1-man",
+        "out": "/nix/store/50fm8yn7mpxfks0cvrjifi58r90q5c6h-jq-1.8.1"
+      },
+      "system": "x86_64-darwin",
+      "group": "toplevel",
+      "priority": 5
+    },
+    {
+      "attr_path": "jq",
+      "broken": false,
+      "derivation": "/nix/store/qk16np2i3ls20ih6n8lc38l6f3y6s7i3-jq-1.8.1.drv",
+      "description": "Lightweight and flexible command-line JSON processor",
+      "install_id": "jq",
+      "license": "MIT",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=b3d51a0365f6695e7dd5cdf3e180604530ed33b4",
+      "name": "jq-1.8.1",
+      "pname": "jq",
+      "rev": "b3d51a0365f6695e7dd5cdf3e180604530ed33b4",
+      "rev_count": 888552,
+      "rev_date": "2025-11-02T19:18:41Z",
+      "scrape_date": "2025-11-05T17:21:09.216301Z",
+      "stabilities": [
+        "unstable"
+      ],
+      "unfree": false,
+      "version": "1.8.1",
+      "outputs_to_install": [
+        "bin",
+        "man"
+      ],
+      "outputs": {
+        "bin": "/nix/store/frzsv47z1mcyrp941zab08mx6kardizi-jq-1.8.1-bin",
+        "dev": "/nix/store/caq8n6m9m5zyhf0by83ksbimqmpggkwr-jq-1.8.1-dev",
+        "doc": "/nix/store/n3wl5jkmnzfg0a1vjxxx8w2n7js1b5sr-jq-1.8.1-doc",
+        "man": "/nix/store/rs84gk428azdd7ca46ki3w60yqp54ksk-jq-1.8.1-man",
+        "out": "/nix/store/zsw99s8nv2qffdg47jf8x8pyml9b0x2r-jq-1.8.1"
+      },
+      "system": "x86_64-linux",
+      "group": "toplevel",
+      "priority": 5
+    },
+    {
+      "attr_path": "nginx",
+      "broken": false,
+      "derivation": "/nix/store/yvflgj2ly0p7jiadswd6pa4lw4hizdgm-nginx-1.28.0.drv",
+      "description": "Reverse proxy and lightweight webserver",
+      "install_id": "nginx",
+      "license": "[ BSD-2-Clause, BSD-2-Clause, BSD-2-Clause, BSD-2-Clause ]",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=b3d51a0365f6695e7dd5cdf3e180604530ed33b4",
+      "name": "nginx-1.28.0",
+      "pname": "nginx",
+      "rev": "b3d51a0365f6695e7dd5cdf3e180604530ed33b4",
+      "rev_count": 888552,
+      "rev_date": "2025-11-02T19:18:41Z",
+      "scrape_date": "2025-11-04T00:35:39.426946Z",
+      "stabilities": [
+        "unstable"
+      ],
+      "unfree": false,
+      "version": "1.28.0",
+      "outputs_to_install": [
+        "out"
+      ],
+      "outputs": {
+        "doc": "/nix/store/hr3mqr8j5yb9s8vjwsgmjzywnch5cb7y-nginx-1.28.0-doc",
+        "out": "/nix/store/s3f7m4l4pb6baddzax1bk2grr0kg0m97-nginx-1.28.0"
+      },
+      "system": "aarch64-darwin",
+      "group": "toplevel",
+      "priority": 5
+    },
+    {
+      "attr_path": "nginx",
+      "broken": false,
+      "derivation": "/nix/store/4d38gpj569jp51a8275lcscfw2xqppvz-nginx-1.28.0.drv",
+      "description": "Reverse proxy and lightweight webserver",
+      "install_id": "nginx",
+      "license": "[ BSD-2-Clause, BSD-2-Clause, BSD-2-Clause, BSD-2-Clause ]",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=b3d51a0365f6695e7dd5cdf3e180604530ed33b4",
+      "name": "nginx-1.28.0",
+      "pname": "nginx",
+      "rev": "b3d51a0365f6695e7dd5cdf3e180604530ed33b4",
+      "rev_count": 888552,
+      "rev_date": "2025-11-02T19:18:41Z",
+      "scrape_date": "2025-11-05T16:29:33.668751Z",
+      "stabilities": [
+        "unstable"
+      ],
+      "unfree": false,
+      "version": "1.28.0",
+      "outputs_to_install": [
+        "out"
+      ],
+      "outputs": {
+        "doc": "/nix/store/s6k46asj3pvw28h871wkzcqkb9k0a2bb-nginx-1.28.0-doc",
+        "out": "/nix/store/2waby6yghzimz36nny9hxckada05d17f-nginx-1.28.0"
+      },
+      "system": "aarch64-linux",
+      "group": "toplevel",
+      "priority": 5
+    },
+    {
+      "attr_path": "nginx",
+      "broken": false,
+      "derivation": "/nix/store/ndj2fpw6blxqfi9ranm9j8qnyppf2gp1-nginx-1.28.0.drv",
+      "description": "Reverse proxy and lightweight webserver",
+      "install_id": "nginx",
+      "license": "[ BSD-2-Clause, BSD-2-Clause, BSD-2-Clause, BSD-2-Clause ]",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=b3d51a0365f6695e7dd5cdf3e180604530ed33b4",
+      "name": "nginx-1.28.0",
+      "pname": "nginx",
+      "rev": "b3d51a0365f6695e7dd5cdf3e180604530ed33b4",
+      "rev_count": 888552,
+      "rev_date": "2025-11-02T19:18:41Z",
+      "scrape_date": "2025-11-05T16:55:19.148087Z",
+      "stabilities": [
+        "unstable"
+      ],
+      "unfree": false,
+      "version": "1.28.0",
+      "outputs_to_install": [
+        "out"
+      ],
+      "outputs": {
+        "doc": "/nix/store/3ys3bh567khkwk05dsgq9s7zr2r7alcs-nginx-1.28.0-doc",
+        "out": "/nix/store/d185zjpszlsqj0jnqyav4z2m56l7hh7b-nginx-1.28.0"
+      },
+      "system": "x86_64-darwin",
+      "group": "toplevel",
+      "priority": 5
+    },
+    {
+      "attr_path": "nginx",
+      "broken": false,
+      "derivation": "/nix/store/yq5zsswdcz3hwsx2f31sppx1w99i0jzk-nginx-1.28.0.drv",
+      "description": "Reverse proxy and lightweight webserver",
+      "install_id": "nginx",
+      "license": "[ BSD-2-Clause, BSD-2-Clause, BSD-2-Clause, BSD-2-Clause ]",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=b3d51a0365f6695e7dd5cdf3e180604530ed33b4",
+      "name": "nginx-1.28.0",
+      "pname": "nginx",
+      "rev": "b3d51a0365f6695e7dd5cdf3e180604530ed33b4",
+      "rev_count": 888552,
+      "rev_date": "2025-11-02T19:18:41Z",
+      "scrape_date": "2025-11-05T17:21:26.448580Z",
+      "stabilities": [
+        "unstable"
+      ],
+      "unfree": false,
+      "version": "1.28.0",
+      "outputs_to_install": [
+        "out"
+      ],
+      "outputs": {
+        "doc": "/nix/store/ppgwgwhpznz66i2inhcn5k2zdbg37iws-nginx-1.28.0-doc",
+        "out": "/nix/store/qn26z61kdr1vja62x2l5iif6xmp3wag9-nginx-1.28.0"
+      },
+      "system": "x86_64-linux",
+      "group": "toplevel",
+      "priority": 5
+    },
+    {
+      "attr_path": "openjdk21",
+      "broken": false,
+      "derivation": "/nix/store/g1x8iz2wmxs3x9bbbs0l8df7sphd4c3d-zulu-ca-jdk-21.0.8.drv",
+      "description": "Certified builds of OpenJDK",
+      "install_id": "openjdk21",
+      "license": "GPL-2.0-only",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=b3d51a0365f6695e7dd5cdf3e180604530ed33b4",
+      "name": "zulu-ca-jdk-21.0.8",
+      "pname": "openjdk21",
+      "rev": "b3d51a0365f6695e7dd5cdf3e180604530ed33b4",
+      "rev_count": 888552,
+      "rev_date": "2025-11-02T19:18:41Z",
+      "scrape_date": "2025-11-04T00:35:43.309848Z",
+      "stabilities": [
+        "unstable"
+      ],
+      "unfree": false,
+      "version": "21.0.8",
+      "outputs_to_install": [
+        "out"
+      ],
+      "outputs": {
+        "out": "/nix/store/n3rmmip6djs9s68zkazn1c6gsxbjg7fs-zulu-ca-jdk-21.0.8"
+      },
+      "system": "aarch64-darwin",
+      "group": "toplevel",
+      "priority": 5
+    },
+    {
+      "attr_path": "openjdk21",
+      "broken": false,
+      "derivation": "/nix/store/mcx6s6j926igxsy40cdvsccw6ffs9qix-openjdk-21.0.9+8.drv",
+      "description": "Open-source Java Development Kit",
+      "install_id": "openjdk21",
+      "license": "GPL-2.0-only",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=b3d51a0365f6695e7dd5cdf3e180604530ed33b4",
+      "name": "openjdk-21.0.9+8",
+      "pname": "openjdk21",
+      "rev": "b3d51a0365f6695e7dd5cdf3e180604530ed33b4",
+      "rev_count": 888552,
+      "rev_date": "2025-11-02T19:18:41Z",
+      "scrape_date": "2025-11-05T16:29:39.719047Z",
+      "stabilities": [
+        "unstable"
+      ],
+      "unfree": false,
+      "version": "21.0.9+8",
+      "outputs_to_install": [
+        "out"
+      ],
+      "outputs": {
+        "debug": "/nix/store/sz9izpfkgi9nw3s9fz8vik9qn01vkx4d-openjdk-21.0.9+8-debug",
+        "out": "/nix/store/gxjm3qjq9kyvi5hv7r4s8ngbkg1d94df-openjdk-21.0.9+8"
+      },
+      "system": "aarch64-linux",
+      "group": "toplevel",
+      "priority": 5
+    },
+    {
+      "attr_path": "openjdk21",
+      "broken": false,
+      "derivation": "/nix/store/in9f60zkhchyhjcprf9vihdfnmyq3phx-zulu-ca-jdk-21.0.8.drv",
+      "description": "Certified builds of OpenJDK",
+      "install_id": "openjdk21",
+      "license": "GPL-2.0-only",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=b3d51a0365f6695e7dd5cdf3e180604530ed33b4",
+      "name": "zulu-ca-jdk-21.0.8",
+      "pname": "openjdk21",
+      "rev": "b3d51a0365f6695e7dd5cdf3e180604530ed33b4",
+      "rev_count": 888552,
+      "rev_date": "2025-11-02T19:18:41Z",
+      "scrape_date": "2025-11-05T16:55:22.994252Z",
+      "stabilities": [
+        "unstable"
+      ],
+      "unfree": false,
+      "version": "21.0.8",
+      "outputs_to_install": [
+        "out"
+      ],
+      "outputs": {
+        "out": "/nix/store/zg7ays2h25mcpm6808y3as8ql7c1496g-zulu-ca-jdk-21.0.8"
+      },
+      "system": "x86_64-darwin",
+      "group": "toplevel",
+      "priority": 5
+    },
+    {
+      "attr_path": "openjdk21",
+      "broken": false,
+      "derivation": "/nix/store/7b2hwjgvi4hc4pbyvvnzi05ks1jr49zz-openjdk-21.0.9+8.drv",
+      "description": "Open-source Java Development Kit",
+      "install_id": "openjdk21",
+      "license": "GPL-2.0-only",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=b3d51a0365f6695e7dd5cdf3e180604530ed33b4",
+      "name": "openjdk-21.0.9+8",
+      "pname": "openjdk21",
+      "rev": "b3d51a0365f6695e7dd5cdf3e180604530ed33b4",
+      "rev_count": 888552,
+      "rev_date": "2025-11-02T19:18:41Z",
+      "scrape_date": "2025-11-05T17:21:33.053350Z",
+      "stabilities": [
+        "unstable"
+      ],
+      "unfree": false,
+      "version": "21.0.9+8",
+      "outputs_to_install": [
+        "out"
+      ],
+      "outputs": {
+        "debug": "/nix/store/pgkj2381fcdrbx9w85h162cigdgyn7j2-openjdk-21.0.9+8-debug",
+        "out": "/nix/store/l5z1hqq6l223379w6f25fibniz16g2s9-openjdk-21.0.9+8"
+      },
+      "system": "x86_64-linux",
+      "group": "toplevel",
+      "priority": 5
+    }
+  ],
+  "compose": {
+    "composer": {
+      "version": 1,
+      "vars": {
+        "JENKINS_FULL_STACK_DIR": "$FLOX_ENV_CACHE"
+      },
+      "hook": {
+        "on-activate": "# === JENKINS-FULL-STACK CONFIGURATION ===\n# This environment combines nginx-headless and jenkins-headless\n# to create a production-ready Jenkins setup with nginx as a reverse proxy.\n\n# Create directories\nmkdir -p \"$FLOX_ENV_CACHE/logs\"\n\n# === STACK CONFIGURATION (all runtime-overridable) ===\n\n# Jenkins Configuration (inherited from jenkins-headless, can override here)\n# Note: Set this first so nginx can reference it\nexport JENKINS_PORT=\"${JENKINS_PORT:-8080}\"           # Jenkins runs on port 8080 (internal)\nexport JENKINS_PREFIX=\"${JENKINS_PREFIX:-/}\"          # URL prefix\nexport JENKINS_PLUGINS=\"${JENKINS_PLUGINS:-git workflow-aggregator docker-workflow github configuration-as-code}\"\n\n# Nginx Configuration\nexport NGINX_PORT=\"${NGINX_PORT:-8000}\"               # Nginx listens on port 8000 (use 80 for production with root)\nexport NGINX_HOST=\"${NGINX_HOST:-0.0.0.0}\"            # Listen on all interfaces\nexport NGINX_MODE=\"${NGINX_MODE:-proxy}\"              # Reverse proxy mode (default)\nexport NGINX_BACKEND_HOST=\"${NGINX_BACKEND_HOST:-127.0.0.1}\"  # Proxy to localhost\n# Synchronize NGINX_BACKEND_PORT with JENKINS_PORT (unless user explicitly set it)\n# If NGINX_BACKEND_PORT is still at nginx-headless default (8080), update it to match JENKINS_PORT\nif [ \"$NGINX_BACKEND_PORT\" = \"8080\" ]; then\n  export NGINX_BACKEND_PORT=\"$JENKINS_PORT\"\nfi\nexport NGINX_WEBSOCKET_ENABLED=\"${NGINX_WEBSOCKET_ENABLED:-true}\"  # Enable WebSocket for Jenkins agents\nexport NGINX_GZIP_ENABLED=\"${NGINX_GZIP_ENABLED:-true}\"        # Enable compression\nexport NGINX_PROXY_TIMEOUT=\"${NGINX_PROXY_TIMEOUT:-300s}\"      # 5-minute timeout for long builds\n\n# Optional nginx features (disabled by default)\nexport NGINX_RATE_LIMIT_ENABLED=\"${NGINX_RATE_LIMIT_ENABLED:-false}\"\nexport NGINX_RATE_LIMIT_RATE=\"${NGINX_RATE_LIMIT_RATE:-100r/s}\"\nexport NGINX_SECURITY_HEADERS_ENABLED=\"${NGINX_SECURITY_HEADERS_ENABLED:-false}\"\n\n# Display stack information\necho \"\"\necho \"✅ Jenkins Full Stack Environment Ready\"\necho \"\"\necho \"Stack Configuration:\"\necho \"  Nginx:          http://localhost:${NGINX_PORT}${JENKINS_PREFIX}\"\necho \"  Jenkins:        http://localhost:${JENKINS_PORT}${JENKINS_PREFIX} (internal)\"\necho \"  Proxy:          nginx → Jenkins\"\necho \"  WebSocket:      ${NGINX_WEBSOCKET_ENABLED}\"\necho \"  Gzip:           ${NGINX_GZIP_ENABLED}\"\necho \"\"\necho \"Access Jenkins via nginx:\"\necho \"  URL:            http://localhost:${NGINX_PORT}${JENKINS_PREFIX}\"\necho \"  Admin:          admin / changeme\"\necho \"\"\necho \"Commands:\"\necho \"  flox activate -s              Start all services\"\necho \"  jenkins-stack-info            Show configuration\"\necho \"  jenkins-stack-health          Check all services\"\necho \"  jenkins-stack-url             Get nginx URL\"\necho \"  flox services status          Service status\"\necho \"  flox services logs nginx      View nginx logs\"\necho \"  flox services logs jenkins    View Jenkins logs\"\necho \"\"\necho \"Examples:\"\necho \"  NGINX_PORT=80 flox activate -s\"\necho \"  NGINX_RATE_LIMIT_ENABLED=true NGINX_RATE_LIMIT_RATE=50r/s flox activate -s\"\necho \"  NGINX_SECURITY_HEADERS_ENABLED=true flox activate -s\"\necho \"\"\n\ncd \"$FLOX_ENV_PROJECT\"\n"
+      },
+      "profile": {
+        "bash": "jenkins-stack-info() {\n  echo \"Jenkins Full Stack Configuration\"\n  echo \"\"\n  echo \"Nginx (Reverse Proxy):\"\n  echo \"  Public URL:     http://localhost:${NGINX_PORT}${JENKINS_PREFIX}\"\n  echo \"  Listen:         ${NGINX_HOST}:${NGINX_PORT}\"\n  echo \"  Mode:           ${NGINX_MODE}\"\n  echo \"  Backend:        ${NGINX_BACKEND_HOST}:${NGINX_BACKEND_PORT}\"\n  echo \"  WebSocket:      ${NGINX_WEBSOCKET_ENABLED}\"\n  echo \"  Gzip:           ${NGINX_GZIP_ENABLED}\"\n  echo \"  Proxy Timeout:  ${NGINX_PROXY_TIMEOUT}\"\n  if [ \"$NGINX_RATE_LIMIT_ENABLED\" = \"true\" ]; then\n    echo \"  Rate Limit:     ${NGINX_RATE_LIMIT_RATE} (burst: ${NGINX_RATE_LIMIT_BURST:-20})\"\n  fi\n  if [ \"$NGINX_SECURITY_HEADERS_ENABLED\" = \"true\" ]; then\n    echo \"  Security:       Headers enabled\"\n  fi\n  echo \"\"\n  echo \"Jenkins:\"\n  echo \"  Internal URL:   http://localhost:${JENKINS_PORT}${JENKINS_PREFIX}\"\n  echo \"  JENKINS_HOME:   ${JENKINS_HOME}\"\n  echo \"  Admin User:     ${JENKINS_ADMIN_USER}\"\n  echo \"  Plugins:        ${JENKINS_PLUGINS}\"\n  echo \"\"\n  echo \"Service Status:\"\n  flox services status 2>/dev/null || echo \"  Services not started (use: flox activate -s)\"\n}\nexport -f jenkins-stack-info\n\njenkins-stack-health() {\n  echo \"Checking Jenkins Full Stack health...\"\n  echo \"\"\n\n  # Check nginx\n  if curl -sf \"http://localhost:${NGINX_PORT}/\" >/dev/null 2>&1; then\n    echo \"✅ Nginx is responding at http://localhost:${NGINX_PORT}/\"\n  else\n    echo \"❌ Nginx is not responding at http://localhost:${NGINX_PORT}/\"\n    echo \"   Try: flox services status\"\n    echo \"   Try: flox services logs nginx\"\n    return 1\n  fi\n\n  # Check Jenkins through nginx\n  if curl -sf \"http://localhost:${NGINX_PORT}/login\" >/dev/null 2>&1; then\n    echo \"✅ Jenkins is accessible through nginx\"\n  else\n    echo \"❌ Jenkins is not accessible through nginx\"\n    echo \"   Try: flox services logs jenkins\"\n    return 1\n  fi\n\n  # Check Jenkins API through nginx\n  if curl -sf -u admin:changeme \"http://localhost:${NGINX_PORT}/api/json\" >/dev/null 2>&1; then\n    echo \"✅ Jenkins API is responding\"\n  else\n    echo \"⚠️  Jenkins API not responding (may still be starting)\"\n  fi\n\n  echo \"\"\n  echo \"Stack is healthy!\"\n  echo \"Access Jenkins: http://localhost:${NGINX_PORT}/\"\n}\nexport -f jenkins-stack-health\n\njenkins-stack-url() {\n  echo \"http://localhost:${NGINX_PORT}${JENKINS_PREFIX}\"\n}\nexport -f jenkins-stack-url\n\njenkins-stack-logs() {\n  echo \"Jenkins Full Stack Logs\"\n  echo \"\"\n  echo \"=== Nginx Logs ===\"\n  flox services logs nginx | tail -20\n  echo \"\"\n  echo \"=== Jenkins Logs ===\"\n  flox services logs jenkins | tail -20\n}\nexport -f jenkins-stack-logs\n",
+        "zsh": "jenkins-stack-info() {\n  echo \"Jenkins Full Stack Configuration\"\n  echo \"\"\n  echo \"Nginx (Reverse Proxy):\"\n  echo \"  Public URL:     http://localhost:${NGINX_PORT}${JENKINS_PREFIX}\"\n  echo \"  Listen:         ${NGINX_HOST}:${NGINX_PORT}\"\n  echo \"  Mode:           ${NGINX_MODE}\"\n  echo \"  Backend:        ${NGINX_BACKEND_HOST}:${NGINX_BACKEND_PORT}\"\n  echo \"  WebSocket:      ${NGINX_WEBSOCKET_ENABLED}\"\n  echo \"  Gzip:           ${NGINX_GZIP_ENABLED}\"\n  echo \"  Proxy Timeout:  ${NGINX_PROXY_TIMEOUT}\"\n  if [ \"$NGINX_RATE_LIMIT_ENABLED\" = \"true\" ]; then\n    echo \"  Rate Limit:     ${NGINX_RATE_LIMIT_RATE} (burst: ${NGINX_RATE_LIMIT_BURST:-20})\"\n  fi\n  if [ \"$NGINX_SECURITY_HEADERS_ENABLED\" = \"true\" ]; then\n    echo \"  Security:       Headers enabled\"\n  fi\n  echo \"\"\n  echo \"Jenkins:\"\n  echo \"  Internal URL:   http://localhost:${JENKINS_PORT}${JENKINS_PREFIX}\"\n  echo \"  JENKINS_HOME:   ${JENKINS_HOME}\"\n  echo \"  Admin User:     ${JENKINS_ADMIN_USER}\"\n  echo \"  Plugins:        ${JENKINS_PLUGINS}\"\n  echo \"\"\n  echo \"Service Status:\"\n  flox services status 2>/dev/null || echo \"  Services not started (use: flox activate -s)\"\n}\n\njenkins-stack-health() {\n  echo \"Checking Jenkins Full Stack health...\"\n  echo \"\"\n\n  # Check nginx\n  if curl -sf \"http://localhost:${NGINX_PORT}/\" >/dev/null 2>&1; then\n    echo \"✅ Nginx is responding at http://localhost:${NGINX_PORT}/\"\n  else\n    echo \"❌ Nginx is not responding at http://localhost:${NGINX_PORT}/\"\n    echo \"   Try: flox services status\"\n    echo \"   Try: flox services logs nginx\"\n    return 1\n  fi\n\n  # Check Jenkins through nginx\n  if curl -sf \"http://localhost:${NGINX_PORT}/login\" >/dev/null 2>&1; then\n    echo \"✅ Jenkins is accessible through nginx\"\n  else\n    echo \"❌ Jenkins is not accessible through nginx\"\n    echo \"   Try: flox services logs jenkins\"\n    return 1\n  fi\n\n  # Check Jenkins API through nginx\n  if curl -sf -u admin:changeme \"http://localhost:${NGINX_PORT}/api/json\" >/dev/null 2>&1; then\n    echo \"✅ Jenkins API is responding\"\n  else\n    echo \"⚠️  Jenkins API not responding (may still be starting)\"\n  fi\n\n  echo \"\"\n  echo \"Stack is healthy!\"\n  echo \"Access Jenkins: http://localhost:${NGINX_PORT}/\"\n}\n\njenkins-stack-url() {\n  echo \"http://localhost:${NGINX_PORT}${JENKINS_PREFIX}\"\n}\n\njenkins-stack-logs() {\n  echo \"Jenkins Full Stack Logs\"\n  echo \"\"\n  echo \"=== Nginx Logs ===\"\n  flox services logs nginx | tail -20\n  echo \"\"\n  echo \"=== Jenkins Logs ===\"\n  flox services logs jenkins | tail -20\n}\n",
+        "fish": "function jenkins-stack-info\n  echo \"Jenkins Full Stack Configuration\"\n  echo \"\"\n  echo \"Nginx (Reverse Proxy):\"\n  echo \"  Public URL:     http://localhost:$NGINX_PORT$JENKINS_PREFIX\"\n  echo \"  Listen:         $NGINX_HOST:$NGINX_PORT\"\n  echo \"  Mode:           $NGINX_MODE\"\n  echo \"  Backend:        $NGINX_BACKEND_HOST:$NGINX_BACKEND_PORT\"\n  echo \"  WebSocket:      $NGINX_WEBSOCKET_ENABLED\"\n  echo \"  Gzip:           $NGINX_GZIP_ENABLED\"\n  echo \"  Proxy Timeout:  $NGINX_PROXY_TIMEOUT\"\n  if test \"$NGINX_RATE_LIMIT_ENABLED\" = \"true\"\n    echo \"  Rate Limit:     $NGINX_RATE_LIMIT_RATE (burst: \"(set -q NGINX_RATE_LIMIT_BURST && echo $NGINX_RATE_LIMIT_BURST || echo 20)\")\"\n  end\n  if test \"$NGINX_SECURITY_HEADERS_ENABLED\" = \"true\"\n    echo \"  Security:       Headers enabled\"\n  end\n  echo \"\"\n  echo \"Jenkins:\"\n  echo \"  Internal URL:   http://localhost:$JENKINS_PORT$JENKINS_PREFIX\"\n  echo \"  JENKINS_HOME:   $JENKINS_HOME\"\n  echo \"  Admin User:     $JENKINS_ADMIN_USER\"\n  echo \"  Plugins:        $JENKINS_PLUGINS\"\n  echo \"\"\n  echo \"Service Status:\"\n  flox services status 2>/dev/null || echo \"  Services not started (use: flox activate -s)\"\nend\n\nfunction jenkins-stack-health\n  echo \"Checking Jenkins Full Stack health...\"\n  echo \"\"\n\n  # Check nginx\n  if curl -sf \"http://localhost:$NGINX_PORT/\" >/dev/null 2>&1\n    echo \"✅ Nginx is responding at http://localhost:$NGINX_PORT/\"\n  else\n    echo \"❌ Nginx is not responding at http://localhost:$NGINX_PORT/\"\n    echo \"   Try: flox services status\"\n    echo \"   Try: flox services logs nginx\"\n    return 1\n  end\n\n  # Check Jenkins through nginx\n  if curl -sf \"http://localhost:$NGINX_PORT/login\" >/dev/null 2>&1\n    echo \"✅ Jenkins is accessible through nginx\"\n  else\n    echo \"❌ Jenkins is not accessible through nginx\"\n    echo \"   Try: flox services logs jenkins\"\n    return 1\n  end\n\n  # Check Jenkins API through nginx\n  if curl -sf -u admin:changeme \"http://localhost:$NGINX_PORT/api/json\" >/dev/null 2>&1\n    echo \"✅ Jenkins API is responding\"\n  else\n    echo \"⚠️  Jenkins API not responding (may still be starting)\"\n  end\n\n  echo \"\"\n  echo \"Stack is healthy!\"\n  echo \"Access Jenkins: http://localhost:$NGINX_PORT/\"\nend\n\nfunction jenkins-stack-url\n  echo \"http://localhost:$NGINX_PORT$JENKINS_PREFIX\"\nend\n\nfunction jenkins-stack-logs\n  echo \"Jenkins Full Stack Logs\"\n  echo \"\"\n  echo \"=== Nginx Logs ===\"\n  flox services logs nginx | tail -20\n  echo \"\"\n  echo \"=== Jenkins Logs ===\"\n  flox services logs jenkins | tail -20\nend\n"
+      },
+      "options": {
+        "systems": [
+          "aarch64-darwin",
+          "aarch64-linux",
+          "x86_64-darwin",
+          "x86_64-linux"
+        ]
+      },
+      "include": {
+        "environments": [
+          {
+            "remote": "barstoolbluz/nginx-headless"
+          },
+          {
+            "dir": "../jenkins-headless"
+          }
+        ]
+      }
+    },
+    "include": [
+      {
+        "manifest": {
+          "version": 1,
+          "install": {
+            "gettext": {
+              "pkg-path": "gettext"
+            },
+            "nginx": {
+              "pkg-path": "nginx"
+            }
+          },
+          "vars": {
+            "NGINX_CONFIG_DIR": "$FLOX_ENV_CACHE/config",
+            "NGINX_LOG_DIR": "$FLOX_ENV_CACHE/logs",
+            "NGINX_WWW_DIR": "$FLOX_ENV_CACHE/www"
+          },
+          "hook": {
+            "on-activate": "mkdir -p \"$FLOX_ENV_CACHE/config\"\nmkdir -p \"$FLOX_ENV_CACHE/logs\"\nmkdir -p \"$FLOX_ENV_CACHE/www\"\n\n# === COMMON CONFIGURATION ===\nexport NGINX_PORT=\"${NGINX_PORT:-80}\"\nexport NGINX_HOST=\"${NGINX_HOST:-0.0.0.0}\"\n\n# === MODE SELECTION ===\nexport NGINX_MODE=\"${NGINX_MODE:-proxy}\"\nexport NGINX_WORKER_PROCESSES=\"${NGINX_WORKER_PROCESSES:-auto}\"\nexport NGINX_WORKER_CONNECTIONS=\"${NGINX_WORKER_CONNECTIONS:-1024}\"\n\n# === PROXY MODE ===\nexport NGINX_BACKEND_HOST=\"${NGINX_BACKEND_HOST:-127.0.0.1}\"\nexport NGINX_BACKEND_PORT=\"${NGINX_BACKEND_PORT:-8080}\"\nexport NGINX_PROXY_TIMEOUT=\"${NGINX_PROXY_TIMEOUT:-60s}\"\n\n# === STATIC MODE ===\nexport NGINX_ROOT=\"${NGINX_ROOT:-$FLOX_ENV_CACHE/www}\"\nexport NGINX_INDEX=\"${NGINX_INDEX:-index.html index.htm}\"\n\n# === LOAD BALANCER MODE ===\nexport NGINX_UPSTREAM_SERVERS=\"${NGINX_UPSTREAM_SERVERS:-}\"\nexport NGINX_LB_METHOD=\"${NGINX_LB_METHOD:-round_robin}\"\n\n# === SSL/TLS FEATURE ===\nexport NGINX_SSL_ENABLED=\"${NGINX_SSL_ENABLED:-false}\"\nexport NGINX_SSL_CERT=\"${NGINX_SSL_CERT:-}\"\nexport NGINX_SSL_KEY=\"${NGINX_SSL_KEY:-}\"\nexport NGINX_SSL_PROTOCOLS=\"${NGINX_SSL_PROTOCOLS:-TLSv1.2 TLSv1.3}\"\n\n# === RATE LIMITING FEATURE ===\nexport NGINX_RATE_LIMIT_ENABLED=\"${NGINX_RATE_LIMIT_ENABLED:-false}\"\nexport NGINX_RATE_LIMIT_RATE=\"${NGINX_RATE_LIMIT_RATE:-10r/s}\"\nexport NGINX_RATE_LIMIT_BURST=\"${NGINX_RATE_LIMIT_BURST:-20}\"\n\n# === GZIP COMPRESSION FEATURE ===\nexport NGINX_GZIP_ENABLED=\"${NGINX_GZIP_ENABLED:-false}\"\nexport NGINX_GZIP_LEVEL=\"${NGINX_GZIP_LEVEL:-6}\"\nexport NGINX_GZIP_MIN_LENGTH=\"${NGINX_GZIP_MIN_LENGTH:-1000}\"\nexport NGINX_GZIP_TYPES=\"${NGINX_GZIP_TYPES:-text/plain text/css application/json application/javascript text/xml application/xml application/xml+rss text/javascript}\"\n\n# === SECURITY HEADERS FEATURE ===\nexport NGINX_SECURITY_HEADERS_ENABLED=\"${NGINX_SECURITY_HEADERS_ENABLED:-false}\"\n\n# === CACHING FEATURE ===\nexport NGINX_CACHE_ENABLED=\"${NGINX_CACHE_ENABLED:-false}\"\nexport NGINX_CACHE_STATIC_EXPIRE=\"${NGINX_CACHE_STATIC_EXPIRE:-7d}\"\nexport NGINX_CACHE_HTML_EXPIRE=\"${NGINX_CACHE_HTML_EXPIRE:-1h}\"\n\n# === WEBSOCKET FEATURE ===\nexport NGINX_WEBSOCKET_ENABLED=\"${NGINX_WEBSOCKET_ENABLED:-false}\"\n\n# === URL REWRITING FEATURE ===\nexport NGINX_FORCE_HTTPS=\"${NGINX_FORCE_HTTPS:-false}\"\nexport NGINX_FORCE_WWW=\"${NGINX_FORCE_WWW:-none}\"\n\n# Create templates (one-time)\ncreate_templates() {\n  local CONFIG_DIR=\"$FLOX_ENV_CACHE/config\"\n\n  # Proxy mode template\n  if [ ! -f \"$CONFIG_DIR/nginx-proxy.template\" ]; then\n    cat > \"$CONFIG_DIR/nginx-proxy.template\" << 'TEMPLATE'\nworker_processes ${NGINX_WORKER_PROCESSES};\nerror_log ${NGINX_LOG_DIR}/error.log;\npid ${NGINX_LOG_DIR}/nginx.pid;\n\nevents {\n    worker_connections ${NGINX_WORKER_CONNECTIONS};\n}\n\nhttp {\n    access_log ${NGINX_LOG_DIR}/access.log;\n\n    ${GZIP_CONFIG}\n\n    ${RATE_LIMIT_ZONE}\n\n    server {\n        listen ${NGINX_HOST}:${NGINX_PORT}${SSL_LISTEN};\n\n        ${SSL_CONFIG}\n\n        ${SECURITY_HEADERS}\n\n        ${REWRITE_RULES}\n\n        location / {\n            ${RATE_LIMIT_REQ}\n\n            proxy_pass http://${NGINX_BACKEND_HOST}:${NGINX_BACKEND_PORT};\n            proxy_set_header Host $host;\n            proxy_set_header X-Real-IP $remote_addr;\n            proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;\n            proxy_set_header X-Forwarded-Proto $scheme;\n            proxy_connect_timeout ${NGINX_PROXY_TIMEOUT};\n            proxy_send_timeout ${NGINX_PROXY_TIMEOUT};\n            proxy_read_timeout ${NGINX_PROXY_TIMEOUT};\n            ${WEBSOCKET_CONFIG}\n        }\n    }\n}\nTEMPLATE\n  fi\n\n  # Static mode template\n  if [ ! -f \"$CONFIG_DIR/nginx-static.template\" ]; then\n    cat > \"$CONFIG_DIR/nginx-static.template\" << 'TEMPLATE'\nworker_processes ${NGINX_WORKER_PROCESSES};\nerror_log ${NGINX_LOG_DIR}/error.log;\npid ${NGINX_LOG_DIR}/nginx.pid;\n\nevents {\n    worker_connections ${NGINX_WORKER_CONNECTIONS};\n}\n\nhttp {\n    include ${NGINX_MIME_TYPES};\n    default_type application/octet-stream;\n\n    access_log ${NGINX_LOG_DIR}/access.log;\n\n    sendfile on;\n    tcp_nopush on;\n    tcp_nodelay on;\n    keepalive_timeout 65;\n\n    ${GZIP_CONFIG}\n\n    ${RATE_LIMIT_ZONE}\n\n    server {\n        listen ${NGINX_HOST}:${NGINX_PORT}${SSL_LISTEN};\n\n        ${SSL_CONFIG}\n\n        ${SECURITY_HEADERS}\n\n        ${REWRITE_RULES}\n\n        root ${NGINX_ROOT};\n        index ${NGINX_INDEX};\n\n        location / {\n            ${RATE_LIMIT_REQ}\n            ${CACHE_HTML}\n            try_files $uri $uri/ =404;\n        }\n\n        ${CACHE_STATIC}\n    }\n}\nTEMPLATE\n  fi\n\n  # Load balancer mode template\n  if [ ! -f \"$CONFIG_DIR/nginx-loadbalancer.template\" ]; then\n    cat > \"$CONFIG_DIR/nginx-loadbalancer.template\" << 'TEMPLATE'\nworker_processes ${NGINX_WORKER_PROCESSES};\nerror_log ${NGINX_LOG_DIR}/error.log;\npid ${NGINX_LOG_DIR}/nginx.pid;\n\nevents {\n    worker_connections ${NGINX_WORKER_CONNECTIONS};\n}\n\nhttp {\n    access_log ${NGINX_LOG_DIR}/access.log;\n\n    ${GZIP_CONFIG}\n\n    ${RATE_LIMIT_ZONE}\n\n    ${UPSTREAM_BLOCK}\n\n    server {\n        listen ${NGINX_HOST}:${NGINX_PORT}${SSL_LISTEN};\n\n        ${SSL_CONFIG}\n\n        ${SECURITY_HEADERS}\n\n        ${REWRITE_RULES}\n\n        location / {\n            ${RATE_LIMIT_REQ}\n\n            proxy_pass http://backend;\n            proxy_set_header Host $host;\n            proxy_set_header X-Real-IP $remote_addr;\n            proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;\n            proxy_set_header X-Forwarded-Proto $scheme;\n            ${WEBSOCKET_CONFIG}\n        }\n    }\n}\nTEMPLATE\n  fi\n\n  # Create sample index.html for static mode\n  if [ ! -f \"$FLOX_ENV_CACHE/www/index.html\" ]; then\n    cat > \"$FLOX_ENV_CACHE/www/index.html\" << 'HTML'\n<!DOCTYPE html>\n<html>\n<head>\n    <title>nginx-headless</title>\n</head>\n<body>\n    <h1>nginx-headless</h1>\n    <p>Static file serving is working!</p>\n</body>\n</html>\nHTML\n  fi\n}\n\ncreate_templates\n\ncd \"$FLOX_ENV_PROJECT\"\n"
+          },
+          "options": {
+            "systems": [
+              "aarch64-darwin",
+              "aarch64-linux",
+              "x86_64-darwin",
+              "x86_64-linux"
+            ]
+          },
+          "services": {
+            "nginx": {
+              "command": "set -e\nmkdir -p \"$FLOX_ENV_CACHE/logs\"\n\nCONFIG_DIR=\"$FLOX_ENV_CACHE/config\"\nFINAL_CONF=\"$CONFIG_DIR/nginx.conf\"\n\n# Compute nginx mime.types path\nNGINX_BIN=$(which nginx)\nNGINX_PREFIX=$(dirname $(dirname \"$NGINX_BIN\"))\nexport NGINX_MIME_TYPES=\"$NGINX_PREFIX/conf/mime.types\"\n\n# Generate feature configuration blocks\ngenerate_features() {\n  # SSL/TLS Configuration\n  if [ \"$NGINX_SSL_ENABLED\" = \"true\" ]; then\n    if [ -z \"$NGINX_SSL_CERT\" ] || [ -z \"$NGINX_SSL_KEY\" ]; then\n      echo \"Error: NGINX_SSL_ENABLED=true but NGINX_SSL_CERT or NGINX_SSL_KEY not set\"\n      return 1\n    fi\n    if [ ! -f \"$NGINX_SSL_CERT\" ]; then\n      echo \"Error: SSL certificate not found: $NGINX_SSL_CERT\"\n      return 1\n    fi\n    if [ ! -f \"$NGINX_SSL_KEY\" ]; then\n      echo \"Error: SSL key not found: $NGINX_SSL_KEY\"\n      return 1\n    fi\n    export SSL_LISTEN=\" ssl\"\n    export SSL_CONFIG=\"ssl_certificate $NGINX_SSL_CERT;\n    ssl_certificate_key $NGINX_SSL_KEY;\n    ssl_protocols $NGINX_SSL_PROTOCOLS;\n    ssl_ciphers HIGH:!aNULL:!MD5;\"\n  else\n    export SSL_LISTEN=\"\"\n    export SSL_CONFIG=\"\"\n  fi\n\n  # Rate Limiting Configuration\n  if [ \"$NGINX_RATE_LIMIT_ENABLED\" = \"true\" ]; then\n    export RATE_LIMIT_ZONE=\"limit_req_zone \"'$binary_remote_addr'\" zone=ratelimit:10m rate=$NGINX_RATE_LIMIT_RATE;\"\n    export RATE_LIMIT_REQ=\"limit_req zone=ratelimit burst=$NGINX_RATE_LIMIT_BURST nodelay;\"\n  else\n    export RATE_LIMIT_ZONE=\"\"\n    export RATE_LIMIT_REQ=\"\"\n  fi\n\n  # Load Balancer Upstream Block\n  if [ \"$NGINX_MODE\" = \"load_balancer\" ]; then\n    if [ -z \"$NGINX_UPSTREAM_SERVERS\" ]; then\n      echo \"Error: NGINX_MODE=load_balancer but NGINX_UPSTREAM_SERVERS not set\"\n      echo \"Example: NGINX_UPSTREAM_SERVERS=\\\"app1:8080,app2:8080,app3:8080\\\"\"\n      return 1\n    fi\n\n    # Determine load balancing directive\n    case \"$NGINX_LB_METHOD\" in\n      round_robin)\n        LB_DIRECTIVE=\"\"\n        ;;\n      least_conn)\n        LB_DIRECTIVE=\"least_conn;\"\n        ;;\n      ip_hash)\n        LB_DIRECTIVE=\"ip_hash;\"\n        ;;\n      *)\n        echo \"Error: Unknown NGINX_LB_METHOD: $NGINX_LB_METHOD\"\n        echo \"Supported: round_robin, least_conn, ip_hash\"\n        return 1\n        ;;\n    esac\n\n    # Generate upstream block\n    UPSTREAM=\"upstream backend {\"$'\\n'\"    $LB_DIRECTIVE\"$'\\n'\n    IFS=',' read -ra SERVERS <<< \"$NGINX_UPSTREAM_SERVERS\"\n    for server in \"${SERVERS[@]}\"; do\n      server=$(echo \"$server\" | xargs)  # Trim whitespace\n      UPSTREAM+=\"    server $server;\"$'\\n'\n    done\n    UPSTREAM+=\"}\"\n    export UPSTREAM_BLOCK=\"$UPSTREAM\"\n  else\n    export UPSTREAM_BLOCK=\"\"\n  fi\n\n  # Gzip Compression Configuration\n  if [ \"$NGINX_GZIP_ENABLED\" = \"true\" ]; then\n    export GZIP_CONFIG=\"gzip on;\n    gzip_vary on;\n    gzip_proxied any;\n    gzip_comp_level $NGINX_GZIP_LEVEL;\n    gzip_min_length $NGINX_GZIP_MIN_LENGTH;\n    gzip_types $NGINX_GZIP_TYPES;\"\n  else\n    export GZIP_CONFIG=\"\"\n  fi\n\n  # Security Headers Configuration\n  if [ \"$NGINX_SECURITY_HEADERS_ENABLED\" = \"true\" ]; then\n    HEADERS=\"add_header X-Frame-Options SAMEORIGIN always;\n    add_header X-Content-Type-Options nosniff always;\n    add_header X-XSS-Protection \\\"1; mode=block\\\" always;\n    add_header Referrer-Policy no-referrer-when-downgrade always;\"\n\n    # Add HSTS if SSL is enabled\n    if [ \"$NGINX_SSL_ENABLED\" = \"true\" ]; then\n      HEADERS+=$'\\n'\"    add_header Strict-Transport-Security \\\"max-age=31536000; includeSubDomains\\\" always;\"\n    fi\n\n    export SECURITY_HEADERS=\"$HEADERS\"\n  else\n    export SECURITY_HEADERS=\"\"\n  fi\n\n  # Caching Configuration (for static mode)\n  if [ \"$NGINX_CACHE_ENABLED\" = \"true\" ]; then\n    export CACHE_HTML=\"add_header Cache-Control \\\"public, max-age=3600\\\";\n            expires $NGINX_CACHE_HTML_EXPIRE;\"\n\n    export CACHE_STATIC=\"location ~* \\.(jpg|jpeg|png|gif|ico|css|js|svg|woff|woff2|ttf|eot)$ {\n            expires $NGINX_CACHE_STATIC_EXPIRE;\n            add_header Cache-Control \\\"public, immutable\\\";\n        }\"\n  else\n    export CACHE_HTML=\"\"\n    export CACHE_STATIC=\"\"\n  fi\n\n  # WebSocket Configuration (for proxy and load_balancer modes)\n  if [ \"$NGINX_WEBSOCKET_ENABLED\" = \"true\" ]; then\n    export WEBSOCKET_CONFIG=\"proxy_http_version 1.1;\n            proxy_set_header Upgrade \\$http_upgrade;\n            proxy_set_header Connection \\\"upgrade\\\";\"\n  else\n    export WEBSOCKET_CONFIG=\"\"\n  fi\n\n  # URL Rewriting Configuration\n  REWRITE=\"\"\n\n  # Force HTTPS redirect\n  if [ \"$NGINX_FORCE_HTTPS\" = \"true\" ]; then\n    REWRITE+=\"if (\\$scheme != \\\"https\\\") {\"$'\\n'\n    REWRITE+=\"            return 301 https://\\$host\\$request_uri;\"$'\\n'\n    REWRITE+=\"        }\"$'\\n'\n  fi\n\n  # Force WWW or non-WWW\n  if [ \"$NGINX_FORCE_WWW\" = \"add_www\" ]; then\n    REWRITE+=\"if (\\$host !~* ^www\\\\.) {\"$'\\n'\n    REWRITE+=\"            return 301 \\$scheme://www.\\$host\\$request_uri;\"$'\\n'\n    REWRITE+=\"        }\"$'\\n'\n  elif [ \"$NGINX_FORCE_WWW\" = \"remove_www\" ]; then\n    REWRITE+=\"if (\\$host ~* ^www\\\\.(.*)) {\"$'\\n'\n    REWRITE+=\"            return 301 \\$scheme://\\$1\\$request_uri;\"$'\\n'\n    REWRITE+=\"        }\"$'\\n'\n  fi\n\n  export REWRITE_RULES=\"$REWRITE\"\n}\n\n# Select mode template\ncase \"$NGINX_MODE\" in\n  proxy)\n    TEMPLATE=\"$CONFIG_DIR/nginx-proxy.template\"\n    ;;\n  static)\n    TEMPLATE=\"$CONFIG_DIR/nginx-static.template\"\n    ;;\n  load_balancer)\n    TEMPLATE=\"$CONFIG_DIR/nginx-loadbalancer.template\"\n    ;;\n  *)\n    echo \"Error: Unknown NGINX_MODE: $NGINX_MODE\"\n    echo \"Supported modes: proxy, static, load_balancer\"\n    exit 1\n    ;;\nesac\n\nif [ ! -f \"$TEMPLATE\" ]; then\n  echo \"Error: Template not found: $TEMPLATE\"\n  exit 1\nfi\n\n# Generate feature configurations\ngenerate_features || exit 1\n\n# Apply envsubst with explicit variable list (preserves nginx variables)\nenvsubst '${NGINX_WORKER_PROCESSES} ${NGINX_LOG_DIR} ${NGINX_WORKER_CONNECTIONS} ${NGINX_MIME_TYPES} ${GZIP_CONFIG} ${RATE_LIMIT_ZONE} ${NGINX_HOST} ${NGINX_PORT} ${SSL_LISTEN} ${SSL_CONFIG} ${SECURITY_HEADERS} ${RATE_LIMIT_REQ} ${NGINX_BACKEND_HOST} ${NGINX_BACKEND_PORT} ${NGINX_PROXY_TIMEOUT} ${NGINX_ROOT} ${NGINX_INDEX} ${UPSTREAM_BLOCK} ${CACHE_HTML} ${CACHE_STATIC} ${WEBSOCKET_CONFIG} ${REWRITE_RULES}' < \"$TEMPLATE\" > \"$FINAL_CONF\"\n\n# Validate configuration\nif ! nginx -t -c \"$FINAL_CONF\"; then\n  echo \"Error: nginx configuration validation failed\"\n  echo \"Configuration file: $FINAL_CONF\"\n  exit 1\nfi\n\n# Start nginx\nexec nginx -c \"$FINAL_CONF\" -g \"daemon off;\" 2>&1 | tee -a \"$FLOX_ENV_CACHE/logs/nginx.log\"\n"
+            }
+          }
+        },
+        "name": "nginx-headless",
+        "descriptor": {
+          "remote": "barstoolbluz/nginx-headless"
+        }
+      },
+      {
+        "manifest": {
+          "version": 1,
+          "install": {
+            "curl": {
+              "pkg-path": "curl"
+            },
+            "git": {
+              "pkg-path": "git"
+            },
+            "jenkins": {
+              "pkg-path": "jenkins"
+            },
+            "jq": {
+              "pkg-path": "jq"
+            },
+            "openjdk21": {
+              "pkg-path": "openjdk21"
+            }
+          },
+          "vars": {
+            "JENKINS_DATA_DIR": "$FLOX_ENV_CACHE/data/jenkins-home",
+            "PLUGIN_MGR_DIR": "$FLOX_ENV_CACHE/cache"
+          },
+          "hook": {
+            "on-activate": "# CRITICAL: Use 'return' not 'exit' to keep environment active\n\n# === Directory Structure Setup ===\nsetup_directories() {\n  mkdir -p \"$FLOX_ENV_CACHE/config\"\n  mkdir -p \"$FLOX_ENV_CACHE/data/jenkins-home\"\n  mkdir -p \"$FLOX_ENV_CACHE/logs\"\n  mkdir -p \"$FLOX_ENV_CACHE/cache\"\n}\n\n# === Runtime Configuration (Override with env vars) ===\nconfigure_runtime() {\n  export JENKINS_HOME=\"${JENKINS_HOME:-$FLOX_ENV_CACHE/data/jenkins-home}\"\n  export JENKINS_PORT=\"${JENKINS_PORT:-8080}\"\n  export JENKINS_PREFIX=\"${JENKINS_PREFIX:-/}\"\n  export JENKINS_ADMIN_USER=\"${JENKINS_ADMIN_USER:-admin}\"\n\n  # Admin password from env var or config file\n  CREDS_FILE=\"$HOME/.config/jenkins/credentials\"\n  if [ -z \"$JENKINS_ADMIN_PASSWORD\" ] && [ -f \"$CREDS_FILE\" ]; then\n    source \"$CREDS_FILE\"\n  fi\n\n  # Java options\n  export JENKINS_JAVA_OPTS=\"${JENKINS_JAVA_OPTS:--Xmx1g -Djava.awt.headless=true}\"\n\n  # Plugin selection (space-separated list)\n  export JENKINS_PLUGINS=\"${JENKINS_PLUGINS:-git workflow-aggregator docker-workflow github configuration-as-code}\"\n\n  # JCasC configuration file\n  export JENKINS_CASC_CONFIG=\"${JENKINS_CASC_CONFIG:-$FLOX_ENV_CACHE/config/jenkins.yaml}\"\n}\n\n# === Plugin Installation Manager Setup ===\nsetup_plugin_manager() {\n  PLUGIN_MGR_VERSION=\"2.13.0\"\n  PLUGIN_MGR_JAR=\"$FLOX_ENV_CACHE/cache/jenkins-plugin-manager-${PLUGIN_MGR_VERSION}.jar\"\n  PLUGIN_MGR_URL=\"https://github.com/jenkinsci/plugin-installation-manager-tool/releases/download/${PLUGIN_MGR_VERSION}/jenkins-plugin-manager-${PLUGIN_MGR_VERSION}.jar\"\n\n  if [ ! -f \"$PLUGIN_MGR_JAR\" ]; then\n    echo \"⬇️  Downloading Jenkins Plugin Installation Manager v${PLUGIN_MGR_VERSION}...\"\n    if curl -fsSL \"$PLUGIN_MGR_URL\" -o \"$PLUGIN_MGR_JAR\"; then\n      echo \"✓ Plugin manager downloaded\"\n    else\n      echo \"⚠️  Failed to download plugin manager\"\n      echo \"   Plugins can still be installed manually or via jenkins-cli\"\n      return 1\n    fi\n  fi\n\n  # Export for use in functions\n  export JENKINS_PLUGIN_MGR_JAR=\"$PLUGIN_MGR_JAR\"\n}\n\n# === Find Jenkins WAR File ===\nfind_jenkins_war() {\n  # Find jenkins.war from installed package via jenkins-cli path\n  JENKINS_CLI_PATH=$(which jenkins-cli 2>/dev/null)\n\n  if [ -z \"$JENKINS_CLI_PATH\" ]; then\n    echo \"❌ Could not find jenkins-cli\"\n    echo \"   Make sure jenkins package is installed\"\n    return 1\n  fi\n\n  # Get the package directory and find webapps/jenkins.war\n  JENKINS_PKG_DIR=$(dirname \"$(dirname \"$JENKINS_CLI_PATH\")\")\n  JENKINS_WAR=\"$JENKINS_PKG_DIR/webapps/jenkins.war\"\n\n  if [ ! -f \"$JENKINS_WAR\" ]; then\n    echo \"❌ Could not find jenkins.war at $JENKINS_WAR\"\n    echo \"   Jenkins package structure may have changed\"\n    return 1\n  fi\n\n  export JENKINS_WAR\n}\n\n# === Generate Default JCasC Configuration ===\ngenerate_jcasc_config() {\n  JCASC_FILE=\"$FLOX_ENV_CACHE/config/jenkins.yaml\"\n\n  # Only generate if it doesn't exist\n  if [ ! -f \"$JCASC_FILE\" ]; then\n    cat > \"$JCASC_FILE\" << 'EOF'\njenkins:\n  systemMessage: \"Jenkins Headless Environment (Flox)\"\n  numExecutors: 0  # Best practice: no builds on controller\n  mode: EXCLUSIVE\n\n  securityRealm:\n    local:\n      allowsSignup: false\n      users:\n        - id: \"${JENKINS_ADMIN_USER}\"\n          password: \"${JENKINS_ADMIN_PASSWORD:-changeme}\"\n\n  authorizationStrategy:\n    loggedInUsersCanDoAnything:\n      allowAnonymousRead: false\n\nunclassified:\n  location:\n    url: \"http://localhost:${JENKINS_PORT}${JENKINS_PREFIX}\"\n    adminAddress: \"jenkins@localhost\"\nEOF\n    echo \"✓ Generated default JCasC configuration: $JCASC_FILE\"\n  fi\n}\n\n# === Main Setup Function ===\nmain_setup() {\n  setup_directories\n  configure_runtime\n  find_jenkins_war || return 1\n  setup_plugin_manager\n  generate_jcasc_config\n\n  # Display configuration\n  echo \"\"\n  echo \"✅ Jenkins Headless Environment Ready\"\n  echo \"\"\n  echo \"Configuration:\"\n  echo \"  JENKINS_HOME:   $JENKINS_HOME\"\n  echo \"  Port:           $JENKINS_PORT\"\n  echo \"  Prefix:         $JENKINS_PREFIX\"\n  echo \"  Admin User:     $JENKINS_ADMIN_USER\"\n  echo \"  Plugins:        $JENKINS_PLUGINS\"\n  echo \"\"\n  echo \"Commands:\"\n  echo \"  flox activate -s        Start Jenkins service\"\n  echo \"  jenkins-info           Show detailed configuration\"\n  echo \"  jenkins-health         Check Jenkins health\"\n  echo \"  jenkins-logs           Tail Jenkins logs\"\n  echo \"\"\n  echo \"Runtime Overrides:\"\n  echo \"  JENKINS_PORT=9090 flox activate -s\"\n  echo \"  JENKINS_PLUGINS=\\\"git pipeline\\\" flox activate -s\"\n  echo \"\"\n\n  # Return to project directory\n  cd \"$FLOX_ENV_PROJECT\"\n}\n\n# Execute main setup\nmain_setup\n"
+          },
+          "profile": {
+            "bash": "# Show Jenkins configuration\njenkins-info() {\n  echo \"Jenkins Headless Environment Configuration\"\n  echo \"\"\n  echo \"Version:\"\n  if [ -f \"$JENKINS_WAR\" ]; then\n    java -jar \"$JENKINS_WAR\" --version 2>&1 | head -1 || echo \"  (Jenkins WAR found)\"\n  else\n    echo \"  Jenkins package installed\"\n  fi\n  echo \"\"\n  echo \"Server:\"\n  echo \"  URL:            http://localhost:${JENKINS_PORT}${JENKINS_PREFIX}\"\n  echo \"  JENKINS_HOME:   ${JENKINS_HOME}\"\n  echo \"  Admin User:     ${JENKINS_ADMIN_USER}\"\n  echo \"\"\n  echo \"Configuration:\"\n  echo \"  Java Options:   ${JENKINS_JAVA_OPTS}\"\n  echo \"  JCasC Config:   ${JENKINS_CASC_CONFIG}\"\n  echo \"  Plugins:        ${JENKINS_PLUGINS}\"\n  echo \"\"\n  echo \"Logs:\"\n  echo \"  Service Log:    $FLOX_ENV_CACHE/logs/jenkins.log\"\n  echo \"  Jenkins Logs:   $JENKINS_HOME/logs/\"\n  echo \"\"\n}\nexport -f jenkins-info\n\n# Check Jenkins health\njenkins-health() {\n  local url=\"http://localhost:${JENKINS_PORT}${JENKINS_PREFIX}/login\"\n\n  if curl -sf \"$url\" >/dev/null 2>&1; then\n    echo \"✅ Jenkins is healthy\"\n    echo \"   URL: http://localhost:${JENKINS_PORT}${JENKINS_PREFIX}\"\n    return 0\n  else\n    echo \"❌ Jenkins is not responding\"\n    echo \"   URL: $url\"\n    echo \"\"\n    echo \"Troubleshooting:\"\n    echo \"  1. Check if service is running: flox services status\"\n    echo \"  2. View logs: jenkins-logs\"\n    echo \"  3. Check port: netstat -tlnp | grep ${JENKINS_PORT}\"\n    return 1\n  fi\n}\nexport -f jenkins-health\n\n# Tail Jenkins logs\njenkins-logs() {\n  local logfile=\"$FLOX_ENV_CACHE/logs/jenkins.log\"\n\n  if [ -f \"$logfile\" ]; then\n    tail -f \"$logfile\"\n  else\n    echo \"❌ Log file not found: $logfile\"\n    echo \"   Start Jenkins first: flox activate -s\"\n    return 1\n  fi\n}\nexport -f jenkins-logs\n\n# Install additional plugin\njenkins-plugin-install() {\n  if [ $# -eq 0 ]; then\n    echo \"Usage: jenkins-plugin-install <plugin-name> [plugin-name...]\"\n    echo \"\"\n    echo \"Examples:\"\n    echo \"  jenkins-plugin-install prometheus\"\n    echo \"  jenkins-plugin-install slack role-strategy\"\n    return 1\n  fi\n\n  if [ ! -f \"$JENKINS_PLUGIN_MGR_JAR\" ]; then\n    echo \"❌ Plugin manager not available\"\n    echo \"   Download manually or use jenkins-cli\"\n    return 1\n  fi\n\n  echo \"📦 Installing plugins: $*\"\n\n  java -jar \"$JENKINS_PLUGIN_MGR_JAR\" \\\n    --war \"$JENKINS_WAR\" \\\n    --plugin-download-directory \"$JENKINS_HOME/plugins\" \\\n    --plugins \"$*\" \\\n    --verbose\n\n  echo \"\"\n  echo \"✓ Plugins installed\"\n  echo \"⚠️  Restart Jenkins for changes to take effect:\"\n  echo \"   flox services restart jenkins\"\n}\nexport -f jenkins-plugin-install\n\n# Open Jenkins in browser\njenkins-url() {\n  local url=\"http://localhost:${JENKINS_PORT}${JENKINS_PREFIX}\"\n  echo \"$url\"\n\n  # Try to open in browser (optional)\n  if command -v xdg-open >/dev/null 2>&1; then\n    xdg-open \"$url\" 2>/dev/null || true\n  elif command -v open >/dev/null 2>&1; then\n    open \"$url\" 2>/dev/null || true\n  fi\n}\nexport -f jenkins-url\n",
+            "zsh": "# Show Jenkins configuration\njenkins-info() {\n  echo \"Jenkins Headless Environment Configuration\"\n  echo \"\"\n  echo \"Version:\"\n  if [ -f \"$JENKINS_WAR\" ]; then\n    java -jar \"$JENKINS_WAR\" --version 2>&1 | head -1 || echo \"  (Jenkins WAR found)\"\n  else\n    echo \"  Jenkins package installed\"\n  fi\n  echo \"\"\n  echo \"Server:\"\n  echo \"  URL:            http://localhost:${JENKINS_PORT}${JENKINS_PREFIX}\"\n  echo \"  JENKINS_HOME:   ${JENKINS_HOME}\"\n  echo \"  Admin User:     ${JENKINS_ADMIN_USER}\"\n  echo \"\"\n  echo \"Configuration:\"\n  echo \"  Java Options:   ${JENKINS_JAVA_OPTS}\"\n  echo \"  JCasC Config:   ${JENKINS_CASC_CONFIG}\"\n  echo \"  Plugins:        ${JENKINS_PLUGINS}\"\n  echo \"\"\n  echo \"Logs:\"\n  echo \"  Service Log:    $FLOX_ENV_CACHE/logs/jenkins.log\"\n  echo \"  Jenkins Logs:   $JENKINS_HOME/logs/\"\n  echo \"\"\n}\n\n# Check Jenkins health\njenkins-health() {\n  local url=\"http://localhost:${JENKINS_PORT}${JENKINS_PREFIX}/login\"\n\n  if curl -sf \"$url\" >/dev/null 2>&1; then\n    echo \"✅ Jenkins is healthy\"\n    echo \"   URL: http://localhost:${JENKINS_PORT}${JENKINS_PREFIX}\"\n    return 0\n  else\n    echo \"❌ Jenkins is not responding\"\n    echo \"   URL: $url\"\n    echo \"\"\n    echo \"Troubleshooting:\"\n    echo \"  1. Check if service is running: flox services status\"\n    echo \"  2. View logs: jenkins-logs\"\n    echo \"  3. Check port: netstat -tlnp | grep ${JENKINS_PORT}\"\n    return 1\n  fi\n}\n\n# Tail Jenkins logs\njenkins-logs() {\n  local logfile=\"$FLOX_ENV_CACHE/logs/jenkins.log\"\n\n  if [ -f \"$logfile\" ]; then\n    tail -f \"$logfile\"\n  else\n    echo \"❌ Log file not found: $logfile\"\n    echo \"   Start Jenkins first: flox activate -s\"\n    return 1\n  fi\n}\n\n# Install additional plugin\njenkins-plugin-install() {\n  if [ $# -eq 0 ]; then\n    echo \"Usage: jenkins-plugin-install <plugin-name> [plugin-name...]\"\n    echo \"\"\n    echo \"Examples:\"\n    echo \"  jenkins-plugin-install prometheus\"\n    echo \"  jenkins-plugin-install slack role-strategy\"\n    return 1\n  fi\n\n  if [ ! -f \"$JENKINS_PLUGIN_MGR_JAR\" ]; then\n    echo \"❌ Plugin manager not available\"\n    echo \"   Download manually or use jenkins-cli\"\n    return 1\n  fi\n\n  echo \"📦 Installing plugins: $*\"\n\n  java -jar \"$JENKINS_PLUGIN_MGR_JAR\" \\\n    --war \"$JENKINS_WAR\" \\\n    --plugin-download-directory \"$JENKINS_HOME/plugins\" \\\n    --plugins \"$*\" \\\n    --verbose\n\n  echo \"\"\n  echo \"✓ Plugins installed\"\n  echo \"⚠️  Restart Jenkins for changes to take effect:\"\n  echo \"   flox services restart jenkins\"\n}\n\n# Open Jenkins in browser\njenkins-url() {\n  local url=\"http://localhost:${JENKINS_PORT}${JENKINS_PREFIX}\"\n  echo \"$url\"\n\n  # Try to open in browser (optional)\n  if command -v xdg-open >/dev/null 2>&1; then\n    xdg-open \"$url\" 2>/dev/null || true\n  elif command -v open >/dev/null 2>&1; then\n    open \"$url\" 2>/dev/null || true\n  fi\n}\n",
+            "fish": "# Show Jenkins configuration\nfunction jenkins-info\n  echo \"Jenkins Headless Environment Configuration\"\n  echo \"\"\n  echo \"Version:\"\n  if test -f \"$JENKINS_WAR\"\n    java -jar \"$JENKINS_WAR\" --version 2>&1 | head -1; or echo \"  (Jenkins WAR found)\"\n  else\n    echo \"  Jenkins package installed\"\n  end\n  echo \"\"\n  echo \"Server:\"\n  echo \"  URL:            http://localhost:$JENKINS_PORT$JENKINS_PREFIX\"\n  echo \"  JENKINS_HOME:   $JENKINS_HOME\"\n  echo \"  Admin User:     $JENKINS_ADMIN_USER\"\n  echo \"\"\n  echo \"Configuration:\"\n  echo \"  Java Options:   $JENKINS_JAVA_OPTS\"\n  echo \"  JCasC Config:   $JENKINS_CASC_CONFIG\"\n  echo \"  Plugins:        $JENKINS_PLUGINS\"\n  echo \"\"\n  echo \"Logs:\"\n  echo \"  Service Log:    $FLOX_ENV_CACHE/logs/jenkins.log\"\n  echo \"  Jenkins Logs:   $JENKINS_HOME/logs/\"\n  echo \"\"\nend\n\n# Check Jenkins health\nfunction jenkins-health\n  set url \"http://localhost:$JENKINS_PORT$JENKINS_PREFIX/login\"\n\n  if curl -sf \"$url\" >/dev/null 2>&1\n    echo \"✅ Jenkins is healthy\"\n    echo \"   URL: http://localhost:$JENKINS_PORT$JENKINS_PREFIX\"\n    return 0\n  else\n    echo \"❌ Jenkins is not responding\"\n    echo \"   URL: $url\"\n    echo \"\"\n    echo \"Troubleshooting:\"\n    echo \"  1. Check if service is running: flox services status\"\n    echo \"  2. View logs: jenkins-logs\"\n    echo \"  3. Check port: netstat -tlnp | grep $JENKINS_PORT\"\n    return 1\n  end\nend\n\n# Tail Jenkins logs\nfunction jenkins-logs\n  set logfile \"$FLOX_ENV_CACHE/logs/jenkins.log\"\n\n  if test -f \"$logfile\"\n    tail -f \"$logfile\"\n  else\n    echo \"❌ Log file not found: $logfile\"\n    echo \"   Start Jenkins first: flox activate -s\"\n    return 1\n  end\nend\n\n# Install additional plugin\nfunction jenkins-plugin-install\n  if test (count $argv) -eq 0\n    echo \"Usage: jenkins-plugin-install <plugin-name> [plugin-name...]\"\n    echo \"\"\n    echo \"Examples:\"\n    echo \"  jenkins-plugin-install prometheus\"\n    echo \"  jenkins-plugin-install slack role-strategy\"\n    return 1\n  end\n\n  if not test -f \"$JENKINS_PLUGIN_MGR_JAR\"\n    echo \"❌ Plugin manager not available\"\n    echo \"   Download manually or use jenkins-cli\"\n    return 1\n  end\n\n  echo \"📦 Installing plugins: $argv\"\n\n  java -jar \"$JENKINS_PLUGIN_MGR_JAR\" \\\n    --war \"$JENKINS_WAR\" \\\n    --plugin-download-directory \"$JENKINS_HOME/plugins\" \\\n    --plugins \"$argv\" \\\n    --verbose\n\n  echo \"\"\n  echo \"✓ Plugins installed\"\n  echo \"⚠️  Restart Jenkins for changes to take effect:\"\n  echo \"   flox services restart jenkins\"\nend\n\n# Open Jenkins in browser\nfunction jenkins-url\n  set url \"http://localhost:$JENKINS_PORT$JENKINS_PREFIX\"\n  echo \"$url\"\n\n  # Try to open in browser (optional)\n  if command -v xdg-open >/dev/null 2>&1\n    xdg-open \"$url\" 2>/dev/null; or true\n  else if command -v open >/dev/null 2>&1\n    open \"$url\" 2>/dev/null; or true\n  end\nend\n"
+          },
+          "options": {
+            "systems": [
+              "aarch64-darwin",
+              "aarch64-linux",
+              "x86_64-darwin",
+              "x86_64-linux"
+            ]
+          },
+          "services": {
+            "jenkins": {
+              "command": "# Ensure JENKINS_HOME exists\nmkdir -p \"$JENKINS_HOME\"\nmkdir -p \"$FLOX_ENV_CACHE/logs\"\n\n# Install plugins if JENKINS_PLUGIN_MGR_JAR is available\nif [ -n \"$JENKINS_PLUGIN_MGR_JAR\" ] && [ -f \"$JENKINS_PLUGIN_MGR_JAR\" ] && [ -n \"$JENKINS_PLUGINS\" ]; then\n  echo \"📦 Installing Jenkins plugins...\"\n  echo \"   Plugins: $JENKINS_PLUGINS\"\n\n  java -jar \"$JENKINS_PLUGIN_MGR_JAR\" \\\n    --war \"$JENKINS_WAR\" \\\n    --plugin-download-directory \"$JENKINS_HOME/plugins\" \\\n    --plugins $JENKINS_PLUGINS \\\n    --verbose || echo \"⚠️  Some plugins may have failed to install\"\n\n  echo \"✓ Plugin installation complete\"\nfi\n\n# Start Jenkins\necho \"🚀 Starting Jenkins...\"\necho \"   URL: http://localhost:${JENKINS_PORT}${JENKINS_PREFIX}\"\necho \"   JENKINS_HOME: $JENKINS_HOME\"\necho \"\"\n\nexec java $JENKINS_JAVA_OPTS \\\n  -Djenkins.install.runSetupWizard=false \\\n  -DJENKINS_HOME=\"$JENKINS_HOME\" \\\n  -Dcasc.jenkins.config=\"$JENKINS_CASC_CONFIG\" \\\n  -jar \"$JENKINS_WAR\" \\\n  --httpPort=\"$JENKINS_PORT\" \\\n  --prefix=\"$JENKINS_PREFIX\" \\\n  2>&1 | tee -a \"$FLOX_ENV_CACHE/logs/jenkins.log\"\n"
+            }
+          }
+        },
+        "name": "jenkins-headless",
+        "descriptor": {
+          "dir": "../jenkins-headless"
+        }
+      }
+    ],
+    "warnings": [
+      {
+        "warning": {
+          "Overriding": [
+            "options",
+            "systems"
+          ]
+        },
+        "higher_priority_name": "jenkins-headless"
+      },
+      {
+        "warning": {
+          "Overriding": [
+            "options",
+            "systems"
+          ]
+        },
+        "higher_priority_name": "Current manifest"
+      }
+    ]
+  }
+}
