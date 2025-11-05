@@ -59,6 +59,7 @@ cd postgres-headless && PGPORT=5432 PGDATABASE=mydb flox activate -s
 - [**postgres**](./postgres) / [**postgres-headless**](./postgres-headless) - PostgreSQL 16 with PostGIS extension
 - [**mysql**](./mysql) / [**mysql-headless**](./mysql-headless) - MySQL 8.0 database
 - [**mariadb**](./mariadb) / [**mariadb-headless**](./mariadb-headless) - MariaDB database
+- [**redis**](./redis) / [**redis-headless**](./redis-headless) - Redis in-memory data store
 - [**neo4j**](./neo4j) / [**neo4j-headless**](./neo4j-headless) - Neo4j graph database
 
 ### Data Analytics & BI
@@ -69,8 +70,12 @@ cd postgres-headless && PGPORT=5432 PGDATABASE=mydb flox activate -s
 - [**spark**](./spark) / [**spark-headless**](./spark-headless) - Apache Spark cluster computing
 - [**kafka**](./kafka) / [**kafka-headless**](./kafka-headless) - Apache Kafka streaming platform
 
-### Container Orchestration ⚡
+### Container Runtime & Orchestration ⚡
+- [**colima-headless**](./colima-headless) - Docker-compatible container runtime (alternative to Docker Desktop)
 - [**kind**](./kind) / [**kind-headless**](./kind-headless) - Kubernetes in Docker with essential K8s tools
+
+### Web Servers & Reverse Proxies ⚡
+- [**nginx-headless**](./nginx-headless) - nginx reverse proxy, static server, and load balancer with SSL, rate limiting, gzip, security headers, caching, WebSocket, and URL rewriting
 
 ### Workflow Orchestration
 - [**airflow-local-dev**](./airflow-local-dev) - Apache Airflow 3.1.1 with LocalExecutor, CeleryExecutor, and KubernetesExecutor
@@ -90,6 +95,8 @@ cd postgres-headless && PGPORT=5432 PGDATABASE=mydb flox activate -s
 - [**python-postgres**](./python-postgres) - Python 3.12 with PostgreSQL tools and SQLAlchemy
 
 ### AI & Machine Learning
+- [**ollama-headless**](./ollama-headless) - Ollama LLM runtime with CUDA support (headless, composable)
+- [**open-webui**](./open-webui) - Web UI for Ollama (includes ollama-headless)
 - [**wsl2-ollama**](./wsl2-ollama) - Ollama LLM runtime optimized for WSL2
 
 ## 🚀 Getting Started
