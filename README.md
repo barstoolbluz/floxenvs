@@ -75,7 +75,7 @@ cd postgres-headless && PGPORT=5432 PGDATABASE=mydb flox activate -s
 - [**kind**](./kind) / [**kind-headless**](./kind-headless) - Kubernetes in Docker with essential K8s tools
 
 ### Web Servers & Reverse Proxies ⚡
-- [**nginx-headless**](./nginx-headless) - nginx reverse proxy, static server, and load balancer with SSL, rate limiting, gzip, security headers, caching, WebSocket, and URL rewriting
+- [**nginx**](./nginx) / [**nginx-headless**](./nginx-headless) - nginx reverse proxy with port/path-based routing and WebSocket support (interactive wizard) or multi-mode server with SSL, rate limiting, caching, and security features (headless)
 
 ### Workflow Orchestration
 - [**airflow-local-dev**](./airflow-local-dev) - Apache Airflow 3.1.1 with LocalExecutor, CeleryExecutor, and KubernetesExecutor
