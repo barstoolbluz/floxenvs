@@ -346,7 +346,7 @@
       "include": {
         "environments": [
           {
-            "dir": "../ollama-headless"
+            "remote": "barstoolbluz/ollama-headless"
           }
         ]
       }
@@ -399,7 +399,7 @@
         },
         "name": "ollama-headless",
         "descriptor": {
-          "dir": "../ollama-headless"
+          "remote": "barstoolbluz/ollama-headless"
         }
       }
     ],

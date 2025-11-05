@@ -5,7 +5,7 @@ version = 1
 
 [include]
 environments = [
-  { dir = "../ollama-headless" },
+  { remote = "barstoolbluz/ollama-headless" },
 ]
 
 
