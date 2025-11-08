@@ -1,0 +1,290 @@
+# Flox manifest version managed by Flox CLI
+version = 1
+
+# ==============================================================================
+# DAGSTER HEADLESS ENVIRONMENT - TECHNICAL DOCUMENTATION
+# ==============================================================================
+#
+# This environment provides Dagster orchestration platform configured for
+# CI/CD, containerized deployments, and production use cases.
+#
+# ------------------------------------------------------------------------------
+# ARCHITECTURE
+# ------------------------------------------------------------------------------
+#
+# Two-service architecture:
+#   - dagster-webserver: Web UI + GraphQL API (default port 3000)
+#   - dagster-daemon: Background process for schedules/sensors/run queuing
+#
+# Storage backends:
+#   - SQLite (default): Local development, single-instance deployments
+#   - PostgreSQL: Production, multi-instance, high-concurrency workloads
+#
+# ------------------------------------------------------------------------------
+# RUNTIME CONFIGURATION VARIABLES
+# ------------------------------------------------------------------------------
+#
+# All variables support runtime override via: VARIABLE=value flox activate
+#
+# Core Settings:
+#   DAGSTER_HOME                 Instance metadata directory
+#                                Default: $FLOX_ENV_CACHE/dagster-data
+#
+#   DAGSTER_HOST                 Webserver bind address
+#                                Default: 127.0.0.1
+#                                Production: 0.0.0.0 (behind reverse proxy only)
+#
+#   DAGSTER_PORT                 Webserver port
+#                                Default: 3000
+#
+# Storage Backend:
+#   DAGSTER_STORAGE_TYPE         Storage backend type: "sqlite" or "postgres"
+#                                Default: sqlite
+#
+#   DAGSTER_POSTGRES_URL         PostgreSQL connection string
+#                                Format: postgresql://user:pass@host:port/dbname
+#                                Auto-generated if postgres composed and not set
+#
+# Compute Settings:
+#   DAGSTER_RUN_LAUNCHER        Custom run launcher class (optional)
+#                                Default: (uses Dagster's default launcher)
+#
+#   DAGSTER_MAX_CONCURRENT_RUNS  Maximum concurrent pipeline runs
+#                                Default: 10
+#
+# Code Location (for workspace configuration):
+#   DAGSTER_CODE_LOCATION_NAME   Name for code location in workspace
+#   DAGSTER_MODULE_NAME          Python module containing Dagster definitions
+#   DAGSTER_WORKING_DIRECTORY    Working directory for code execution
+#
+# Control Flags:
+#   DAGSTER_SKIP_INIT            Set to "1" to skip config file generation
+#   DAGSTER_QUIET                Set to "1" to suppress activation messages
+#
+# ------------------------------------------------------------------------------
+# POSTGRESQL COMPOSITION
+# ------------------------------------------------------------------------------
+#
+# This environment includes barstoolbluz/postgres-headless for optional
+# PostgreSQL storage backend.
+#
+# Auto-configuration behavior:
+#   1. When DAGSTER_STORAGE_TYPE=postgres and DAGSTER_POSTGRES_URL is empty:
+#      - Detects if postgres command is available (from composition)
+#      - Auto-generates connection URL from postgres environment variables:
+#        * PGUSER (default: pguser)
+#        * PGPASSWORD (default: pgpass)
+#        * PGHOSTADDR (default: 127.0.0.1)
+#        * PGPORT (default: 15432)
+#        * PGDATABASE (set this to "dagster" for dedicated database)
+#   2. If postgres not available, falls back to SQLite with warning
+#
+# Manual postgres service control:
+#   flox services start postgres
+#   flox services status postgres
+#   flox services logs postgres
+#
+# ------------------------------------------------------------------------------
+# COMMON USAGE PATTERNS
+# ------------------------------------------------------------------------------
+#
+# Local development (SQLite):
+#   flox activate -s
+#
+# Production (PostgreSQL with auto-config):
+#   DAGSTER_STORAGE_TYPE=postgres PGDATABASE=dagster flox activate -s
+#
+# Production (PostgreSQL with custom URL):
+#   DAGSTER_STORAGE_TYPE=postgres \
+#   DAGSTER_POSTGRES_URL="postgresql://user:pass@prod-db:5432/dagster" \
+#   flox activate -s
+#
+# Container deployment:
+#   ENV DAGSTER_STORAGE_TYPE=postgres
+#   ENV DAGSTER_POSTGRES_URL="postgresql://user:pass@postgres:5432/dagster"
+#   ENV DAGSTER_HOST=0.0.0.0
+#   CMD ["flox", "activate", "-s"]
+#
+# CI/CD (quiet mode):
+#   DAGSTER_QUIET=1 flox activate -s
+#
+# ------------------------------------------------------------------------------
+# SERVICE MANAGEMENT
+# ------------------------------------------------------------------------------
+#
+# Start all services:
+#   flox activate -s
+#   (or) flox activate --start-services
+#
+# Individual service control:
+#   flox services start dagster-webserver
+#   flox services start dagster-daemon
+#   flox services stop dagster-webserver
+#   flox services restart dagster-daemon
+#
+# Service status and logs:
+#   flox services status
+#   flox services logs dagster-webserver
+#   flox services logs dagster-daemon
+#
+# ------------------------------------------------------------------------------
+# FILES AND DIRECTORIES
+# ------------------------------------------------------------------------------
+#
+# $DAGSTER_HOME/ (default: $FLOX_ENV_CACHE/dagster-data)
+#   dagster.yaml              Auto-generated instance configuration
+#   history/                  Run history (SQLite mode)
+#   schedules/                Schedule storage (SQLite mode)
+#   storage/                  Compute logs and artifacts
+#
+# $DAGSTER_STORAGE_DIR/ (default: $FLOX_ENV_CACHE/dagster-storage)
+#   Artifact storage directory
+#
+# ------------------------------------------------------------------------------
+# TROUBLESHOOTING
+# ------------------------------------------------------------------------------
+#
+# Services won't start:
+#   1. Check service status: flox services status
+#   2. View logs: flox services logs dagster-webserver
+#   3. Check port availability: netstat -tuln | grep 3000
+#   4. Verify config: cat $DAGSTER_HOME/dagster.yaml
+#
+# PostgreSQL connection failures:
+#   1. Verify postgres running: flox services status postgres
+#   2. Check connection URL: echo $DAGSTER_POSTGRES_URL
+#   3. Test connectivity: pg_isready -h $PGHOSTADDR -p $PGPORT
+#   4. Verify database exists: psql -l
+#
+# Configuration not applied:
+#   1. Delete config: rm $DAGSTER_HOME/dagster.yaml
+#   2. Reactivate: flox activate
+#   3. Or skip init and create manually: DAGSTER_SKIP_INIT=1 flox activate
+#
+# ------------------------------------------------------------------------------
+# PRODUCTION CONSIDERATIONS
+# ------------------------------------------------------------------------------
+#
+# Security:
+#   - Never use DAGSTER_HOST=0.0.0.0 without reverse proxy/firewall
+#   - Always use PostgreSQL for production (SQLite has concurrency limits)
+#   - Store DAGSTER_POSTGRES_URL in secrets manager, not environment files
+#   - Use TLS-encrypted postgres connections in production
+#
+# Performance:
+#   - Adjust DAGSTER_MAX_CONCURRENT_RUNS based on worker resources
+#   - Use connection pooling (pgbouncer) for high-throughput workloads
+#   - Monitor dagster-daemon logs for schedule/sensor execution delays
+#   - Consider separate postgres instance for large deployments
+#
+# High Availability:
+#   - Run multiple dagster-webserver instances behind load balancer
+#   - Single dagster-daemon instance per deployment (handles distributed locking)
+#   - Use PostgreSQL with replication for storage backend
+#   - Deploy on Kubernetes with appropriate resource limits and probes
+#
+# Monitoring:
+#   - Expose port 3000 for health checks: /server_info endpoint
+#   - Monitor dagster-daemon process health and restart on failure
+#   - Track run queue depth and execution times via Dagster UI
+#   - Set up alerts for failed runs and sensor/schedule execution
+#
+# ------------------------------------------------------------------------------
+# LINKS
+# ------------------------------------------------------------------------------
+#
+# Dagster Documentation: https://docs.dagster.io/
+# PostgreSQL Deployment: https://docs.dagster.io/deployment/guides/postgres
+# Kubernetes Deployment: https://docs.dagster.io/deployment/guides/kubernetes
+# Dagster GitHub: https://github.com/dagster-io/dagster
+#
+# ==============================================================================
+
+[install]
+dagster.pkg-path = "flox/dagster"
+dagster.pkg-group = "flox/dagster"
+
+
+[vars]
+DAGSTER_STORAGE_DIR = "$FLOX_ENV_CACHE/dagster-storage"
+
+
+[hook]
+on-activate = '''
+# === RUNTIME VARIABLES - Core ===
+export DAGSTER_HOME="${DAGSTER_HOME:-$FLOX_ENV_CACHE/dagster-data}"
+
+# === RUNTIME VARIABLES - Connection ===
+export DAGSTER_HOST="${DAGSTER_HOST:-127.0.0.1}"
+export DAGSTER_PORT="${DAGSTER_PORT:-3000}"
+
+# === RUNTIME VARIABLES - Storage Backend ===
+export DAGSTER_STORAGE_TYPE="${DAGSTER_STORAGE_TYPE:-sqlite}"
+export DAGSTER_POSTGRES_URL="${DAGSTER_POSTGRES_URL:-}"
+
+# === RUNTIME VARIABLES - Compute ===
+export DAGSTER_RUN_LAUNCHER="${DAGSTER_RUN_LAUNCHER:-}"
+export DAGSTER_MAX_CONCURRENT_RUNS="${DAGSTER_MAX_CONCURRENT_RUNS:-10}"
+
+# === RUNTIME VARIABLES - Code Location ===
+export DAGSTER_CODE_LOCATION_NAME="${DAGSTER_CODE_LOCATION_NAME:-}"
+export DAGSTER_MODULE_NAME="${DAGSTER_MODULE_NAME:-}"
+export DAGSTER_WORKING_DIRECTORY="${DAGSTER_WORKING_DIRECTORY:-}"
+
+# === POSTGRES AUTO-CONFIGURATION ===
+# If postgres storage requested but no URL provided, auto-generate from composed environment
+if [ "$DAGSTER_STORAGE_TYPE" = "postgres" ] && [ -z "$DAGSTER_POSTGRES_URL" ]; then
+    if command -v postgres >/dev/null 2>&1; then
+        # PostgreSQL available from composition - auto-generate connection URL
+        export PGDATABASE="${PGDATABASE:-dagster}"
+        export DAGSTER_POSTGRES_URL="postgresql://${PGUSER}:${PGPASSWORD}@${PGHOSTADDR:-127.0.0.1}:${PGPORT:-15432}/${PGDATABASE}"
+    else
+        echo "⚠️  WARNING: DAGSTER_STORAGE_TYPE=postgres but PostgreSQL not available"
+        echo "   Falling back to SQLite"
+        export DAGSTER_STORAGE_TYPE=sqlite
+    fi
+fi
+
+# === DERIVED VARIABLES ===
+export DAGSTER_YAML="$DAGSTER_HOME/dagster.yaml"
+
+# === INITIALIZATION ===
+# Generate configuration unless explicitly skipped
+if [ "${DAGSTER_SKIP_INIT:-}" != "1" ]; then
+    dagster-init-config
+fi
+
+# Minimal activation message for headless mode
+if [ "${DAGSTER_QUIET:-}" != "1" ]; then
+    echo "Dagster headless environment ready. Run 'flox edit' for documentation."
+fi
+'''
+
+
+[profile]
+
+
+[services]
+dagster-webserver.command = """
+  cd "$DAGSTER_HOME"
+  dagster-webserver --host $DAGSTER_HOST --port $DAGSTER_PORT --empty-workspace
+"""
+dagster-daemon.command = """
+  cd "$DAGSTER_HOME"
+  exec dagster-daemon run --empty-workspace
+"""
+
+
+[include]
+environments = [
+  { remote = "barstoolbluz/postgres-headless" }
+]
+
+
+[options]
+# Systems that environment is compatible with
+#systems = [
+#  "x86_64-linux",
+#]
+# Uncomment to disable CUDA detection.
+# cuda-detection = false
