@@ -183,6 +183,112 @@ export AIRFLOW_EXECUTOR="KubernetesExecutor"
 '''
 ```
 
+## Kubernetes Uncontained: In-Cluster Airflow
+
+Deploy Airflow itself to Kubernetes via the imageless container pattern AND use KubernetesExecutor for task execution.
+
+### Scenario
+
+- Airflow webserver/scheduler run as K8s Deployments (imageless, via Flox)
+- Airflow tasks run as separate pods via KubernetesExecutor
+- RBAC allows scheduler pod to create worker pods
+
+### RBAC Setup
+
+This environment generates RBAC configs locally. Extract and apply to cluster:
+
+```bash
+# 1. Activate locally to generate configs
+flox activate
+
+# 2. View generated RBAC
+cat $AIRFLOW_KUBE_RBAC_CONFIG
+
+# 3. Apply to your cluster
+kubectl apply -f $AIRFLOW_KUBE_RBAC_CONFIG
+```
+
+### Scheduler Deployment (In-Cluster)
+
+```yaml
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: airflow
+  namespace: airflow
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: airflow-role
+  namespace: airflow
+rules:
+- apiGroups: [""]
+  resources: ["pods", "pods/log", "pods/exec"]
+  verbs: ["get", "list", "watch", "create", "update", "delete", "patch"]
+- apiGroups: [""]
+  resources: ["configmaps"]
+  verbs: ["get", "list", "watch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: airflow-role-binding
+  namespace: airflow
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: airflow-role
+subjects:
+- kind: ServiceAccount
+  name: airflow
+  namespace: airflow
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: airflow-scheduler
+  namespace: airflow
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: airflow
+      component: scheduler
+  template:
+    metadata:
+      labels:
+        app: airflow
+        component: scheduler
+      annotations:
+        flox.dev/environment: "barstoolbluz/airflow-k8s-executor"
+    spec:
+      runtimeClassName: flox
+      serviceAccountName: airflow
+      containers:
+      - name: scheduler
+        image: flox/empty:1.0.0
+        command: ["airflow", "scheduler"]
+        env:
+        - name: AIRFLOW_EXECUTOR
+          value: "KubernetesExecutor"
+        - name: AIRFLOW__KUBERNETES__IN_CLUSTER
+          value: "True"
+        - name: AIRFLOW__KUBERNETES__NAMESPACE
+          value: "airflow"
+        - name: AIRFLOW__DATABASE__SQL_ALCHEMY_CONN
+          valueFrom:
+            secretKeyRef:
+              name: airflow-db
+              key: connection-url
+```
+
+### Worker Pods
+
+Worker pods are created dynamically by the scheduler. They use standard Airflow images (not Flox environments) unless you've built custom images.
+
+To use Flox environments for workers too, configure the pod template to reference a Flox environment.
+
 ## Common Commands
 
 ```bash

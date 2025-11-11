@@ -253,6 +253,193 @@ AIRFLOW_CELERY_WORKERS=4 \
 flox activate -s
 ```
 
+## Kubernetes Uncontained: Enterprise Deployment
+
+Deploy the complete enterprise stack to Kubernetes using the imageless container pattern.
+
+### Architecture
+
+**Three Separate Deployments:**
+1. Scheduler (1-2 replicas for HA)
+2. Webserver (2+ replicas for load balancing)
+3. Workers (4+ replicas for task execution)
+
+**External Services:**
+- PostgreSQL (managed: CloudSQL/RDS/Azure Database)
+- Redis (managed: ElastiCache/Cloud Memorystore)
+
+### Complete Example
+
+```yaml
+---
+# Scheduler
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: airflow-scheduler
+  namespace: airflow-prod
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: airflow
+      component: scheduler
+  template:
+    metadata:
+      labels:
+        app: airflow
+        component: scheduler
+      annotations:
+        flox.dev/environment: "barstoolbluz/airflow-stack"
+    spec:
+      runtimeClassName: flox
+      containers:
+      - name: scheduler
+        image: flox/empty:1.0.0
+        command: ["airflow", "scheduler"]
+        env:
+        - name: AIRFLOW_EXECUTOR
+          value: "CeleryExecutor"
+        - name: AIRFLOW__DATABASE__SQL_ALCHEMY_CONN
+          valueFrom:
+            secretKeyRef:
+              name: airflow-secrets
+              key: database-url
+        - name: AIRFLOW__CELERY__BROKER_URL
+          valueFrom:
+            secretKeyRef:
+              name: airflow-secrets
+              key: redis-url
+
+---
+# Webserver
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: airflow-webserver
+  namespace: airflow-prod
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: airflow
+      component: webserver
+  template:
+    metadata:
+      labels:
+        app: airflow
+        component: webserver
+      annotations:
+        flox.dev/environment: "barstoolbluz/airflow-stack"
+    spec:
+      runtimeClassName: flox
+      containers:
+      - name: webserver
+        image: flox/empty:1.0.0
+        command: ["airflow", "webserver", "--port", "8080"]
+        ports:
+        - containerPort: 8080
+        env:
+        - name: AIRFLOW__DATABASE__SQL_ALCHEMY_CONN
+          valueFrom:
+            secretKeyRef:
+              name: airflow-secrets
+              key: database-url
+        resources:
+          requests:
+            cpu: "500m"
+            memory: "1Gi"
+          limits:
+            cpu: "2000m"
+            memory: "2Gi"
+
+---
+# Workers
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: airflow-worker
+  namespace: airflow-prod
+spec:
+  replicas: 4
+  selector:
+    matchLabels:
+      app: airflow
+      component: worker
+  template:
+    metadata:
+      labels:
+        app: airflow
+        component: worker
+      annotations:
+        flox.dev/environment: "barstoolbluz/airflow-stack"
+    spec:
+      runtimeClassName: flox
+      containers:
+      - name: worker
+        image: flox/empty:1.0.0
+        command: ["airflow", "celery", "worker"]
+        env:
+        - name: AIRFLOW__CELERY__BROKER_URL
+          valueFrom:
+            secretKeyRef:
+              name: airflow-secrets
+              key: redis-url
+        - name: AIRFLOW__DATABASE__SQL_ALCHEMY_CONN
+          valueFrom:
+            secretKeyRef:
+              name: airflow-secrets
+              key: database-url
+        resources:
+          requests:
+            cpu: "500m"
+            memory: "2Gi"
+          limits:
+            cpu: "2000m"
+            memory: "4Gi"
+
+---
+# Webserver Service
+apiVersion: v1
+kind: Service
+metadata:
+  name: airflow-webserver
+  namespace: airflow-prod
+spec:
+  selector:
+    app: airflow
+    component: webserver
+  ports:
+  - port: 8080
+    targetPort: 8080
+```
+
+### Enterprise Configuration Applied
+
+The `airflow-stack` environment automatically applies:
+- CeleryExecutor (vs LocalExecutor)
+- Production database settings (200 connections, 512MB buffers)
+- Production Redis settings (1GB memory, AOF persistence)
+- 4 workers with 32 task concurrency each
+
+These are **configuration defaults** - in K8s you override via env vars.
+
+### Important Notes
+
+1. **Separate postgres/redis deployments:** This environment composes postgres-headless and redis-headless for **local development**. In Kubernetes, use managed services.
+
+2. **DAGs:** Not included in environment. Mount via ConfigMap or use git-sync.
+
+3. **Updates:** To update Airflow version, update the FloxHub environment and change the `flox.dev/environment` annotation.
+
+### Benefits
+
+- ✅ CVE Response: Update environment, push, update reference - no image rebuilds
+- ✅ Compliance: SBOMs generated from dependency graph
+- ✅ Auditability: Hash-addressed packages provide tamper-evident provenance
+- ✅ Cost: No registry storage/egress costs, node-local caching
+- ✅ Speed: First pod pull downloads packages, subsequent pods reuse node cache
+
 ## Example DAGs
 
 Three example DAGs are included in `$FLOX_ENV_CACHE/airflow-dags/`:

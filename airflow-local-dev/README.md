@@ -175,6 +175,167 @@ For production deployments, consider using `airflow-stack` environment which inc
 flox pull --copy barstoolbluz/airflow-stack
 ```
 
+## Kubernetes Uncontained Deployment
+
+Deploy Airflow to Kubernetes using the imageless container pattern.
+
+### Prerequisites
+
+1. Kubernetes cluster with Flox runtime shim
+2. RuntimeClass `flox` configured
+3. External PostgreSQL database (managed service recommended)
+4. External Redis (if using CeleryExecutor)
+
+### Architecture
+
+**Local Development (via Flox):**
+```
+airflow-local-dev environment
+├── Airflow 3.1.1
+├── PostgreSQL (via postgres-headless composition)
+└── Redis (via redis-headless composition)
+```
+
+**Kubernetes Uncontained Deployment:**
+```
+Separate deployments:
+├── Airflow Scheduler (references barstoolbluz/airflow-local-dev)
+├── Airflow Webserver (references barstoolbluz/airflow-local-dev)
+├── PostgreSQL (managed service: CloudSQL/RDS/Azure Database)
+└── Redis (managed service: ElastiCache/Cloud Memorystore)
+```
+
+### Example: Scheduler Deployment
+
+```yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: airflow-scheduler
+  namespace: airflow
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: airflow
+      component: scheduler
+  template:
+    metadata:
+      labels:
+        app: airflow
+        component: scheduler
+      annotations:
+        flox.dev/environment: "barstoolbluz/airflow-local-dev"
+    spec:
+      runtimeClassName: flox
+      containers:
+      - name: scheduler
+        image: flox/empty:1.0.0
+        command: ["airflow", "scheduler"]
+        env:
+        - name: AIRFLOW__DATABASE__SQL_ALCHEMY_CONN
+          valueFrom:
+            secretKeyRef:
+              name: airflow-db
+              key: connection-url
+```
+
+### Example: Webserver Deployment
+
+```yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: airflow-webserver
+  namespace: airflow
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: airflow
+      component: webserver
+  template:
+    metadata:
+      labels:
+        app: airflow
+        component: webserver
+      annotations:
+        flox.dev/environment: "barstoolbluz/airflow-local-dev"
+    spec:
+      runtimeClassName: flox
+      containers:
+      - name: webserver
+        image: flox/empty:1.0.0
+        command: ["airflow", "webserver", "--port", "8080"]
+        ports:
+        - containerPort: 8080
+        env:
+        - name: AIRFLOW__DATABASE__SQL_ALCHEMY_CONN
+          valueFrom:
+            secretKeyRef:
+              name: airflow-db
+              key: connection-url
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: airflow-webserver
+  namespace: airflow
+spec:
+  selector:
+    app: airflow
+    component: webserver
+  ports:
+  - port: 8080
+    targetPort: 8080
+```
+
+### DAGs in Kubernetes
+
+DAGs are not included in the Flox environment. Mount them separately:
+
+**Option 1: ConfigMap**
+```yaml
+volumes:
+- name: dags
+  configMap:
+    name: airflow-dags
+volumeMounts:
+- name: dags
+  mountPath: /opt/airflow/dags
+```
+
+**Option 2: Git-sync sidecar**
+```yaml
+initContainers:
+- name: git-sync
+  image: k8s.gcr.io/git-sync/git-sync:v3.6.3
+  # ... git-sync configuration
+```
+
+### Database Configuration
+
+Use managed services for production:
+
+- **Google Cloud:** Cloud SQL for PostgreSQL
+- **AWS:** RDS PostgreSQL + ElastiCache Redis
+- **Azure:** Azure Database for PostgreSQL + Azure Cache for Redis
+
+Connection configured via Kubernetes Secrets (see example above).
+
+### Benefits
+
+- ✅ No Docker image rebuilds for Airflow updates
+- ✅ Hash-addressed, immutable packages
+- ✅ SBOM by construction
+- ✅ Same Airflow version: dev laptop → Kubernetes
+
+### Limitations
+
+- Airflow package currently x86_64-linux only
+- Requires Flox runtime shim in cluster
+- Database and Redis deployed separately
+
 ## Platform Support
 
 - **Airflow package**: x86_64-linux only
