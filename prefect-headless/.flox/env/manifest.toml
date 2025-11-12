@@ -1,0 +1,497 @@
+# Flox manifest version managed by Flox CLI
+version = 1
+
+# ==============================================================================
+# PREFECT HEADLESS ENVIRONMENT - TECHNICAL DOCUMENTATION
+# ==============================================================================
+#
+# This environment provides Prefect 3.5.0 orchestration platform configured for
+# CI/CD, containerized deployments, and production use cases.
+#
+# ------------------------------------------------------------------------------
+# ARCHITECTURE
+# ------------------------------------------------------------------------------
+#
+# Two-service architecture:
+#   - prefect-server: Web UI + REST API (default port 4200)
+#   - prefect-worker: Background worker for flow execution
+#
+# Storage backends:
+#   - SQLite (default): Local development, single-instance deployments
+#   - PostgreSQL: Production, multi-instance, high-concurrency workloads
+#
+# ------------------------------------------------------------------------------
+# RUNTIME CONFIGURATION VARIABLES
+# ------------------------------------------------------------------------------
+#
+# All variables support runtime override via: VARIABLE=value flox activate
+#
+# Core Settings:
+#   PREFECT_HOME                Instance metadata directory
+#                               Default: $FLOX_ENV_CACHE/prefect-data
+#
+#   PREFECT_SERVER_HOST         Server bind address (network interface)
+#                               Default: 0.0.0.0 (all interfaces)
+#                               Use: 127.0.0.1 (localhost only)
+#
+#   PREFECT_SERVER_PORT         Server port
+#                               Default: 4200
+#
+#   PREFECT_API_HOST            Client connection address
+#                               Default: 127.0.0.1 (local connections)
+#                               Override: hostname/IP for remote clients
+#
+#   PREFECT_API_URL             Full server API endpoint (auto-generated)
+#                               Default: http://$PREFECT_API_HOST:$PREFECT_SERVER_PORT/api
+#                               Override: Custom URL if needed
+#
+#   PREFECT_UI_API_URL          URL the browser UI uses to reach the API
+#                               Default: Same as PREFECT_API_URL
+#                               Set to your server's public hostname for remote access
+#                               Example: http://myserver.example.com:4200/api
+#
+# Storage Backend:
+#   PREFECT_STORAGE_TYPE        Storage backend type: "sqlite" or "postgres"
+#                               Default: sqlite
+#
+#   PREFECT_DATABASE_URL        PostgreSQL connection string
+#                               Format: postgresql+asyncpg://user:pass@host:port/dbname
+#                               Auto-generated if postgres composed and not set
+#
+# Compute Settings:
+#   PREFECT_WORKER_POOL_NAME    Worker pool name
+#                               Default: default-pool
+#
+#   PREFECT_WORKER_LIMIT        Maximum concurrent flow runs per worker
+#                               Default: 10
+#
+#   PREFECT_WORKER_QUERY_SECONDS Polling interval for worker
+#                               Default: 5
+#
+# Logging:
+#   PREFECT_LOGGING_LEVEL       Logging level
+#                               Default: INFO
+#
+#   PREFECT_LOGGING_TO_API_ENABLED Send logs to API
+#                               Default: true
+#
+# Control Flags:
+#   PREFECT_SKIP_INIT           Set to "1" to skip initialization
+#   PREFECT_QUIET               Set to "1" to suppress activation messages
+#
+# ------------------------------------------------------------------------------
+# POSTGRESQL COMPOSITION
+# ------------------------------------------------------------------------------
+#
+# This environment includes barstoolbluz/postgres-headless for optional
+# PostgreSQL storage backend.
+#
+# Auto-configuration behavior:
+#   1. When PREFECT_STORAGE_TYPE=postgres and PREFECT_DATABASE_URL is empty:
+#      - Detects if postgres command is available (from composition)
+#      - Auto-generates connection URL from postgres environment variables:
+#        * PGUSER (default: pguser)
+#        * PGPASSWORD (default: pgpass)
+#        * PGHOSTADDR (default: 127.0.0.1)
+#        * PGPORT (default: 15432)
+#        * PGDATABASE (set this to "prefect" for dedicated database)
+#   2. If postgres not available, falls back to SQLite with warning
+#
+# Manual postgres service control:
+#   flox services start postgres
+#   flox services status postgres
+#   flox services logs postgres
+#
+# ------------------------------------------------------------------------------
+# COMMON USAGE PATTERNS
+# ------------------------------------------------------------------------------
+#
+# Local development (SQLite):
+#   flox activate -s
+#
+# Production (PostgreSQL with auto-config):
+#   PREFECT_STORAGE_TYPE=postgres PGDATABASE=prefect flox activate -s
+#
+# Production (PostgreSQL with custom URL):
+#   PREFECT_STORAGE_TYPE=postgres \
+#   PREFECT_DATABASE_URL="postgresql+asyncpg://user:pass@prod-db:5432/prefect" \
+#   flox activate -s
+#
+# Container deployment:
+#   ENV PREFECT_STORAGE_TYPE=postgres
+#   ENV PREFECT_DATABASE_URL="postgresql+asyncpg://user:pass@postgres:5432/prefect"
+#   ENV PREFECT_SERVER_HOST=0.0.0.0
+#   ENV PREFECT_API_HOST=container-hostname
+#   CMD ["flox", "activate", "-s"]
+#
+# Remote access setup:
+#   # On server (binds to all interfaces, UI tells browsers to use hostname)
+#   PREFECT_UI_API_URL=http://myserver.example.com:4200/api flox activate -s
+#
+#   # Alternative: Set both API host and UI URL
+#   PREFECT_API_HOST=myserver.example.com PREFECT_UI_API_URL=http://myserver.example.com:4200/api flox activate -s
+#
+#   # On client machine (worker/CLI connecting to remote server)
+#   PREFECT_API_URL=http://myserver.example.com:4200/api flox activate
+#
+# CI/CD (quiet mode):
+#   PREFECT_QUIET=1 flox activate -s
+#
+# ------------------------------------------------------------------------------
+# SERVICE MANAGEMENT
+# ------------------------------------------------------------------------------
+#
+# Start all services:
+#   flox activate -s
+#   (or) flox activate --start-services
+#
+# Individual service control:
+#   flox services start prefect-server
+#   flox services start prefect-worker
+#   flox services stop prefect-server
+#   flox services restart prefect-worker
+#
+# Service status and logs:
+#   flox services status
+#   flox services logs prefect-server
+#   flox services logs prefect-worker
+#
+# ------------------------------------------------------------------------------
+# FILES AND DIRECTORIES
+# ------------------------------------------------------------------------------
+#
+# $PREFECT_HOME/ (default: $FLOX_ENV_CACHE/prefect-data)
+#   prefect.db                SQLite database (SQLite mode)
+#   logs/                     Flow run logs
+#
+# $PREFECT_FLOWS_DIR/ (default: $FLOX_ENV_CACHE/prefect-flows)
+#   Flow definitions directory
+#
+# $PREFECT_STORAGE_DIR/ (default: $FLOX_ENV_CACHE/prefect-storage)
+#   Artifact and result storage
+#
+# ------------------------------------------------------------------------------
+# TROUBLESHOOTING
+# ------------------------------------------------------------------------------
+#
+# Services won't start:
+#   1. Check service status: flox services status
+#   2. View logs: flox services logs prefect-server
+#   3. Check port availability: netstat -tuln | grep 4200
+#   4. Verify database: prefect server database check
+#
+# PostgreSQL connection failures:
+#   1. Verify postgres running: flox services status postgres
+#   2. Check connection URL: echo $PREFECT_DATABASE_URL
+#   3. Test connectivity: pg_isready -h $PGHOSTADDR -p $PGPORT
+#   4. Verify database exists: psql -l
+#
+# Worker not picking up flows:
+#   1. Check worker pool: prefect work-pool ls
+#   2. Verify worker connected: prefect worker ls
+#   3. Check flow deployments: prefect deployment ls
+#
+# ------------------------------------------------------------------------------
+# PRODUCTION CONSIDERATIONS
+# ------------------------------------------------------------------------------
+#
+# Security:
+#   - Never use PREFECT_SERVER_HOST=0.0.0.0 without reverse proxy/firewall
+#   - Always use PostgreSQL for production (SQLite has concurrency limits)
+#   - Store PREFECT_DATABASE_URL in secrets manager, not environment files
+#   - Use TLS-encrypted postgres connections in production
+#
+# Performance:
+#   - Adjust PREFECT_WORKER_LIMIT based on worker resources
+#   - Use connection pooling (pgbouncer) for high-throughput workloads
+#   - Monitor worker logs for flow execution delays
+#   - Consider separate postgres instance for large deployments
+#
+# High Availability:
+#   - Run multiple prefect-server instances behind load balancer
+#   - Run multiple workers for redundancy and scale
+#   - Use PostgreSQL with replication for storage backend
+#   - Deploy on Kubernetes with appropriate resource limits and probes
+#
+# Monitoring:
+#   - Expose port 4200 for health checks: /api/health endpoint
+#   - Monitor worker process health and restart on failure
+#   - Track flow run queue depth and execution times via Prefect UI
+#   - Set up alerts for failed runs and stuck flows
+#
+# ------------------------------------------------------------------------------
+# LINKS
+# ------------------------------------------------------------------------------
+#
+# Prefect Documentation: https://docs.prefect.io/
+# PostgreSQL Configuration: https://docs.prefect.io/latest/guides/settings/
+# Kubernetes Deployment: https://docs.prefect.io/latest/guides/deployment/kubernetes/
+# Prefect GitHub: https://github.com/PrefectHQ/prefect
+#
+# ==============================================================================
+
+[install]
+prefect.pkg-path = "prefect"
+
+
+[vars]
+PREFECT_FLOWS_DIR = "$FLOX_ENV_CACHE/prefect-flows"
+PREFECT_STORAGE_DIR = "$FLOX_ENV_CACHE/prefect-storage"
+
+
+[hook]
+on-activate = '''
+# === RUNTIME VARIABLES - Core ===
+export PREFECT_HOME="${PREFECT_HOME:-$FLOX_ENV_CACHE/prefect-data}"
+
+# === RUNTIME VARIABLES - Connection ===
+# PREFECT_SERVER_HOST: Server bind address (0.0.0.0 = all interfaces, 127.0.0.1 = localhost only)
+export PREFECT_SERVER_HOST="${PREFECT_SERVER_HOST:-0.0.0.0}"
+export PREFECT_SERVER_PORT="${PREFECT_SERVER_PORT:-4200}"
+
+# PREFECT_API_HOST: Client connection address (what clients use to connect)
+# Defaults to 127.0.0.1 for local connections, override for remote access
+export PREFECT_API_HOST="${PREFECT_API_HOST:-127.0.0.1}"
+
+# Support ephemeral mode (no server required) for local flow runs
+if [ "${PREFECT_EPHEMERAL:-}" = "1" ]; then
+    # Ephemeral mode - runs flows without server
+    export PREFECT_API_URL=""
+else
+    export PREFECT_API_URL="${PREFECT_API_URL:-http://$PREFECT_API_HOST:$PREFECT_SERVER_PORT/api}"
+fi
+
+# PREFECT_UI_API_URL: URL the browser UI uses to connect to API
+# Important for remote access - must be accessible from client browsers
+# If not set, uses PREFECT_API_URL (which may not work for remote browsers)
+export PREFECT_UI_API_URL="${PREFECT_UI_API_URL:-$PREFECT_API_URL}"
+
+# === RUNTIME VARIABLES - Storage Backend ===
+export PREFECT_STORAGE_TYPE="${PREFECT_STORAGE_TYPE:-sqlite}"
+export PREFECT_DATABASE_URL="${PREFECT_DATABASE_URL:-}"
+
+# === RUNTIME VARIABLES - Worker ===
+export PREFECT_WORKER_POOL_NAME="${PREFECT_WORKER_POOL_NAME:-default-pool}"
+export PREFECT_WORKER_LIMIT="${PREFECT_WORKER_LIMIT:-10}"
+export PREFECT_WORKER_QUERY_SECONDS="${PREFECT_WORKER_QUERY_SECONDS:-5}"
+
+# === RUNTIME VARIABLES - Logging ===
+export PREFECT_LOGGING_LEVEL="${PREFECT_LOGGING_LEVEL:-INFO}"
+export PREFECT_LOGGING_TO_API_ENABLED="${PREFECT_LOGGING_TO_API_ENABLED:-true}"
+
+# === RUNTIME VARIABLES - UI ===
+# Set UI static directory to avoid Nix store write permissions issues
+export PREFECT_SERVER_UI_STATIC_DIRECTORY="${PREFECT_SERVER_UI_STATIC_DIRECTORY:-$PREFECT_HOME/ui}"
+
+# === POSTGRES AUTO-CONFIGURATION ===
+# If postgres storage requested but no URL provided, auto-generate from composed environment
+if [ "$PREFECT_STORAGE_TYPE" = "postgres" ] && [ -z "$PREFECT_DATABASE_URL" ]; then
+    if command -v postgres >/dev/null 2>&1; then
+        # PostgreSQL available from composition - auto-generate connection URL
+        export PGDATABASE="${PGDATABASE:-prefect}"
+        export PREFECT_DATABASE_URL="postgresql+asyncpg://${PGUSER}:${PGPASSWORD}@${PGHOSTADDR:-0.0.0.0}:${PGPORT:-15432}/${PGDATABASE}"
+    else
+        echo "⚠️  WARNING: PREFECT_STORAGE_TYPE=postgres but PostgreSQL not available"
+        echo "   Falling back to SQLite"
+        export PREFECT_STORAGE_TYPE=sqlite
+    fi
+fi
+
+# === SQLITE CONFIGURATION ===
+if [ "$PREFECT_STORAGE_TYPE" = "sqlite" ]; then
+    export PREFECT_API_DATABASE_CONNECTION_URL="sqlite+aiosqlite:///${PREFECT_HOME}/prefect.db"
+else
+    export PREFECT_API_DATABASE_CONNECTION_URL="$PREFECT_DATABASE_URL"
+fi
+
+# === CREATE REQUIRED DIRECTORIES ===
+mkdir -p "$PREFECT_HOME"
+mkdir -p "$PREFECT_FLOWS_DIR"
+mkdir -p "$PREFECT_STORAGE_DIR"
+mkdir -p "$PREFECT_HOME/logs"
+mkdir -p "$PREFECT_SERVER_UI_STATIC_DIRECTORY"
+
+# === INITIALIZATION ===
+initialize_prefect() {
+    # Check if already initialized
+    if [ -f "$PREFECT_HOME/.initialized" ]; then
+        return 0
+    fi
+
+    # Only show init messages if not in quiet mode
+    if [ "${PREFECT_QUIET:-}" != "1" ]; then
+        echo "Initializing Prefect database..."
+    fi
+
+    # Create database (idempotent)
+    prefect server database reset --yes > "$PREFECT_HOME/logs/init.log" 2>&1 || true
+
+    touch "$PREFECT_HOME/.initialized"
+
+    if [ "${PREFECT_QUIET:-}" != "1" ]; then
+        echo "✅ Prefect initialized successfully"
+    fi
+    return 0
+}
+
+# === CREATE EXAMPLE FLOWS ===
+create_example_flows() {
+    # Only create if flows directory is empty
+    if [ -n "$(ls -A "$PREFECT_FLOWS_DIR" 2>/dev/null)" ]; then
+        return 0
+    fi
+
+    # Example 1: Simple Hello Flow
+    cat > "$PREFECT_FLOWS_DIR/hello_flow.py" << 'EOF'
+from prefect import flow, task
+from prefect.logging import get_run_logger
+
+@task
+def say_hello(name: str):
+    logger = get_run_logger()
+    logger.info(f"Hello, {name}!")
+    return f"Hello, {name}!"
+
+@flow(name="Hello Flow")
+def hello_flow(name: str = "World"):
+    """A simple hello world flow."""
+    result = say_hello(name)
+    return result
+
+if __name__ == "__main__":
+    hello_flow()
+EOF
+
+    # Example 2: Data Pipeline Flow
+    cat > "$PREFECT_FLOWS_DIR/data_pipeline.py" << 'EOF'
+from prefect import flow, task
+from prefect.logging import get_run_logger
+import time
+
+@task
+def extract_data():
+    logger = get_run_logger()
+    logger.info("Extracting data...")
+    time.sleep(1)
+    return [1, 2, 3, 4, 5]
+
+@task
+def transform_data(data):
+    logger = get_run_logger()
+    logger.info(f"Transforming {len(data)} records...")
+    time.sleep(1)
+    return [x * 2 for x in data]
+
+@task
+def load_data(data):
+    logger = get_run_logger()
+    logger.info(f"Loading {len(data)} records...")
+    time.sleep(1)
+    logger.info(f"Data loaded: {data}")
+    return len(data)
+
+@flow(name="Data Pipeline")
+def data_pipeline():
+    """A simple ETL pipeline flow."""
+    raw_data = extract_data()
+    transformed_data = transform_data(raw_data)
+    records_loaded = load_data(transformed_data)
+    return records_loaded
+
+if __name__ == "__main__":
+    data_pipeline()
+EOF
+
+    # Example 3: Scheduled Flow
+    cat > "$PREFECT_FLOWS_DIR/scheduled_flow.py" << 'EOF'
+from prefect import flow, task
+from prefect.logging import get_run_logger
+from datetime import datetime
+
+@task
+def get_timestamp():
+    return datetime.now().isoformat()
+
+@task
+def process_timestamp(timestamp: str):
+    logger = get_run_logger()
+    logger.info(f"Processing timestamp: {timestamp}")
+    return f"Processed at {timestamp}"
+
+@flow(name="Scheduled Flow")
+def scheduled_flow():
+    """A flow designed to run on a schedule."""
+    timestamp = get_timestamp()
+    result = process_timestamp(timestamp)
+    return result
+
+if __name__ == "__main__":
+    scheduled_flow()
+EOF
+
+    chmod 644 "$PREFECT_FLOWS_DIR"/*.py
+    return 0
+}
+
+# Run initialization unless explicitly skipped
+if [ "${PREFECT_SKIP_INIT:-}" != "1" ]; then
+    initialize_prefect
+fi
+
+# Create example flows
+create_example_flows
+
+# Minimal activation message for headless mode
+if [ "${PREFECT_QUIET:-}" != "1" ]; then
+    echo "Prefect headless environment ready. Run 'flox edit' for documentation."
+fi
+'''
+
+
+[profile]
+
+
+[services]
+prefect-server.command = '''
+cd "$PREFECT_HOME"
+exec prefect server start \
+    --host "$PREFECT_SERVER_HOST" \
+    --port "$PREFECT_SERVER_PORT" \
+    --log-level "$PREFECT_LOGGING_LEVEL"
+'''
+
+prefect-worker.command = '''
+cd "$PREFECT_HOME"
+
+# Wait for server to be ready
+for i in {1..30}; do
+    if curl -s "$PREFECT_API_URL/health" > /dev/null 2>&1; then
+        break
+    fi
+    sleep 2
+done
+
+# Create work pool if it doesn't exist
+prefect work-pool create "$PREFECT_WORKER_POOL_NAME" --type process 2>/dev/null || true
+
+# Start worker (PREFECT_WORKER_QUERY_SECONDS controls polling via environment variable)
+exec prefect worker start \
+    --pool "$PREFECT_WORKER_POOL_NAME" \
+    --limit "$PREFECT_WORKER_LIMIT"
+'''
+
+
+[include]
+environments = [
+  { remote = "barstoolbluz/postgres-headless" }
+]
+
+
+[options]
+# Systems that environment is compatible with
+systems = [
+  "aarch64-darwin",
+  "aarch64-linux",
+  "x86_64-darwin",
+  "x86_64-linux",
+]

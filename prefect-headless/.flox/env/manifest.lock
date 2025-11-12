@@ -3,26 +3,26 @@
   "manifest": {
     "version": 1,
     "install": {
-      "dagster": {
-        "pkg-path": "flox/dagster",
-        "pkg-group": "flox/dagster"
-      },
       "postgis": {
         "pkg-path": "postgresql16Packages.postgis"
       },
       "postgresql": {
         "pkg-path": "postgresql_16"
+      },
+      "prefect": {
+        "pkg-path": "prefect"
       }
     },
     "vars": {
-      "DAGSTER_STORAGE_DIR": "$FLOX_ENV_CACHE/dagster-storage",
       "POSTGRES_CONFIG_DIR": "$FLOX_ENV_CACHE/postgres-config",
       "POSTGRES_DATA_DIR": "$FLOX_ENV_CACHE/postgres-data",
       "POSTGRES_LOG_DIR": "$FLOX_ENV_CACHE/postgres-logs",
-      "POSTGRES_RUN_DIR": "$FLOX_ENV_CACHE/postgres-run"
+      "POSTGRES_RUN_DIR": "$FLOX_ENV_CACHE/postgres-run",
+      "PREFECT_FLOWS_DIR": "$FLOX_ENV_CACHE/prefect-flows",
+      "PREFECT_STORAGE_DIR": "$FLOX_ENV_CACHE/prefect-storage"
     },
     "hook": {
-      "on-activate": "# Create required directories\nmkdir -p \"$FLOX_ENV_CACHE/postgres-config\"\nmkdir -p \"$FLOX_ENV_CACHE/postgres-logs\"\nmkdir -p \"$FLOX_ENV_CACHE/postgres-data\"\nmkdir -p \"$FLOX_ENV_CACHE/postgres-run\"\n\n# === INIT-TIME VARIABLES ===\n# These affect initdb and cannot change without deleting PGDATA\nexport PGUSER=\"${PGUSER:-pguser}\"\nexport PGPASSWORD=\"${PGPASSWORD:-pgpass}\"\nexport POSTGRES_HOST_AUTH_METHOD=\"${POSTGRES_HOST_AUTH_METHOD:-md5}\"\nexport POSTGRES_ENCODING=\"${POSTGRES_ENCODING:-UTF8}\"\nexport POSTGRES_LOCALE=\"${POSTGRES_LOCALE:-C}\"\nexport POSTGRES_DATA_CHECKSUMS=\"${POSTGRES_DATA_CHECKSUMS:-}\"\nexport POSTGRES_INITDB_ARGS=\"${POSTGRES_INITDB_ARGS:-}\"\n\n# === RUNTIME VARIABLES - Connection ===\n# These can be changed by restarting the service\nexport PGHOSTADDR=\"${PGHOSTADDR:-127.0.0.1}\"\nexport PGPORT=\"${PGPORT:-15432}\"\nexport PGHOST=\"${PGHOST:-}\"\nexport PGDATABASE=\"${PGDATABASE:-postgres}\"\n\n# === RUNTIME VARIABLES - Performance ===\nexport POSTGRES_MAX_CONNECTIONS=\"${POSTGRES_MAX_CONNECTIONS:-100}\"\nexport POSTGRES_SHARED_BUFFERS=\"${POSTGRES_SHARED_BUFFERS:-128MB}\"\nexport POSTGRES_WORK_MEM=\"${POSTGRES_WORK_MEM:-4MB}\"\nexport POSTGRES_EFFECTIVE_CACHE_SIZE=\"${POSTGRES_EFFECTIVE_CACHE_SIZE:-4GB}\"\nexport POSTGRES_FSYNC=\"${POSTGRES_FSYNC:-on}\"\nexport POSTGRES_SYNCHRONOUS_COMMIT=\"${POSTGRES_SYNCHRONOUS_COMMIT:-on}\"\nexport POSTGRES_FULL_PAGE_WRITES=\"${POSTGRES_FULL_PAGE_WRITES:-on}\"\n\n# === RUNTIME VARIABLES - WAL ===\nexport POSTGRES_MAX_WAL_SIZE=\"${POSTGRES_MAX_WAL_SIZE:-1GB}\"\nexport POSTGRES_MIN_WAL_SIZE=\"${POSTGRES_MIN_WAL_SIZE:-80MB}\"\nexport POSTGRES_CHECKPOINT_TIMEOUT=\"${POSTGRES_CHECKPOINT_TIMEOUT:-5min}\"\n\n# === RUNTIME VARIABLES - Logging ===\nexport POSTGRES_LOG_STATEMENT=\"${POSTGRES_LOG_STATEMENT:-none}\"\nexport POSTGRES_LOG_DURATION=\"${POSTGRES_LOG_DURATION:-off}\"\nexport POSTGRES_LOG_MIN_DURATION=\"${POSTGRES_LOG_MIN_DURATION:-}\"\nexport POSTGRES_LOG_CONNECTIONS=\"${POSTGRES_LOG_CONNECTIONS:-off}\"\nexport POSTGRES_LOG_DISCONNECTIONS=\"${POSTGRES_LOG_DISCONNECTIONS:-off}\"\n\n# === FLEXIBILITY ===\nexport POSTGRES_EXTRA_OPTS=\"${POSTGRES_EXTRA_OPTS:-}\"\n\n# === DERIVED VARIABLES ===\nexport POSTGRES_DIR=\"${POSTGRES_DIR:-$FLOX_ENV_CACHE/postgres-data}\"\nexport PGDATA=\"$POSTGRES_DIR/data\"\nexport PGHOST_SOCKET=\"$POSTGRES_DIR/run\"\n\n# PGHOST logic: If empty or unset, use Unix socket\nif [ -z \"$PGHOST\" ]; then\n    export PGHOST=\"$PGHOST_SOCKET\"\n    export DATABASE_URL=\"postgresql:///$PGDATABASE?host=$PGHOST&port=$PGPORT\"\nelse\n    # User specified host for TCP\n    export DATABASE_URL=\"postgresql://$PGUSER:$PGPASSWORD@$PGHOST:$PGPORT/$PGDATABASE\"\nfi\n\n# === INITIALIZATION FUNCTION ===\ninitialize_postgres() {\n    # Check if already initialized\n    if [ -f \"$PGDATA/PG_VERSION\" ]; then\n        return 0\n    fi\n\n    # Create directories with proper permissions\n    mkdir -p \"$PGDATA\" \"$PGHOST_SOCKET\"\n    chmod 700 \"$PGDATA\" \"$PGHOST_SOCKET\"\n\n    # Initialize PostgreSQL with direct execution\n    echo \"Initializing PostgreSQL database...\"\n    initdb \"$PGDATA\" \\\n        --username=\"$PGUSER\" \\\n        --pwfile=<(echo \"$PGPASSWORD\") \\\n        --encoding=\"$POSTGRES_ENCODING\" \\\n        --locale=\"$POSTGRES_LOCALE\" \\\n        --auth=\"$POSTGRES_HOST_AUTH_METHOD\" \\\n        $([ -n \"$POSTGRES_DATA_CHECKSUMS\" ] && echo \"--data-checksums\") \\\n        $POSTGRES_INITDB_ARGS \\\n        > /dev/null 2>&1\n\n    if [ $? -ne 0 ]; then\n        echo \"❌ Failed to initialize PostgreSQL\"\n        return 1\n    fi\n\n    # Create database if not \"postgres\"\n    if [ \"$PGDATABASE\" != \"postgres\" ]; then\n        echo \"Creating database '$PGDATABASE'...\"\n\n        # Start postgres temporarily\n        postgres -D \"$PGDATA\" \\\n            -c listen_addresses='' \\\n            -c unix_socket_directories=\"$PGHOST_SOCKET\" \\\n            -p \"$PGPORT\" \\\n            > /dev/null 2>&1 &\n        PG_PID=$!\n\n        sleep 3  # Wait for startup\n\n        # Create database\n        createdb \"$PGDATABASE\" > /dev/null 2>&1 || true\n\n        # Stop postgres\n        pg_ctl stop -D \"$PGDATA\" -m fast -w > /dev/null 2>&1\n    fi\n\n    echo \"✅ PostgreSQL initialized successfully\"\n    return 0\n}\n\n# Run initialization\ninitialize_postgres\n\n# Display info with safety warnings\necho \"\"\necho \"✅ PostgreSQL environment ready (headless mode)\"\necho \"\"\n\n# Safety warnings\nif [ \"$POSTGRES_FSYNC\" = \"off\" ]; then\n    echo \"⚠️  WARNING: fsync disabled - DATA LOSS RISK if crash occurs\"\nfi\nif [ \"$POSTGRES_HOST_AUTH_METHOD\" = \"trust\" ]; then\n    echo \"⚠️  WARNING: Authentication disabled - NO PASSWORD REQUIRED\"\nfi\nif [ \"$PGHOSTADDR\" = \"0.0.0.0\" ]; then\n    echo \"⚠️  WARNING: Listening on all interfaces - NETWORK EXPOSED\"\nfi\n[ \"$POSTGRES_FSYNC\" = \"off\" ] || [ \"$POSTGRES_HOST_AUTH_METHOD\" = \"trust\" ] || [ \"$PGHOSTADDR\" = \"0.0.0.0\" ] && echo \"\"\n\necho \"Connection:\"\necho \"  Listen address: ${PGHOSTADDR}:${PGPORT}\"\necho \"  Client connects to: ${PGHOST}\"\necho \"  Database: ${PGDATABASE}\"\necho \"  User: ${PGUSER}\"\necho \"\"\necho \"Performance:\"\necho \"  Max connections: ${POSTGRES_MAX_CONNECTIONS}\"\necho \"  Shared buffers: ${POSTGRES_SHARED_BUFFERS}\"\necho \"  fsync: ${POSTGRES_FSYNC}\"\necho \"\"\necho \"Commands:\"\necho \"  flox activate -s        Start PostgreSQL\"\necho \"  psql                    Connect to database\"\necho \"  postgres-info           Show configuration\"\necho \"\"\n\n# === RUNTIME VARIABLES - Core ===\nexport DAGSTER_HOME=\"${DAGSTER_HOME:-$FLOX_ENV_CACHE/dagster-data}\"\n\n# === RUNTIME VARIABLES - Connection ===\nexport DAGSTER_HOST=\"${DAGSTER_HOST:-127.0.0.1}\"\nexport DAGSTER_PORT=\"${DAGSTER_PORT:-3000}\"\n\n# === RUNTIME VARIABLES - Storage Backend ===\nexport DAGSTER_STORAGE_TYPE=\"${DAGSTER_STORAGE_TYPE:-sqlite}\"\nexport DAGSTER_POSTGRES_URL=\"${DAGSTER_POSTGRES_URL:-}\"\n\n# === RUNTIME VARIABLES - Compute ===\nexport DAGSTER_RUN_LAUNCHER=\"${DAGSTER_RUN_LAUNCHER:-}\"\nexport DAGSTER_MAX_CONCURRENT_RUNS=\"${DAGSTER_MAX_CONCURRENT_RUNS:-10}\"\n\n# === RUNTIME VARIABLES - Code Location ===\nexport DAGSTER_CODE_LOCATION_NAME=\"${DAGSTER_CODE_LOCATION_NAME:-}\"\nexport DAGSTER_MODULE_NAME=\"${DAGSTER_MODULE_NAME:-}\"\nexport DAGSTER_WORKING_DIRECTORY=\"${DAGSTER_WORKING_DIRECTORY:-}\"\n\n# === POSTGRES AUTO-CONFIGURATION ===\n# If postgres storage requested but no URL provided, auto-generate from composed environment\nif [ \"$DAGSTER_STORAGE_TYPE\" = \"postgres\" ] && [ -z \"$DAGSTER_POSTGRES_URL\" ]; then\n    if command -v postgres >/dev/null 2>&1; then\n        # PostgreSQL available from composition - auto-generate connection URL\n        export PGDATABASE=\"${PGDATABASE:-dagster}\"\n        export DAGSTER_POSTGRES_URL=\"postgresql://${PGUSER}:${PGPASSWORD}@${PGHOSTADDR:-127.0.0.1}:${PGPORT:-15432}/${PGDATABASE}\"\n    else\n        echo \"⚠️  WARNING: DAGSTER_STORAGE_TYPE=postgres but PostgreSQL not available\"\n        echo \"   Falling back to SQLite\"\n        export DAGSTER_STORAGE_TYPE=sqlite\n    fi\nfi\n\n# === DERIVED VARIABLES ===\nexport DAGSTER_YAML=\"$DAGSTER_HOME/dagster.yaml\"\n\n# === INITIALIZATION ===\n# Generate configuration unless explicitly skipped\nif [ \"${DAGSTER_SKIP_INIT:-}\" != \"1\" ]; then\n    dagster-init-config\nfi\n\n# Minimal activation message for headless mode\nif [ \"${DAGSTER_QUIET:-}\" != \"1\" ]; then\n    echo \"Dagster headless environment ready. Run 'flox edit' for documentation.\"\nfi\n"
+      "on-activate": "# Create required directories\nmkdir -p \"$FLOX_ENV_CACHE/postgres-config\"\nmkdir -p \"$FLOX_ENV_CACHE/postgres-logs\"\nmkdir -p \"$FLOX_ENV_CACHE/postgres-data\"\nmkdir -p \"$FLOX_ENV_CACHE/postgres-run\"\n\n# === INIT-TIME VARIABLES ===\n# These affect initdb and cannot change without deleting PGDATA\nexport PGUSER=\"${PGUSER:-pguser}\"\nexport PGPASSWORD=\"${PGPASSWORD:-pgpass}\"\nexport POSTGRES_HOST_AUTH_METHOD=\"${POSTGRES_HOST_AUTH_METHOD:-md5}\"\nexport POSTGRES_ENCODING=\"${POSTGRES_ENCODING:-UTF8}\"\nexport POSTGRES_LOCALE=\"${POSTGRES_LOCALE:-C}\"\nexport POSTGRES_DATA_CHECKSUMS=\"${POSTGRES_DATA_CHECKSUMS:-}\"\nexport POSTGRES_INITDB_ARGS=\"${POSTGRES_INITDB_ARGS:-}\"\n\n# === RUNTIME VARIABLES - Connection ===\n# These can be changed by restarting the service\nexport PGHOSTADDR=\"${PGHOSTADDR:-127.0.0.1}\"\nexport PGPORT=\"${PGPORT:-15432}\"\nexport PGHOST=\"${PGHOST:-}\"\nexport PGDATABASE=\"${PGDATABASE:-postgres}\"\n\n# === RUNTIME VARIABLES - Performance ===\nexport POSTGRES_MAX_CONNECTIONS=\"${POSTGRES_MAX_CONNECTIONS:-100}\"\nexport POSTGRES_SHARED_BUFFERS=\"${POSTGRES_SHARED_BUFFERS:-128MB}\"\nexport POSTGRES_WORK_MEM=\"${POSTGRES_WORK_MEM:-4MB}\"\nexport POSTGRES_EFFECTIVE_CACHE_SIZE=\"${POSTGRES_EFFECTIVE_CACHE_SIZE:-4GB}\"\nexport POSTGRES_FSYNC=\"${POSTGRES_FSYNC:-on}\"\nexport POSTGRES_SYNCHRONOUS_COMMIT=\"${POSTGRES_SYNCHRONOUS_COMMIT:-on}\"\nexport POSTGRES_FULL_PAGE_WRITES=\"${POSTGRES_FULL_PAGE_WRITES:-on}\"\n\n# === RUNTIME VARIABLES - WAL ===\nexport POSTGRES_MAX_WAL_SIZE=\"${POSTGRES_MAX_WAL_SIZE:-1GB}\"\nexport POSTGRES_MIN_WAL_SIZE=\"${POSTGRES_MIN_WAL_SIZE:-80MB}\"\nexport POSTGRES_CHECKPOINT_TIMEOUT=\"${POSTGRES_CHECKPOINT_TIMEOUT:-5min}\"\n\n# === RUNTIME VARIABLES - Logging ===\nexport POSTGRES_LOG_STATEMENT=\"${POSTGRES_LOG_STATEMENT:-none}\"\nexport POSTGRES_LOG_DURATION=\"${POSTGRES_LOG_DURATION:-off}\"\nexport POSTGRES_LOG_MIN_DURATION=\"${POSTGRES_LOG_MIN_DURATION:-}\"\nexport POSTGRES_LOG_CONNECTIONS=\"${POSTGRES_LOG_CONNECTIONS:-off}\"\nexport POSTGRES_LOG_DISCONNECTIONS=\"${POSTGRES_LOG_DISCONNECTIONS:-off}\"\n\n# === FLEXIBILITY ===\nexport POSTGRES_EXTRA_OPTS=\"${POSTGRES_EXTRA_OPTS:-}\"\n\n# === DERIVED VARIABLES ===\nexport POSTGRES_DIR=\"${POSTGRES_DIR:-$FLOX_ENV_CACHE/postgres-data}\"\nexport PGDATA=\"$POSTGRES_DIR/data\"\nexport PGHOST_SOCKET=\"$POSTGRES_DIR/run\"\n\n# PGHOST logic: If empty or unset, use Unix socket\nif [ -z \"$PGHOST\" ]; then\n    export PGHOST=\"$PGHOST_SOCKET\"\n    export DATABASE_URL=\"postgresql:///$PGDATABASE?host=$PGHOST&port=$PGPORT\"\nelse\n    # User specified host for TCP\n    export DATABASE_URL=\"postgresql://$PGUSER:$PGPASSWORD@$PGHOST:$PGPORT/$PGDATABASE\"\nfi\n\n# === INITIALIZATION FUNCTION ===\ninitialize_postgres() {\n    # Check if already initialized\n    if [ -f \"$PGDATA/PG_VERSION\" ]; then\n        return 0\n    fi\n\n    # Create directories with proper permissions\n    mkdir -p \"$PGDATA\" \"$PGHOST_SOCKET\"\n    chmod 700 \"$PGDATA\" \"$PGHOST_SOCKET\"\n\n    # Initialize PostgreSQL with direct execution\n    echo \"Initializing PostgreSQL database...\"\n    initdb \"$PGDATA\" \\\n        --username=\"$PGUSER\" \\\n        --pwfile=<(echo \"$PGPASSWORD\") \\\n        --encoding=\"$POSTGRES_ENCODING\" \\\n        --locale=\"$POSTGRES_LOCALE\" \\\n        --auth=\"$POSTGRES_HOST_AUTH_METHOD\" \\\n        $([ -n \"$POSTGRES_DATA_CHECKSUMS\" ] && echo \"--data-checksums\") \\\n        $POSTGRES_INITDB_ARGS \\\n        > /dev/null 2>&1\n\n    if [ $? -ne 0 ]; then\n        echo \"❌ Failed to initialize PostgreSQL\"\n        return 1\n    fi\n\n    # Create database if not \"postgres\"\n    if [ \"$PGDATABASE\" != \"postgres\" ]; then\n        echo \"Creating database '$PGDATABASE'...\"\n\n        # Start postgres temporarily\n        postgres -D \"$PGDATA\" \\\n            -c listen_addresses='' \\\n            -c unix_socket_directories=\"$PGHOST_SOCKET\" \\\n            -p \"$PGPORT\" \\\n            > /dev/null 2>&1 &\n        PG_PID=$!\n\n        sleep 3  # Wait for startup\n\n        # Create database\n        createdb \"$PGDATABASE\" > /dev/null 2>&1 || true\n\n        # Stop postgres\n        pg_ctl stop -D \"$PGDATA\" -m fast -w > /dev/null 2>&1\n    fi\n\n    echo \"✅ PostgreSQL initialized successfully\"\n    return 0\n}\n\n# Run initialization\ninitialize_postgres\n\n# Display info with safety warnings\necho \"\"\necho \"✅ PostgreSQL environment ready (headless mode)\"\necho \"\"\n\n# Safety warnings\nif [ \"$POSTGRES_FSYNC\" = \"off\" ]; then\n    echo \"⚠️  WARNING: fsync disabled - DATA LOSS RISK if crash occurs\"\nfi\nif [ \"$POSTGRES_HOST_AUTH_METHOD\" = \"trust\" ]; then\n    echo \"⚠️  WARNING: Authentication disabled - NO PASSWORD REQUIRED\"\nfi\nif [ \"$PGHOSTADDR\" = \"0.0.0.0\" ]; then\n    echo \"⚠️  WARNING: Listening on all interfaces - NETWORK EXPOSED\"\nfi\n[ \"$POSTGRES_FSYNC\" = \"off\" ] || [ \"$POSTGRES_HOST_AUTH_METHOD\" = \"trust\" ] || [ \"$PGHOSTADDR\" = \"0.0.0.0\" ] && echo \"\"\n\necho \"Connection:\"\necho \"  Listen address: ${PGHOSTADDR}:${PGPORT}\"\necho \"  Client connects to: ${PGHOST}\"\necho \"  Database: ${PGDATABASE}\"\necho \"  User: ${PGUSER}\"\necho \"\"\necho \"Performance:\"\necho \"  Max connections: ${POSTGRES_MAX_CONNECTIONS}\"\necho \"  Shared buffers: ${POSTGRES_SHARED_BUFFERS}\"\necho \"  fsync: ${POSTGRES_FSYNC}\"\necho \"\"\necho \"Commands:\"\necho \"  flox activate -s        Start PostgreSQL\"\necho \"  psql                    Connect to database\"\necho \"  postgres-info           Show configuration\"\necho \"\"\n\n# === RUNTIME VARIABLES - Core ===\nexport PREFECT_HOME=\"${PREFECT_HOME:-$FLOX_ENV_CACHE/prefect-data}\"\n\n# === RUNTIME VARIABLES - Connection ===\n# PREFECT_SERVER_HOST: Server bind address (0.0.0.0 = all interfaces, 127.0.0.1 = localhost only)\nexport PREFECT_SERVER_HOST=\"${PREFECT_SERVER_HOST:-0.0.0.0}\"\nexport PREFECT_SERVER_PORT=\"${PREFECT_SERVER_PORT:-4200}\"\n\n# PREFECT_API_HOST: Client connection address (what clients use to connect)\n# Defaults to 127.0.0.1 for local connections, override for remote access\nexport PREFECT_API_HOST=\"${PREFECT_API_HOST:-127.0.0.1}\"\n\n# Support ephemeral mode (no server required) for local flow runs\nif [ \"${PREFECT_EPHEMERAL:-}\" = \"1\" ]; then\n    # Ephemeral mode - runs flows without server\n    export PREFECT_API_URL=\"\"\nelse\n    export PREFECT_API_URL=\"${PREFECT_API_URL:-http://$PREFECT_API_HOST:$PREFECT_SERVER_PORT/api}\"\nfi\n\n# PREFECT_UI_API_URL: URL the browser UI uses to connect to API\n# Important for remote access - must be accessible from client browsers\n# If not set, uses PREFECT_API_URL (which may not work for remote browsers)\nexport PREFECT_UI_API_URL=\"${PREFECT_UI_API_URL:-$PREFECT_API_URL}\"\n\n# === RUNTIME VARIABLES - Storage Backend ===\nexport PREFECT_STORAGE_TYPE=\"${PREFECT_STORAGE_TYPE:-sqlite}\"\nexport PREFECT_DATABASE_URL=\"${PREFECT_DATABASE_URL:-}\"\n\n# === RUNTIME VARIABLES - Worker ===\nexport PREFECT_WORKER_POOL_NAME=\"${PREFECT_WORKER_POOL_NAME:-default-pool}\"\nexport PREFECT_WORKER_LIMIT=\"${PREFECT_WORKER_LIMIT:-10}\"\nexport PREFECT_WORKER_QUERY_SECONDS=\"${PREFECT_WORKER_QUERY_SECONDS:-5}\"\n\n# === RUNTIME VARIABLES - Logging ===\nexport PREFECT_LOGGING_LEVEL=\"${PREFECT_LOGGING_LEVEL:-INFO}\"\nexport PREFECT_LOGGING_TO_API_ENABLED=\"${PREFECT_LOGGING_TO_API_ENABLED:-true}\"\n\n# === RUNTIME VARIABLES - UI ===\n# Set UI static directory to avoid Nix store write permissions issues\nexport PREFECT_SERVER_UI_STATIC_DIRECTORY=\"${PREFECT_SERVER_UI_STATIC_DIRECTORY:-$PREFECT_HOME/ui}\"\n\n# === POSTGRES AUTO-CONFIGURATION ===\n# If postgres storage requested but no URL provided, auto-generate from composed environment\nif [ \"$PREFECT_STORAGE_TYPE\" = \"postgres\" ] && [ -z \"$PREFECT_DATABASE_URL\" ]; then\n    if command -v postgres >/dev/null 2>&1; then\n        # PostgreSQL available from composition - auto-generate connection URL\n        export PGDATABASE=\"${PGDATABASE:-prefect}\"\n        export PREFECT_DATABASE_URL=\"postgresql+asyncpg://${PGUSER}:${PGPASSWORD}@${PGHOSTADDR:-0.0.0.0}:${PGPORT:-15432}/${PGDATABASE}\"\n    else\n        echo \"⚠️  WARNING: PREFECT_STORAGE_TYPE=postgres but PostgreSQL not available\"\n        echo \"   Falling back to SQLite\"\n        export PREFECT_STORAGE_TYPE=sqlite\n    fi\nfi\n\n# === SQLITE CONFIGURATION ===\nif [ \"$PREFECT_STORAGE_TYPE\" = \"sqlite\" ]; then\n    export PREFECT_API_DATABASE_CONNECTION_URL=\"sqlite+aiosqlite:///${PREFECT_HOME}/prefect.db\"\nelse\n    export PREFECT_API_DATABASE_CONNECTION_URL=\"$PREFECT_DATABASE_URL\"\nfi\n\n# === CREATE REQUIRED DIRECTORIES ===\nmkdir -p \"$PREFECT_HOME\"\nmkdir -p \"$PREFECT_FLOWS_DIR\"\nmkdir -p \"$PREFECT_STORAGE_DIR\"\nmkdir -p \"$PREFECT_HOME/logs\"\nmkdir -p \"$PREFECT_SERVER_UI_STATIC_DIRECTORY\"\n\n# === INITIALIZATION ===\ninitialize_prefect() {\n    # Check if already initialized\n    if [ -f \"$PREFECT_HOME/.initialized\" ]; then\n        return 0\n    fi\n\n    # Only show init messages if not in quiet mode\n    if [ \"${PREFECT_QUIET:-}\" != \"1\" ]; then\n        echo \"Initializing Prefect database...\"\n    fi\n\n    # Create database (idempotent)\n    prefect server database reset --yes > \"$PREFECT_HOME/logs/init.log\" 2>&1 || true\n\n    touch \"$PREFECT_HOME/.initialized\"\n\n    if [ \"${PREFECT_QUIET:-}\" != \"1\" ]; then\n        echo \"✅ Prefect initialized successfully\"\n    fi\n    return 0\n}\n\n# === CREATE EXAMPLE FLOWS ===\ncreate_example_flows() {\n    # Only create if flows directory is empty\n    if [ -n \"$(ls -A \"$PREFECT_FLOWS_DIR\" 2>/dev/null)\" ]; then\n        return 0\n    fi\n\n    # Example 1: Simple Hello Flow\n    cat > \"$PREFECT_FLOWS_DIR/hello_flow.py\" << 'EOF'\nfrom prefect import flow, task\nfrom prefect.logging import get_run_logger\n\n@task\ndef say_hello(name: str):\n    logger = get_run_logger()\n    logger.info(f\"Hello, {name}!\")\n    return f\"Hello, {name}!\"\n\n@flow(name=\"Hello Flow\")\ndef hello_flow(name: str = \"World\"):\n    \"\"\"A simple hello world flow.\"\"\"\n    result = say_hello(name)\n    return result\n\nif __name__ == \"__main__\":\n    hello_flow()\nEOF\n\n    # Example 2: Data Pipeline Flow\n    cat > \"$PREFECT_FLOWS_DIR/data_pipeline.py\" << 'EOF'\nfrom prefect import flow, task\nfrom prefect.logging import get_run_logger\nimport time\n\n@task\ndef extract_data():\n    logger = get_run_logger()\n    logger.info(\"Extracting data...\")\n    time.sleep(1)\n    return [1, 2, 3, 4, 5]\n\n@task\ndef transform_data(data):\n    logger = get_run_logger()\n    logger.info(f\"Transforming {len(data)} records...\")\n    time.sleep(1)\n    return [x * 2 for x in data]\n\n@task\ndef load_data(data):\n    logger = get_run_logger()\n    logger.info(f\"Loading {len(data)} records...\")\n    time.sleep(1)\n    logger.info(f\"Data loaded: {data}\")\n    return len(data)\n\n@flow(name=\"Data Pipeline\")\ndef data_pipeline():\n    \"\"\"A simple ETL pipeline flow.\"\"\"\n    raw_data = extract_data()\n    transformed_data = transform_data(raw_data)\n    records_loaded = load_data(transformed_data)\n    return records_loaded\n\nif __name__ == \"__main__\":\n    data_pipeline()\nEOF\n\n    # Example 3: Scheduled Flow\n    cat > \"$PREFECT_FLOWS_DIR/scheduled_flow.py\" << 'EOF'\nfrom prefect import flow, task\nfrom prefect.logging import get_run_logger\nfrom datetime import datetime\n\n@task\ndef get_timestamp():\n    return datetime.now().isoformat()\n\n@task\ndef process_timestamp(timestamp: str):\n    logger = get_run_logger()\n    logger.info(f\"Processing timestamp: {timestamp}\")\n    return f\"Processed at {timestamp}\"\n\n@flow(name=\"Scheduled Flow\")\ndef scheduled_flow():\n    \"\"\"A flow designed to run on a schedule.\"\"\"\n    timestamp = get_timestamp()\n    result = process_timestamp(timestamp)\n    return result\n\nif __name__ == \"__main__\":\n    scheduled_flow()\nEOF\n\n    chmod 644 \"$PREFECT_FLOWS_DIR\"/*.py\n    return 0\n}\n\n# Run initialization unless explicitly skipped\nif [ \"${PREFECT_SKIP_INIT:-}\" != \"1\" ]; then\n    initialize_prefect\nfi\n\n# Create example flows\ncreate_example_flows\n\n# Minimal activation message for headless mode\nif [ \"${PREFECT_QUIET:-}\" != \"1\" ]; then\n    echo \"Prefect headless environment ready. Run 'flox edit' for documentation.\"\nfi\n"
     },
     "profile": {
       "bash": "postgres-info() {\n    echo \"PostgreSQL (Headless Mode) - Configuration\"\n    echo \"\"\n    echo \"Connection:\"\n    echo \"  Listen address: ${PGHOSTADDR}:${PGPORT}\"\n    echo \"  Client connects to: ${PGHOST}\"\n    echo \"  Database: ${PGDATABASE}\"\n    echo \"  User: ${PGUSER}\"\n    echo \"  Auth method: ${POSTGRES_HOST_AUTH_METHOD}\"\n    echo \"\"\n    echo \"Performance:\"\n    echo \"  Max connections: ${POSTGRES_MAX_CONNECTIONS}\"\n    echo \"  Shared buffers: ${POSTGRES_SHARED_BUFFERS}\"\n    echo \"  Work mem: ${POSTGRES_WORK_MEM}\"\n    echo \"  Effective cache size: ${POSTGRES_EFFECTIVE_CACHE_SIZE}\"\n    echo \"  fsync: ${POSTGRES_FSYNC}\"\n    echo \"  Synchronous commit: ${POSTGRES_SYNCHRONOUS_COMMIT}\"\n    echo \"\"\n    echo \"WAL:\"\n    echo \"  Max WAL size: ${POSTGRES_MAX_WAL_SIZE}\"\n    echo \"  Min WAL size: ${POSTGRES_MIN_WAL_SIZE}\"\n    echo \"  Checkpoint timeout: ${POSTGRES_CHECKPOINT_TIMEOUT}\"\n    echo \"\"\n    echo \"Logging:\"\n    echo \"  Statement logging: ${POSTGRES_LOG_STATEMENT}\"\n    echo \"  Duration logging: ${POSTGRES_LOG_DURATION}\"\n    echo \"  Connection logging: ${POSTGRES_LOG_CONNECTIONS}\"\n    echo \"\"\n    echo \"Data Directory: ${PGDATA}\"\n    echo \"\"\n    echo \"Commands:\"\n    echo \"  psql                        Connect to database\"\n    echo \"  flox activate -s            Start PostgreSQL service\"\n    echo \"  flox services status        Check service status\"\n    echo \"  flox services logs postgres View service logs\"\n    echo \"  flox services restart postgres Restart with new settings\"\n}\nexport -f postgres-info\n",
@@ -38,130 +38,18 @@
       ]
     },
     "services": {
-      "dagster-daemon": {
-        "command": "  cd \"$DAGSTER_HOME\"\n  exec dagster-daemon run --empty-workspace\n"
-      },
-      "dagster-webserver": {
-        "command": "  cd \"$DAGSTER_HOME\"\n  dagster-webserver --host $DAGSTER_HOST --port $DAGSTER_PORT --empty-workspace\n"
-      },
       "postgres": {
         "command": "# Ensure socket directory exists\nmkdir -p \"$PGHOST_SOCKET\"\nchmod 700 \"$PGHOST_SOCKET\"\n\n# Start PostgreSQL with all runtime configuration\nexec postgres -D \"$PGDATA\" \\\n  -c listen_addresses=\"$PGHOSTADDR\" \\\n  -p \"$PGPORT\" \\\n  -c unix_socket_directories=\"$PGHOST_SOCKET\" \\\n  -c unix_socket_permissions=0700 \\\n  ${POSTGRES_MAX_CONNECTIONS:+-c max_connections=\"$POSTGRES_MAX_CONNECTIONS\"} \\\n  ${POSTGRES_SHARED_BUFFERS:+-c shared_buffers=\"$POSTGRES_SHARED_BUFFERS\"} \\\n  ${POSTGRES_WORK_MEM:+-c work_mem=\"$POSTGRES_WORK_MEM\"} \\\n  ${POSTGRES_EFFECTIVE_CACHE_SIZE:+-c effective_cache_size=\"$POSTGRES_EFFECTIVE_CACHE_SIZE\"} \\\n  $([ \"$POSTGRES_FSYNC\" = \"off\" ] && echo \"-c fsync=off\") \\\n  ${POSTGRES_SYNCHRONOUS_COMMIT:+-c synchronous_commit=\"$POSTGRES_SYNCHRONOUS_COMMIT\"} \\\n  ${POSTGRES_FULL_PAGE_WRITES:+-c full_page_writes=\"$POSTGRES_FULL_PAGE_WRITES\"} \\\n  ${POSTGRES_MAX_WAL_SIZE:+-c max_wal_size=\"$POSTGRES_MAX_WAL_SIZE\"} \\\n  ${POSTGRES_MIN_WAL_SIZE:+-c min_wal_size=\"$POSTGRES_MIN_WAL_SIZE\"} \\\n  ${POSTGRES_CHECKPOINT_TIMEOUT:+-c checkpoint_timeout=\"$POSTGRES_CHECKPOINT_TIMEOUT\"} \\\n  ${POSTGRES_LOG_STATEMENT:+-c log_statement=\"$POSTGRES_LOG_STATEMENT\"} \\\n  ${POSTGRES_LOG_DURATION:+-c log_duration=\"$POSTGRES_LOG_DURATION\"} \\\n  ${POSTGRES_LOG_MIN_DURATION:+-c log_min_duration_statement=\"$POSTGRES_LOG_MIN_DURATION\"} \\\n  ${POSTGRES_LOG_CONNECTIONS:+-c log_connections=\"$POSTGRES_LOG_CONNECTIONS\"} \\\n  ${POSTGRES_LOG_DISCONNECTIONS:+-c log_disconnections=\"$POSTGRES_LOG_DISCONNECTIONS\"} \\\n  $POSTGRES_EXTRA_OPTS\n"
+      },
+      "prefect-server": {
+        "command": "cd \"$PREFECT_HOME\"\nexec prefect server start \\\n    --host \"$PREFECT_SERVER_HOST\" \\\n    --port \"$PREFECT_SERVER_PORT\" \\\n    --log-level \"$PREFECT_LOGGING_LEVEL\"\n"
+      },
+      "prefect-worker": {
+        "command": "cd \"$PREFECT_HOME\"\n\n# Wait for server to be ready\nfor i in {1..30}; do\n    if curl -s \"$PREFECT_API_URL/health\" > /dev/null 2>&1; then\n        break\n    fi\n    sleep 2\ndone\n\n# Create work pool if it doesn't exist\nprefect work-pool create \"$PREFECT_WORKER_POOL_NAME\" --type process 2>/dev/null || true\n\n# Start worker (PREFECT_WORKER_QUERY_SECONDS controls polling via environment variable)\nexec prefect worker start \\\n    --pool \"$PREFECT_WORKER_POOL_NAME\" \\\n    --limit \"$PREFECT_WORKER_LIMIT\"\n"
       }
     }
   },
   "packages": [
-    {
-      "attr_path": "dagster",
-      "broken": false,
-      "derivation": "/nix/store/xxhicdrqgpkds63b8jw6a4pix4if6n12-dagster-1.12.0.drv",
-      "description": "Dagster orchestration platform with all components",
-      "install_id": "dagster",
-      "locked_url": "https://github.com/barstoolbluz/build-dagster.git?rev=8acfce4ee4633c94eb2a075e7456e67bfc29e7d8",
-      "name": "dagster-1.12.0",
-      "pname": "dagster-1.12.0",
-      "rev": "8acfce4ee4633c94eb2a075e7456e67bfc29e7d8",
-      "rev_count": 18,
-      "rev_date": "2025-11-07T22:42:42Z",
-      "scrape_date": "2025-11-08T17:17:15.095592297Z",
-      "stabilities": [
-        "unstable"
-      ],
-      "unfree": false,
-      "version": "1.12.0",
-      "outputs_to_install": [
-        "out"
-      ],
-      "outputs": {
-        "out": "/nix/store/qy6qcrnq8yap9jqhgvcn87sp2l3c76x9-dagster-1.12.0"
-      },
-      "system": "aarch64-darwin",
-      "group": "flox/dagster",
-      "priority": 5
-    },
-    {
-      "attr_path": "dagster",
-      "broken": false,
-      "derivation": "/nix/store/phx8qkam74l3jszn7jrvbsy8ip64lvh7-dagster-1.12.0.drv",
-      "description": "Dagster orchestration platform with all components",
-      "install_id": "dagster",
-      "locked_url": "https://github.com/barstoolbluz/build-dagster.git?rev=8acfce4ee4633c94eb2a075e7456e67bfc29e7d8",
-      "name": "dagster-1.12.0",
-      "pname": "dagster-1.12.0",
-      "rev": "8acfce4ee4633c94eb2a075e7456e67bfc29e7d8",
-      "rev_count": 18,
-      "rev_date": "2025-11-07T22:42:42Z",
-      "scrape_date": "2025-11-08T17:17:15.095598546Z",
-      "stabilities": [
-        "unstable"
-      ],
-      "unfree": false,
-      "version": "1.12.0",
-      "outputs_to_install": [
-        "out"
-      ],
-      "outputs": {
-        "out": "/nix/store/w34xwibci2akzh8hbirzbls5q0ambcrh-dagster-1.12.0"
-      },
-      "system": "aarch64-linux",
-      "group": "flox/dagster",
-      "priority": 5
-    },
-    {
-      "attr_path": "dagster",
-      "broken": false,
-      "derivation": "/nix/store/q5bs5k9ysqw3ad07pyxg3hycnaz0yzcs-dagster-1.12.0.drv",
-      "description": "Dagster orchestration platform with all components",
-      "install_id": "dagster",
-      "locked_url": "https://github.com/barstoolbluz/build-dagster.git?rev=8acfce4ee4633c94eb2a075e7456e67bfc29e7d8",
-      "name": "dagster-1.12.0",
-      "pname": "dagster-1.12.0",
-      "rev": "8acfce4ee4633c94eb2a075e7456e67bfc29e7d8",
-      "rev_count": 18,
-      "rev_date": "2025-11-07T22:42:42Z",
-      "scrape_date": "2025-11-08T17:17:15.095599256Z",
-      "stabilities": [
-        "unstable"
-      ],
-      "unfree": false,
-      "version": "1.12.0",
-      "outputs_to_install": [
-        "out"
-      ],
-      "outputs": {
-        "out": "/nix/store/1cnm0l9n3v9kjs0d0yqzxh476a87my7j-dagster-1.12.0"
-      },
-      "system": "x86_64-darwin",
-      "group": "flox/dagster",
-      "priority": 5
-    },
-    {
-      "attr_path": "dagster",
-      "broken": false,
-      "derivation": "/nix/store/amyd321bgidj4fhpi2y418zv4l2s9z6k-dagster-1.12.0.drv",
-      "description": "Dagster orchestration platform with all components",
-      "install_id": "dagster",
-      "locked_url": "https://github.com/barstoolbluz/build-dagster.git?rev=8acfce4ee4633c94eb2a075e7456e67bfc29e7d8",
-      "name": "dagster-1.12.0",
-      "pname": "dagster-1.12.0",
-      "rev": "8acfce4ee4633c94eb2a075e7456e67bfc29e7d8",
-      "rev_count": 18,
-      "rev_date": "2025-11-07T22:42:42Z",
-      "scrape_date": "2025-11-08T17:17:15.095600091Z",
-      "stabilities": [
-        "unstable"
-      ],
-      "unfree": false,
-      "version": "1.12.0",
-      "outputs_to_install": [
-        "out"
-      ],
-      "outputs": {
-        "out": "/nix/store/g8d0kp4khzn1xsi85kidanzgnwm5687q-dagster-1.12.0"
-      },
-      "system": "x86_64-linux",
-      "group": "flox/dagster",
-      "priority": 5
-    },
     {
       "attr_path": "postgresql16Packages.postgis",
       "broken": false,
@@ -435,31 +323,158 @@
       "system": "x86_64-linux",
       "group": "toplevel",
       "priority": 5
+    },
+    {
+      "attr_path": "prefect",
+      "broken": false,
+      "derivation": "/nix/store/az66m5mbjigka1vwfdkf2i6657khhn1w-prefect-3.5.0.drv",
+      "description": "Workflow orchestration framework for building resilient data pipelines in Python",
+      "install_id": "prefect",
+      "license": "Apache-2.0",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=b3d51a0365f6695e7dd5cdf3e180604530ed33b4",
+      "name": "prefect-3.5.0",
+      "pname": "prefect",
+      "rev": "b3d51a0365f6695e7dd5cdf3e180604530ed33b4",
+      "rev_count": 888552,
+      "rev_date": "2025-11-02T19:18:41Z",
+      "scrape_date": "2025-11-04T00:35:56.107964Z",
+      "stabilities": [
+        "unstable"
+      ],
+      "unfree": false,
+      "version": "3.5.0",
+      "outputs_to_install": [
+        "out"
+      ],
+      "outputs": {
+        "dist": "/nix/store/96bri9rggdhfgzx7f51r7m0l8vz09md2-prefect-3.5.0-dist",
+        "out": "/nix/store/cw7yq05yclcmvdclk6m6abvdmvqlp50i-prefect-3.5.0"
+      },
+      "system": "aarch64-darwin",
+      "group": "toplevel",
+      "priority": 5
+    },
+    {
+      "attr_path": "prefect",
+      "broken": false,
+      "derivation": "/nix/store/hm47xsszdcbynpx1dpa6p97plyzmfn6k-prefect-3.5.0.drv",
+      "description": "Workflow orchestration framework for building resilient data pipelines in Python",
+      "install_id": "prefect",
+      "license": "Apache-2.0",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=b3d51a0365f6695e7dd5cdf3e180604530ed33b4",
+      "name": "prefect-3.5.0",
+      "pname": "prefect",
+      "rev": "b3d51a0365f6695e7dd5cdf3e180604530ed33b4",
+      "rev_count": 888552,
+      "rev_date": "2025-11-02T19:18:41Z",
+      "scrape_date": "2025-11-05T16:29:58.064813Z",
+      "stabilities": [
+        "unstable"
+      ],
+      "unfree": false,
+      "version": "3.5.0",
+      "outputs_to_install": [
+        "out"
+      ],
+      "outputs": {
+        "dist": "/nix/store/0y4i1rhi21cqv46jilidbwzl8x20b6r0-prefect-3.5.0-dist",
+        "out": "/nix/store/5mqz8ga037a6zpwj7fvb67fqyn72fjp0-prefect-3.5.0"
+      },
+      "system": "aarch64-linux",
+      "group": "toplevel",
+      "priority": 5
+    },
+    {
+      "attr_path": "prefect",
+      "broken": false,
+      "derivation": "/nix/store/ais58wmgjqp5snp6yyhdbpjhcd11d8dm-prefect-3.5.0.drv",
+      "description": "Workflow orchestration framework for building resilient data pipelines in Python",
+      "install_id": "prefect",
+      "license": "Apache-2.0",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=b3d51a0365f6695e7dd5cdf3e180604530ed33b4",
+      "name": "prefect-3.5.0",
+      "pname": "prefect",
+      "rev": "b3d51a0365f6695e7dd5cdf3e180604530ed33b4",
+      "rev_count": 888552,
+      "rev_date": "2025-11-02T19:18:41Z",
+      "scrape_date": "2025-11-05T16:55:35.707220Z",
+      "stabilities": [
+        "unstable"
+      ],
+      "unfree": false,
+      "version": "3.5.0",
+      "outputs_to_install": [
+        "out"
+      ],
+      "outputs": {
+        "dist": "/nix/store/kakhhbdvv8255rfinj0g585yizq2iwjc-prefect-3.5.0-dist",
+        "out": "/nix/store/hik52388mazrmmvf4mr8ip2w0mpdq5qb-prefect-3.5.0"
+      },
+      "system": "x86_64-darwin",
+      "group": "toplevel",
+      "priority": 5
+    },
+    {
+      "attr_path": "prefect",
+      "broken": false,
+      "derivation": "/nix/store/6ysb4783qbz681pmsm19hdnys2mc7xmb-prefect-3.5.0.drv",
+      "description": "Workflow orchestration framework for building resilient data pipelines in Python",
+      "install_id": "prefect",
+      "license": "Apache-2.0",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=b3d51a0365f6695e7dd5cdf3e180604530ed33b4",
+      "name": "prefect-3.5.0",
+      "pname": "prefect",
+      "rev": "b3d51a0365f6695e7dd5cdf3e180604530ed33b4",
+      "rev_count": 888552,
+      "rev_date": "2025-11-02T19:18:41Z",
+      "scrape_date": "2025-11-05T17:21:52.849147Z",
+      "stabilities": [
+        "unstable"
+      ],
+      "unfree": false,
+      "version": "3.5.0",
+      "outputs_to_install": [
+        "out"
+      ],
+      "outputs": {
+        "dist": "/nix/store/zb0rm5qaxvs2jxhfkdil4r68ac4x4cn4-prefect-3.5.0-dist",
+        "out": "/nix/store/n7bd8mpq80xaxz88g7vzmj9gk8yds6c2-prefect-3.5.0"
+      },
+      "system": "x86_64-linux",
+      "group": "toplevel",
+      "priority": 5
     }
   ],
   "compose": {
     "composer": {
       "version": 1,
       "install": {
-        "dagster": {
-          "pkg-path": "flox/dagster",
-          "pkg-group": "flox/dagster"
+        "prefect": {
+          "pkg-path": "prefect"
         }
       },
       "vars": {
-        "DAGSTER_STORAGE_DIR": "$FLOX_ENV_CACHE/dagster-storage"
+        "PREFECT_FLOWS_DIR": "$FLOX_ENV_CACHE/prefect-flows",
+        "PREFECT_STORAGE_DIR": "$FLOX_ENV_CACHE/prefect-storage"
       },
       "hook": {
-        "on-activate": "# === RUNTIME VARIABLES - Core ===\nexport DAGSTER_HOME=\"${DAGSTER_HOME:-$FLOX_ENV_CACHE/dagster-data}\"\n\n# === RUNTIME VARIABLES - Connection ===\nexport DAGSTER_HOST=\"${DAGSTER_HOST:-127.0.0.1}\"\nexport DAGSTER_PORT=\"${DAGSTER_PORT:-3000}\"\n\n# === RUNTIME VARIABLES - Storage Backend ===\nexport DAGSTER_STORAGE_TYPE=\"${DAGSTER_STORAGE_TYPE:-sqlite}\"\nexport DAGSTER_POSTGRES_URL=\"${DAGSTER_POSTGRES_URL:-}\"\n\n# === RUNTIME VARIABLES - Compute ===\nexport DAGSTER_RUN_LAUNCHER=\"${DAGSTER_RUN_LAUNCHER:-}\"\nexport DAGSTER_MAX_CONCURRENT_RUNS=\"${DAGSTER_MAX_CONCURRENT_RUNS:-10}\"\n\n# === RUNTIME VARIABLES - Code Location ===\nexport DAGSTER_CODE_LOCATION_NAME=\"${DAGSTER_CODE_LOCATION_NAME:-}\"\nexport DAGSTER_MODULE_NAME=\"${DAGSTER_MODULE_NAME:-}\"\nexport DAGSTER_WORKING_DIRECTORY=\"${DAGSTER_WORKING_DIRECTORY:-}\"\n\n# === POSTGRES AUTO-CONFIGURATION ===\n# If postgres storage requested but no URL provided, auto-generate from composed environment\nif [ \"$DAGSTER_STORAGE_TYPE\" = \"postgres\" ] && [ -z \"$DAGSTER_POSTGRES_URL\" ]; then\n    if command -v postgres >/dev/null 2>&1; then\n        # PostgreSQL available from composition - auto-generate connection URL\n        export PGDATABASE=\"${PGDATABASE:-dagster}\"\n        export DAGSTER_POSTGRES_URL=\"postgresql://${PGUSER}:${PGPASSWORD}@${PGHOSTADDR:-127.0.0.1}:${PGPORT:-15432}/${PGDATABASE}\"\n    else\n        echo \"⚠️  WARNING: DAGSTER_STORAGE_TYPE=postgres but PostgreSQL not available\"\n        echo \"   Falling back to SQLite\"\n        export DAGSTER_STORAGE_TYPE=sqlite\n    fi\nfi\n\n# === DERIVED VARIABLES ===\nexport DAGSTER_YAML=\"$DAGSTER_HOME/dagster.yaml\"\n\n# === INITIALIZATION ===\n# Generate configuration unless explicitly skipped\nif [ \"${DAGSTER_SKIP_INIT:-}\" != \"1\" ]; then\n    dagster-init-config\nfi\n\n# Minimal activation message for headless mode\nif [ \"${DAGSTER_QUIET:-}\" != \"1\" ]; then\n    echo \"Dagster headless environment ready. Run 'flox edit' for documentation.\"\nfi\n"
+        "on-activate": "# === RUNTIME VARIABLES - Core ===\nexport PREFECT_HOME=\"${PREFECT_HOME:-$FLOX_ENV_CACHE/prefect-data}\"\n\n# === RUNTIME VARIABLES - Connection ===\n# PREFECT_SERVER_HOST: Server bind address (0.0.0.0 = all interfaces, 127.0.0.1 = localhost only)\nexport PREFECT_SERVER_HOST=\"${PREFECT_SERVER_HOST:-0.0.0.0}\"\nexport PREFECT_SERVER_PORT=\"${PREFECT_SERVER_PORT:-4200}\"\n\n# PREFECT_API_HOST: Client connection address (what clients use to connect)\n# Defaults to 127.0.0.1 for local connections, override for remote access\nexport PREFECT_API_HOST=\"${PREFECT_API_HOST:-127.0.0.1}\"\n\n# Support ephemeral mode (no server required) for local flow runs\nif [ \"${PREFECT_EPHEMERAL:-}\" = \"1\" ]; then\n    # Ephemeral mode - runs flows without server\n    export PREFECT_API_URL=\"\"\nelse\n    export PREFECT_API_URL=\"${PREFECT_API_URL:-http://$PREFECT_API_HOST:$PREFECT_SERVER_PORT/api}\"\nfi\n\n# PREFECT_UI_API_URL: URL the browser UI uses to connect to API\n# Important for remote access - must be accessible from client browsers\n# If not set, uses PREFECT_API_URL (which may not work for remote browsers)\nexport PREFECT_UI_API_URL=\"${PREFECT_UI_API_URL:-$PREFECT_API_URL}\"\n\n# === RUNTIME VARIABLES - Storage Backend ===\nexport PREFECT_STORAGE_TYPE=\"${PREFECT_STORAGE_TYPE:-sqlite}\"\nexport PREFECT_DATABASE_URL=\"${PREFECT_DATABASE_URL:-}\"\n\n# === RUNTIME VARIABLES - Worker ===\nexport PREFECT_WORKER_POOL_NAME=\"${PREFECT_WORKER_POOL_NAME:-default-pool}\"\nexport PREFECT_WORKER_LIMIT=\"${PREFECT_WORKER_LIMIT:-10}\"\nexport PREFECT_WORKER_QUERY_SECONDS=\"${PREFECT_WORKER_QUERY_SECONDS:-5}\"\n\n# === RUNTIME VARIABLES - Logging ===\nexport PREFECT_LOGGING_LEVEL=\"${PREFECT_LOGGING_LEVEL:-INFO}\"\nexport PREFECT_LOGGING_TO_API_ENABLED=\"${PREFECT_LOGGING_TO_API_ENABLED:-true}\"\n\n# === RUNTIME VARIABLES - UI ===\n# Set UI static directory to avoid Nix store write permissions issues\nexport PREFECT_SERVER_UI_STATIC_DIRECTORY=\"${PREFECT_SERVER_UI_STATIC_DIRECTORY:-$PREFECT_HOME/ui}\"\n\n# === POSTGRES AUTO-CONFIGURATION ===\n# If postgres storage requested but no URL provided, auto-generate from composed environment\nif [ \"$PREFECT_STORAGE_TYPE\" = \"postgres\" ] && [ -z \"$PREFECT_DATABASE_URL\" ]; then\n    if command -v postgres >/dev/null 2>&1; then\n        # PostgreSQL available from composition - auto-generate connection URL\n        export PGDATABASE=\"${PGDATABASE:-prefect}\"\n        export PREFECT_DATABASE_URL=\"postgresql+asyncpg://${PGUSER}:${PGPASSWORD}@${PGHOSTADDR:-0.0.0.0}:${PGPORT:-15432}/${PGDATABASE}\"\n    else\n        echo \"⚠️  WARNING: PREFECT_STORAGE_TYPE=postgres but PostgreSQL not available\"\n        echo \"   Falling back to SQLite\"\n        export PREFECT_STORAGE_TYPE=sqlite\n    fi\nfi\n\n# === SQLITE CONFIGURATION ===\nif [ \"$PREFECT_STORAGE_TYPE\" = \"sqlite\" ]; then\n    export PREFECT_API_DATABASE_CONNECTION_URL=\"sqlite+aiosqlite:///${PREFECT_HOME}/prefect.db\"\nelse\n    export PREFECT_API_DATABASE_CONNECTION_URL=\"$PREFECT_DATABASE_URL\"\nfi\n\n# === CREATE REQUIRED DIRECTORIES ===\nmkdir -p \"$PREFECT_HOME\"\nmkdir -p \"$PREFECT_FLOWS_DIR\"\nmkdir -p \"$PREFECT_STORAGE_DIR\"\nmkdir -p \"$PREFECT_HOME/logs\"\nmkdir -p \"$PREFECT_SERVER_UI_STATIC_DIRECTORY\"\n\n# === INITIALIZATION ===\ninitialize_prefect() {\n    # Check if already initialized\n    if [ -f \"$PREFECT_HOME/.initialized\" ]; then\n        return 0\n    fi\n\n    # Only show init messages if not in quiet mode\n    if [ \"${PREFECT_QUIET:-}\" != \"1\" ]; then\n        echo \"Initializing Prefect database...\"\n    fi\n\n    # Create database (idempotent)\n    prefect server database reset --yes > \"$PREFECT_HOME/logs/init.log\" 2>&1 || true\n\n    touch \"$PREFECT_HOME/.initialized\"\n\n    if [ \"${PREFECT_QUIET:-}\" != \"1\" ]; then\n        echo \"✅ Prefect initialized successfully\"\n    fi\n    return 0\n}\n\n# === CREATE EXAMPLE FLOWS ===\ncreate_example_flows() {\n    # Only create if flows directory is empty\n    if [ -n \"$(ls -A \"$PREFECT_FLOWS_DIR\" 2>/dev/null)\" ]; then\n        return 0\n    fi\n\n    # Example 1: Simple Hello Flow\n    cat > \"$PREFECT_FLOWS_DIR/hello_flow.py\" << 'EOF'\nfrom prefect import flow, task\nfrom prefect.logging import get_run_logger\n\n@task\ndef say_hello(name: str):\n    logger = get_run_logger()\n    logger.info(f\"Hello, {name}!\")\n    return f\"Hello, {name}!\"\n\n@flow(name=\"Hello Flow\")\ndef hello_flow(name: str = \"World\"):\n    \"\"\"A simple hello world flow.\"\"\"\n    result = say_hello(name)\n    return result\n\nif __name__ == \"__main__\":\n    hello_flow()\nEOF\n\n    # Example 2: Data Pipeline Flow\n    cat > \"$PREFECT_FLOWS_DIR/data_pipeline.py\" << 'EOF'\nfrom prefect import flow, task\nfrom prefect.logging import get_run_logger\nimport time\n\n@task\ndef extract_data():\n    logger = get_run_logger()\n    logger.info(\"Extracting data...\")\n    time.sleep(1)\n    return [1, 2, 3, 4, 5]\n\n@task\ndef transform_data(data):\n    logger = get_run_logger()\n    logger.info(f\"Transforming {len(data)} records...\")\n    time.sleep(1)\n    return [x * 2 for x in data]\n\n@task\ndef load_data(data):\n    logger = get_run_logger()\n    logger.info(f\"Loading {len(data)} records...\")\n    time.sleep(1)\n    logger.info(f\"Data loaded: {data}\")\n    return len(data)\n\n@flow(name=\"Data Pipeline\")\ndef data_pipeline():\n    \"\"\"A simple ETL pipeline flow.\"\"\"\n    raw_data = extract_data()\n    transformed_data = transform_data(raw_data)\n    records_loaded = load_data(transformed_data)\n    return records_loaded\n\nif __name__ == \"__main__\":\n    data_pipeline()\nEOF\n\n    # Example 3: Scheduled Flow\n    cat > \"$PREFECT_FLOWS_DIR/scheduled_flow.py\" << 'EOF'\nfrom prefect import flow, task\nfrom prefect.logging import get_run_logger\nfrom datetime import datetime\n\n@task\ndef get_timestamp():\n    return datetime.now().isoformat()\n\n@task\ndef process_timestamp(timestamp: str):\n    logger = get_run_logger()\n    logger.info(f\"Processing timestamp: {timestamp}\")\n    return f\"Processed at {timestamp}\"\n\n@flow(name=\"Scheduled Flow\")\ndef scheduled_flow():\n    \"\"\"A flow designed to run on a schedule.\"\"\"\n    timestamp = get_timestamp()\n    result = process_timestamp(timestamp)\n    return result\n\nif __name__ == \"__main__\":\n    scheduled_flow()\nEOF\n\n    chmod 644 \"$PREFECT_FLOWS_DIR\"/*.py\n    return 0\n}\n\n# Run initialization unless explicitly skipped\nif [ \"${PREFECT_SKIP_INIT:-}\" != \"1\" ]; then\n    initialize_prefect\nfi\n\n# Create example flows\ncreate_example_flows\n\n# Minimal activation message for headless mode\nif [ \"${PREFECT_QUIET:-}\" != \"1\" ]; then\n    echo \"Prefect headless environment ready. Run 'flox edit' for documentation.\"\nfi\n"
       },
       "profile": {},
-      "options": {},
+      "options": {
+        "systems": [
+          "aarch64-darwin",
+          "aarch64-linux",
+          "x86_64-darwin",
+          "x86_64-linux"
+        ]
+      },
       "services": {
-        "dagster-daemon": {
-          "command": "  cd \"$DAGSTER_HOME\"\n  exec dagster-daemon run --empty-workspace\n"
+        "prefect-server": {
+          "command": "cd \"$PREFECT_HOME\"\nexec prefect server start \\\n    --host \"$PREFECT_SERVER_HOST\" \\\n    --port \"$PREFECT_SERVER_PORT\" \\\n    --log-level \"$PREFECT_LOGGING_LEVEL\"\n"
         },
-        "dagster-webserver": {
-          "command": "  cd \"$DAGSTER_HOME\"\n  dagster-webserver --host $DAGSTER_HOST --port $DAGSTER_PORT --empty-workspace\n"
+        "prefect-worker": {
+          "command": "cd \"$PREFECT_HOME\"\n\n# Wait for server to be ready\nfor i in {1..30}; do\n    if curl -s \"$PREFECT_API_URL/health\" > /dev/null 2>&1; then\n        break\n    fi\n    sleep 2\ndone\n\n# Create work pool if it doesn't exist\nprefect work-pool create \"$PREFECT_WORKER_POOL_NAME\" --type process 2>/dev/null || true\n\n# Start worker (PREFECT_WORKER_QUERY_SECONDS controls polling via environment variable)\nexec prefect worker start \\\n    --pool \"$PREFECT_WORKER_POOL_NAME\" \\\n    --limit \"$PREFECT_WORKER_LIMIT\"\n"
         }
       },
       "include": {
@@ -516,6 +531,16 @@
         }
       }
     ],
-    "warnings": []
+    "warnings": [
+      {
+        "warning": {
+          "Overriding": [
+            "options",
+            "systems"
+          ]
+        },
+        "higher_priority_name": "Current manifest"
+      }
+    ]
   }
 }
