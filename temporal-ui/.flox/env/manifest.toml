@@ -1,0 +1,285 @@
+## Flox Environment Manifest -----------------------------------------
+##
+##   _Everything_ you need to know about the _manifest_ is here:
+##
+##   https://flox.dev/docs/reference/command-reference/manifest.toml/
+##
+## -------------------------------------------------------------------
+# Flox manifest version managed by Flox CLI
+version = 1
+
+# ==============================================================================
+# TEMPORAL UI ENVIRONMENT - TECHNICAL DOCUMENTATION
+# ==============================================================================
+#
+# This environment provides Temporal UI v2.43.3 web interface for monitoring
+# and managing Temporal workflows, configured for development and production use.
+#
+# ------------------------------------------------------------------------------
+# ARCHITECTURE
+# ------------------------------------------------------------------------------
+#
+# Composed environment combining:
+#   - temporal-headless: Provides temporal-server + PostgreSQL services
+#   - temporal-ui: Web interface (default port 8081 in development)
+#
+# The UI connects to temporal-server via gRPC (default: 127.0.0.1:7233)
+#
+# ------------------------------------------------------------------------------
+# RUNTIME CONFIGURATION VARIABLES
+# ------------------------------------------------------------------------------
+#
+# All variables support runtime override via: VARIABLE=value flox activate
+#
+# Temporal UI Settings:
+#   TEMPORAL_CONFIG_DIR          Path to UI configuration files
+#                                Default: $FLOX_ENV/share/temporal-ui/config
+#
+# Connection Settings (inherited from temporal-headless):
+#   TEMPORAL_FRONTEND_HOST       Temporal server address
+#                                Default: 127.0.0.1
+#
+#   TEMPORAL_FRONTEND_PORT       Temporal server gRPC port
+#                                Default: 7233
+#
+# UI Configuration Environments:
+#   The UI supports multiple config environments via --env flag:
+#   - development: Port 8081, CORS enabled, verbose logging
+#   - base: Port 8233, production defaults
+#   - docker: Container deployment settings
+#   - e2e: End-to-end testing configuration
+#
+# ------------------------------------------------------------------------------
+# NAMESPACE MANAGEMENT
+# ------------------------------------------------------------------------------
+#
+# Temporal requires namespaces to be created before use. The "default" namespace
+# is automatically created on first activation.
+#
+# Create additional namespaces:
+#   temporal operator namespace create --namespace my-namespace
+#
+# List namespaces:
+#   temporal operator namespace list
+#
+# ------------------------------------------------------------------------------
+# COMMON USAGE PATTERNS
+# ------------------------------------------------------------------------------
+#
+# Start complete stack (server + UI):
+#   flox activate -s
+#
+# Access UI:
+#   Open browser to: http://localhost:8081
+#
+# Start only UI (if server already running):
+#   flox services start temporal-ui
+#
+# Use production port (8233):
+#   ui-server --root / --config "$TEMPORAL_CONFIG_DIR" --env base start
+#
+# ------------------------------------------------------------------------------
+# SERVICE MANAGEMENT
+# ------------------------------------------------------------------------------
+#
+# Start all services (postgres, temporal-server, temporal-ui):
+#   flox activate -s
+#
+# Individual service control:
+#   flox services start temporal-ui
+#   flox services stop temporal-ui
+#   flox services restart temporal-ui
+#
+# Service status and logs:
+#   flox services status
+#   flox services logs temporal-ui
+#   flox services logs temporal-server
+#
+# ------------------------------------------------------------------------------
+# CONFIGURATION FILES
+# ------------------------------------------------------------------------------
+#
+# Location: $TEMPORAL_CONFIG_DIR (default: $FLOX_ENV/share/temporal-ui/config)
+#
+# Available configurations:
+#   base.yaml         Production defaults (port 8233)
+#   development.yaml  Development mode (port 8081, CORS enabled)
+#   docker.yaml       Container deployment
+#   e2e.yaml          End-to-end testing
+#
+# Override config environment:
+#   ui-server --root / --config "$TEMPORAL_CONFIG_DIR" --env base start
+#
+# ------------------------------------------------------------------------------
+# TROUBLESHOOTING
+# ------------------------------------------------------------------------------
+#
+# UI shows "Namespace default is not found":
+#   Namespace not created yet. Run:
+#   temporal operator namespace create --namespace default
+#
+# UI won't start:
+#   1. Check service status: flox services status temporal-ui
+#   2. View logs: flox services logs temporal-ui
+#   3. Check config: ls $TEMPORAL_CONFIG_DIR
+#
+# Can't connect to Temporal server:
+#   1. Verify server running: flox services status temporal-server
+#   2. Check gRPC endpoint: temporal operator cluster health
+#   3. Verify port 7233 available: lsof -i :7233
+#
+# Wrong port (8081 vs 8233):
+#   Development config uses 8081, production uses 8233
+#   Override: ui-server --root / --config "$TEMPORAL_CONFIG_DIR" --env base start
+#
+# ------------------------------------------------------------------------------
+# PRODUCTION CONSIDERATIONS
+# ------------------------------------------------------------------------------
+#
+# Security:
+#   - Never expose UI port without authentication/authorization
+#   - Use reverse proxy (nginx/traefik) with TLS
+#   - Configure auth providers in development.yaml
+#   - Restrict CORS origins in production
+#
+# Deployment:
+#   - Use base.yaml config (port 8233) for production
+#   - Set TEMPORAL_FRONTEND_HOST to actual server hostname
+#   - Consider separate UI instances for redundancy
+#   - Monitor UI service health and restart on failure
+#
+# ------------------------------------------------------------------------------
+# LINKS
+# ------------------------------------------------------------------------------
+#
+# Temporal UI Documentation: https://docs.temporal.io/
+# Temporal UI GitHub: https://github.com/temporalio/ui
+# Temporal Server: Provided by temporal-headless environment
+#
+# ==============================================================================
+
+## Install Packages --------------------------------------------------
+[install]
+gum.pkg-path = "gum"
+temporal-ui.pkg-path = "barstoolbluz/temporal-ui"
+temporal-ui.systems = ["x86_64-linux"]
+
+
+## Environment Variables ---------------------------------------------
+##  ... available for use in the activated environment
+##      as well as [hook], [profile] scripts and [services] below.
+## -------------------------------------------------------------------
+[vars]
+TEMPORAL_CONFIG_DIR = "$FLOX_ENV/share/temporal-ui/config"
+
+
+## Activation Hook ---------------------------------------------------
+##  ... run by _bash_ shell when you run 'flox activate'.
+## -------------------------------------------------------------------
+[hook]
+on-activate = '''
+# Ensure default namespace exists
+ensure_default_namespace() {
+    # Wait briefly for temporal-server to be available
+    for i in {1..5}; do
+        if temporal operator namespace describe --namespace default >/dev/null 2>&1; then
+            return 0
+        fi
+        sleep 1
+    done
+
+    # Create default namespace if server is available
+    if temporal operator cluster health >/dev/null 2>&1; then
+        temporal operator namespace create --namespace default >/dev/null 2>&1 || true
+    fi
+}
+
+# Run namespace check in background (don't block activation)
+ensure_default_namespace &
+
+# Display UI information using gum
+gum style \
+    --border rounded \
+    --border-foreground 240 \
+    --padding "1 2" \
+    --margin "1 0" \
+    --width 96 \
+    "$(gum style --foreground 141 --bold 'This is a  F l o x  Temporal UI environment')
+
+🌐  Web Interface:
+    $(gum style --foreground 212 'http://localhost:8081')    UI dashboard for workflow monitoring
+
+🔌  Connection:
+    $(gum style --foreground 212 'localhost:7233')           Temporal Server gRPC endpoint
+
+📁  Namespace:
+    $(gum style --foreground 212 'default')                  Created automatically on first use
+
+💡  Tip: Run 'flox edit' to view full documentation and configuration options."
+'''
+
+
+## Profile script ----------------------------------------------------
+## ... sourced by _your shell_ when you run 'flox activate'.
+## -------------------------------------------------------------------
+[profile]
+# common = '''
+#   gum style \
+#   --foreground 212 --border-foreground 212 --border double \
+#   --align center --width 50 --margin "1 2" --padding "2 4" \
+#     $INTRO_MESSAGE
+# '''
+## Shell-specific customizations such as setting aliases go here:
+# bash = ...
+# zsh  = ...
+# fish = ...
+
+
+## Services ---------------------------------------------------------
+##  $ flox services start             <- Starts all services
+##  $ flox services status            <- Status of running services
+##  $ flox activate --start-services  <- Activates & starts all
+## ------------------------------------------------------------------
+[services]
+# temporal-server service inherited from temporal-headless
+
+temporal-ui.command = '''
+  exec ui-server --root / --config "$TEMPORAL_CONFIG_DIR" start
+'''
+
+
+## Include ----------------------------------------------------------
+## ... environments to create a composed environment
+## ------------------------------------------------------------------
+[include]
+environments = [
+    { remote = "barstoolbluz/temporal-headless" }
+]
+
+
+## Build and publish your own packages ------------------------------
+##  $ flox build
+##  $ flox publish
+## ------------------------------------------------------------------
+[build]
+# [build.myproject]
+# description = "The coolest project ever"
+# version = "0.0.1"
+# command = """
+#   mkdir -p $out/bin
+#   cargo build --release
+#   cp target/release/myproject $out/bin/myproject
+# """
+
+
+## Other Environment Options -----------------------------------------
+[options]
+# Systems that environment is compatible with
+# systems = [
+#   "aarch64-darwin",
+#   "aarch64-linux",
+#   "x86_64-darwin",
+#   "x86_64-linux",
+# ]
+# Uncomment to disable CUDA detection.
+# cuda-detection = false

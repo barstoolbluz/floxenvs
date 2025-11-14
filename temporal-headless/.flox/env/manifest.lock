@@ -1,0 +1,436 @@
+{
+  "lockfile-version": 1,
+  "manifest": {
+    "version": 1,
+    "install": {
+      "postgis": {
+        "pkg-path": "postgresql16Packages.postgis"
+      },
+      "postgresql": {
+        "pkg-path": "postgresql_16"
+      },
+      "temporal": {
+        "pkg-path": "barstoolbluz/temporal",
+        "systems": [
+          "x86_64-linux"
+        ]
+      }
+    },
+    "vars": {
+      "POSTGRES_CONFIG_DIR": "$FLOX_ENV_CACHE/postgres-config",
+      "POSTGRES_DATA_DIR": "$FLOX_ENV_CACHE/postgres-data",
+      "POSTGRES_LOG_DIR": "$FLOX_ENV_CACHE/postgres-logs",
+      "POSTGRES_RUN_DIR": "$FLOX_ENV_CACHE/postgres-run",
+      "TEMPORAL_HOME": "$FLOX_ENV_CACHE/temporal-data"
+    },
+    "hook": {
+      "on-activate": "# Create required directories\nmkdir -p \"$FLOX_ENV_CACHE/postgres-config\"\nmkdir -p \"$FLOX_ENV_CACHE/postgres-logs\"\nmkdir -p \"$FLOX_ENV_CACHE/postgres-data\"\nmkdir -p \"$FLOX_ENV_CACHE/postgres-run\"\n\n# === INIT-TIME VARIABLES ===\n# These affect initdb and cannot change without deleting PGDATA\nexport PGUSER=\"${PGUSER:-pguser}\"\nexport PGPASSWORD=\"${PGPASSWORD:-pgpass}\"\nexport POSTGRES_HOST_AUTH_METHOD=\"${POSTGRES_HOST_AUTH_METHOD:-md5}\"\nexport POSTGRES_ENCODING=\"${POSTGRES_ENCODING:-UTF8}\"\nexport POSTGRES_LOCALE=\"${POSTGRES_LOCALE:-C}\"\nexport POSTGRES_DATA_CHECKSUMS=\"${POSTGRES_DATA_CHECKSUMS:-}\"\nexport POSTGRES_INITDB_ARGS=\"${POSTGRES_INITDB_ARGS:-}\"\n\n# === RUNTIME VARIABLES - Connection ===\n# These can be changed by restarting the service\nexport PGHOSTADDR=\"${PGHOSTADDR:-127.0.0.1}\"\nexport PGPORT=\"${PGPORT:-15432}\"\nexport PGHOST=\"${PGHOST:-}\"\nexport PGDATABASE=\"${PGDATABASE:-postgres}\"\n\n# === RUNTIME VARIABLES - Performance ===\nexport POSTGRES_MAX_CONNECTIONS=\"${POSTGRES_MAX_CONNECTIONS:-100}\"\nexport POSTGRES_SHARED_BUFFERS=\"${POSTGRES_SHARED_BUFFERS:-128MB}\"\nexport POSTGRES_WORK_MEM=\"${POSTGRES_WORK_MEM:-4MB}\"\nexport POSTGRES_EFFECTIVE_CACHE_SIZE=\"${POSTGRES_EFFECTIVE_CACHE_SIZE:-4GB}\"\nexport POSTGRES_FSYNC=\"${POSTGRES_FSYNC:-on}\"\nexport POSTGRES_SYNCHRONOUS_COMMIT=\"${POSTGRES_SYNCHRONOUS_COMMIT:-on}\"\nexport POSTGRES_FULL_PAGE_WRITES=\"${POSTGRES_FULL_PAGE_WRITES:-on}\"\n\n# === RUNTIME VARIABLES - WAL ===\nexport POSTGRES_MAX_WAL_SIZE=\"${POSTGRES_MAX_WAL_SIZE:-1GB}\"\nexport POSTGRES_MIN_WAL_SIZE=\"${POSTGRES_MIN_WAL_SIZE:-80MB}\"\nexport POSTGRES_CHECKPOINT_TIMEOUT=\"${POSTGRES_CHECKPOINT_TIMEOUT:-5min}\"\n\n# === RUNTIME VARIABLES - Logging ===\nexport POSTGRES_LOG_STATEMENT=\"${POSTGRES_LOG_STATEMENT:-none}\"\nexport POSTGRES_LOG_DURATION=\"${POSTGRES_LOG_DURATION:-off}\"\nexport POSTGRES_LOG_MIN_DURATION=\"${POSTGRES_LOG_MIN_DURATION:-}\"\nexport POSTGRES_LOG_CONNECTIONS=\"${POSTGRES_LOG_CONNECTIONS:-off}\"\nexport POSTGRES_LOG_DISCONNECTIONS=\"${POSTGRES_LOG_DISCONNECTIONS:-off}\"\n\n# === FLEXIBILITY ===\nexport POSTGRES_EXTRA_OPTS=\"${POSTGRES_EXTRA_OPTS:-}\"\n\n# === DERIVED VARIABLES ===\nexport POSTGRES_DIR=\"${POSTGRES_DIR:-$FLOX_ENV_CACHE/postgres-data}\"\nexport PGDATA=\"$POSTGRES_DIR/data\"\nexport PGHOST_SOCKET=\"$POSTGRES_DIR/run\"\n\n# PGHOST logic: If empty or unset, use Unix socket\nif [ -z \"$PGHOST\" ]; then\n    export PGHOST=\"$PGHOST_SOCKET\"\n    export DATABASE_URL=\"postgresql:///$PGDATABASE?host=$PGHOST&port=$PGPORT\"\nelse\n    # User specified host for TCP\n    export DATABASE_URL=\"postgresql://$PGUSER:$PGPASSWORD@$PGHOST:$PGPORT/$PGDATABASE\"\nfi\n\n# === INITIALIZATION FUNCTION ===\ninitialize_postgres() {\n    # Check if already initialized\n    if [ -f \"$PGDATA/PG_VERSION\" ]; then\n        return 0\n    fi\n\n    # Create directories with proper permissions\n    mkdir -p \"$PGDATA\" \"$PGHOST_SOCKET\"\n    chmod 700 \"$PGDATA\" \"$PGHOST_SOCKET\"\n\n    # Initialize PostgreSQL with direct execution\n    echo \"Initializing PostgreSQL database...\"\n    initdb \"$PGDATA\" \\\n        --username=\"$PGUSER\" \\\n        --pwfile=<(echo \"$PGPASSWORD\") \\\n        --encoding=\"$POSTGRES_ENCODING\" \\\n        --locale=\"$POSTGRES_LOCALE\" \\\n        --auth=\"$POSTGRES_HOST_AUTH_METHOD\" \\\n        $([ -n \"$POSTGRES_DATA_CHECKSUMS\" ] && echo \"--data-checksums\") \\\n        $POSTGRES_INITDB_ARGS \\\n        > /dev/null 2>&1\n\n    if [ $? -ne 0 ]; then\n        echo \"❌ Failed to initialize PostgreSQL\"\n        return 1\n    fi\n\n    # Create database if not \"postgres\"\n    if [ \"$PGDATABASE\" != \"postgres\" ]; then\n        echo \"Creating database '$PGDATABASE'...\"\n\n        # Start postgres temporarily\n        postgres -D \"$PGDATA\" \\\n            -c listen_addresses='' \\\n            -c unix_socket_directories=\"$PGHOST_SOCKET\" \\\n            -p \"$PGPORT\" \\\n            > /dev/null 2>&1 &\n        PG_PID=$!\n\n        sleep 3  # Wait for startup\n\n        # Create database\n        createdb \"$PGDATABASE\" > /dev/null 2>&1 || true\n\n        # Stop postgres\n        pg_ctl stop -D \"$PGDATA\" -m fast -w > /dev/null 2>&1\n    fi\n\n    echo \"✅ PostgreSQL initialized successfully\"\n    return 0\n}\n\n# Run initialization\ninitialize_postgres\n\n# Display info with safety warnings\necho \"\"\necho \"✅ PostgreSQL environment ready (headless mode)\"\necho \"\"\n\n# Safety warnings\nif [ \"$POSTGRES_FSYNC\" = \"off\" ]; then\n    echo \"⚠️  WARNING: fsync disabled - DATA LOSS RISK if crash occurs\"\nfi\nif [ \"$POSTGRES_HOST_AUTH_METHOD\" = \"trust\" ]; then\n    echo \"⚠️  WARNING: Authentication disabled - NO PASSWORD REQUIRED\"\nfi\nif [ \"$PGHOSTADDR\" = \"0.0.0.0\" ]; then\n    echo \"⚠️  WARNING: Listening on all interfaces - NETWORK EXPOSED\"\nfi\n[ \"$POSTGRES_FSYNC\" = \"off\" ] || [ \"$POSTGRES_HOST_AUTH_METHOD\" = \"trust\" ] || [ \"$PGHOSTADDR\" = \"0.0.0.0\" ] && echo \"\"\n\necho \"Connection:\"\necho \"  Listen address: ${PGHOSTADDR}:${PGPORT}\"\necho \"  Client connects to: ${PGHOST}\"\necho \"  Database: ${PGDATABASE}\"\necho \"  User: ${PGUSER}\"\necho \"\"\necho \"Performance:\"\necho \"  Max connections: ${POSTGRES_MAX_CONNECTIONS}\"\necho \"  Shared buffers: ${POSTGRES_SHARED_BUFFERS}\"\necho \"  fsync: ${POSTGRES_FSYNC}\"\necho \"\"\necho \"Commands:\"\necho \"  flox activate -s        Start PostgreSQL\"\necho \"  psql                    Connect to database\"\necho \"  postgres-info           Show configuration\"\necho \"\"\n\n# === RUNTIME VARIABLES - Core ===\nexport TEMPORAL_HOME=\"${TEMPORAL_HOME:-$FLOX_ENV_CACHE/temporal-data}\"\n\n# === RUNTIME VARIABLES - Connection ===\nexport TEMPORAL_FRONTEND_HOST=\"${TEMPORAL_FRONTEND_HOST:-127.0.0.1}\"\nexport TEMPORAL_FRONTEND_PORT=\"${TEMPORAL_FRONTEND_PORT:-7233}\"\nexport TEMPORAL_WEB_PORT=\"${TEMPORAL_WEB_PORT:-8233}\"\n\n# === RUNTIME VARIABLES - Storage Backend ===\nexport TEMPORAL_STORAGE_TYPE=\"${TEMPORAL_STORAGE_TYPE:-sqlite}\"\nexport TEMPORAL_POSTGRES_URL=\"${TEMPORAL_POSTGRES_URL:-}\"\n\n# === POSTGRES AUTO-CONFIGURATION ===\n# If postgres storage requested but no URL provided, auto-generate from composed environment\nif [ \"$TEMPORAL_STORAGE_TYPE\" = \"postgres\" ] && [ -z \"$TEMPORAL_POSTGRES_URL\" ]; then\n    if command -v postgres >/dev/null 2>&1; then\n        # PostgreSQL available from composition - auto-generate connection URL\n        export PGDATABASE=\"${PGDATABASE:-temporal}\"\n        export TEMPORAL_POSTGRES_URL=\"postgresql://${PGUSER}:${PGPASSWORD}@${PGHOSTADDR:-127.0.0.1}:${PGPORT:-15432}/${PGDATABASE}\"\n    else\n        echo \"⚠️  WARNING: TEMPORAL_STORAGE_TYPE=postgres but PostgreSQL not available\"\n        echo \"   Falling back to SQLite\"\n        export TEMPORAL_STORAGE_TYPE=sqlite\n    fi\nfi\n\n# === CREATE REQUIRED DIRECTORIES ===\nmkdir -p \"$TEMPORAL_HOME\"\nmkdir -p \"$TEMPORAL_HOME/logs\"\n\n# === INITIALIZATION ===\ninitialize_temporal() {\n    # Check if already initialized\n    if [ -f \"$TEMPORAL_HOME/.initialized\" ]; then\n        return 0\n    fi\n\n    # Only show init messages if not in quiet mode\n    if [ \"${TEMPORAL_QUIET:-}\" != \"1\" ]; then\n        echo \"Initializing Temporal configuration...\"\n    fi\n\n    # Create basic config file\n    cat > \"$TEMPORAL_HOME/development.yaml\" << EOF\nlog:\n  stdout: true\n  level: info\n\npersistence:\n  defaultStore: default\n  visibilityStore: visibility\n  numHistoryShards: 4\n  datastores:\n    default:\n$(if [ \"$TEMPORAL_STORAGE_TYPE\" = \"postgres\" ]; then\ncat << POSTGRES_CONFIG\n      sql:\n        pluginName: \"postgres\"\n        databaseName: \"${PGDATABASE:-temporal}\"\n        connectAddr: \"${PGHOSTADDR:-127.0.0.1}:${PGPORT:-15432}\"\n        connectProtocol: \"tcp\"\n        user: \"${PGUSER:-pguser}\"\n        password: \"${PGPASSWORD:-pgpass}\"\n        maxConns: 20\n        maxIdleConns: 20\n        maxConnLifetime: \"1h\"\nPOSTGRES_CONFIG\nelse\ncat << SQLITE_CONFIG\n      sql:\n        pluginName: \"sqlite\"\n        databaseName: \"$TEMPORAL_HOME/temporal.db\"\n        connectAddr: \"localhost\"\n        connectProtocol: \"tcp\"\n        connectAttributes:\n          cache: \"private\"\n          setup: true\n        maxConns: 1\n        maxIdleConns: 1\nSQLITE_CONFIG\nfi)\n    visibility:\n$(if [ \"$TEMPORAL_STORAGE_TYPE\" = \"postgres\" ]; then\ncat << POSTGRES_VIS\n      sql:\n        pluginName: \"postgres\"\n        databaseName: \"${PGDATABASE:-temporal}_visibility\"\n        connectAddr: \"${PGHOSTADDR:-127.0.0.1}:${PGPORT:-15432}\"\n        connectProtocol: \"tcp\"\n        user: \"${PGUSER:-pguser}\"\n        password: \"${PGPASSWORD:-pgpass}\"\n        maxConns: 10\n        maxIdleConns: 10\n        maxConnLifetime: \"1h\"\nPOSTGRES_VIS\nelse\ncat << SQLITE_VIS\n      sql:\n        pluginName: \"sqlite\"\n        databaseName: \"$TEMPORAL_HOME/temporal_visibility.db\"\n        connectAddr: \"localhost\"\n        connectProtocol: \"tcp\"\n        connectAttributes:\n          cache: \"private\"\n          setup: true\n        maxConns: 1\n        maxIdleConns: 1\nSQLITE_VIS\nfi)\n\nglobal:\n  membership:\n    maxJoinDuration: 30s\n    broadcastAddress: \"${TEMPORAL_FRONTEND_HOST:-127.0.0.1}\"\n\nservices:\n  frontend:\n    rpc:\n      grpcPort: ${TEMPORAL_FRONTEND_PORT:-7233}\n      membershipPort: 6933\n      bindOnLocalHost: $([ \"${TEMPORAL_FRONTEND_HOST}\" = \"0.0.0.0\" ] && echo \"false\" || echo \"true\")\n\n  matching:\n    rpc:\n      grpcPort: 7235\n      membershipPort: 6935\n      bindOnLocalHost: true\n\n  history:\n    rpc:\n      grpcPort: 7234\n      membershipPort: 6934\n      bindOnLocalHost: true\n\n  worker:\n    rpc:\n      grpcPort: 7239\n      membershipPort: 6939\n      bindOnLocalHost: true\n\nclusterMetadata:\n  enableGlobalNamespace: false\n  failoverVersionIncrement: 10\n  masterClusterName: \"active\"\n  currentClusterName: \"active\"\n  clusterInformation:\n    active:\n      enabled: true\n      initialFailoverVersion: 1\n      rpcName: \"frontend\"\n      rpcAddress: \"${TEMPORAL_FRONTEND_HOST:-127.0.0.1}:${TEMPORAL_FRONTEND_PORT:-7233}\"\n\ndcRedirectionPolicy:\n  policy: \"noop\"\n\narchival:\n  history:\n    state: \"disabled\"\n  visibility:\n    state: \"disabled\"\n\npublicClient:\n  hostPort: \"${TEMPORAL_FRONTEND_HOST:-127.0.0.1}:${TEMPORAL_FRONTEND_PORT:-7233}\"\n\nnamespaceDefaults:\n  archival:\n    history:\n      state: \"disabled\"\n    visibility:\n      state: \"disabled\"\nEOF\n\n    touch \"$TEMPORAL_HOME/.initialized\"\n\n    if [ \"${TEMPORAL_QUIET:-}\" != \"1\" ]; then\n        echo \"✅ Temporal initialized successfully\"\n    fi\n    return 0\n}\n\n# Run initialization unless explicitly skipped\nif [ \"${TEMPORAL_SKIP_INIT:-}\" != \"1\" ]; then\n    initialize_temporal\nfi\n\n# Minimal activation message for headless mode\nif [ \"${TEMPORAL_QUIET:-}\" != \"1\" ]; then\n    echo \"Temporal headless environment ready. Run 'flox edit' for documentation.\"\nfi\n"
+    },
+    "profile": {
+      "bash": "postgres-info() {\n    echo \"PostgreSQL (Headless Mode) - Configuration\"\n    echo \"\"\n    echo \"Connection:\"\n    echo \"  Listen address: ${PGHOSTADDR}:${PGPORT}\"\n    echo \"  Client connects to: ${PGHOST}\"\n    echo \"  Database: ${PGDATABASE}\"\n    echo \"  User: ${PGUSER}\"\n    echo \"  Auth method: ${POSTGRES_HOST_AUTH_METHOD}\"\n    echo \"\"\n    echo \"Performance:\"\n    echo \"  Max connections: ${POSTGRES_MAX_CONNECTIONS}\"\n    echo \"  Shared buffers: ${POSTGRES_SHARED_BUFFERS}\"\n    echo \"  Work mem: ${POSTGRES_WORK_MEM}\"\n    echo \"  Effective cache size: ${POSTGRES_EFFECTIVE_CACHE_SIZE}\"\n    echo \"  fsync: ${POSTGRES_FSYNC}\"\n    echo \"  Synchronous commit: ${POSTGRES_SYNCHRONOUS_COMMIT}\"\n    echo \"\"\n    echo \"WAL:\"\n    echo \"  Max WAL size: ${POSTGRES_MAX_WAL_SIZE}\"\n    echo \"  Min WAL size: ${POSTGRES_MIN_WAL_SIZE}\"\n    echo \"  Checkpoint timeout: ${POSTGRES_CHECKPOINT_TIMEOUT}\"\n    echo \"\"\n    echo \"Logging:\"\n    echo \"  Statement logging: ${POSTGRES_LOG_STATEMENT}\"\n    echo \"  Duration logging: ${POSTGRES_LOG_DURATION}\"\n    echo \"  Connection logging: ${POSTGRES_LOG_CONNECTIONS}\"\n    echo \"\"\n    echo \"Data Directory: ${PGDATA}\"\n    echo \"\"\n    echo \"Commands:\"\n    echo \"  psql                        Connect to database\"\n    echo \"  flox activate -s            Start PostgreSQL service\"\n    echo \"  flox services status        Check service status\"\n    echo \"  flox services logs postgres View service logs\"\n    echo \"  flox services restart postgres Restart with new settings\"\n}\nexport -f postgres-info\n",
+      "zsh": "postgres-info() {\n    echo \"PostgreSQL (Headless Mode) - Configuration\"\n    echo \"\"\n    echo \"Connection:\"\n    echo \"  Listen address: ${PGHOSTADDR}:${PGPORT}\"\n    echo \"  Client connects to: ${PGHOST}\"\n    echo \"  Database: ${PGDATABASE}\"\n    echo \"  User: ${PGUSER}\"\n    echo \"  Auth method: ${POSTGRES_HOST_AUTH_METHOD}\"\n    echo \"\"\n    echo \"Performance:\"\n    echo \"  Max connections: ${POSTGRES_MAX_CONNECTIONS}\"\n    echo \"  Shared buffers: ${POSTGRES_SHARED_BUFFERS}\"\n    echo \"  Work mem: ${POSTGRES_WORK_MEM}\"\n    echo \"  Effective cache size: ${POSTGRES_EFFECTIVE_CACHE_SIZE}\"\n    echo \"  fsync: ${POSTGRES_FSYNC}\"\n    echo \"  Synchronous commit: ${POSTGRES_SYNCHRONOUS_COMMIT}\"\n    echo \"\"\n    echo \"WAL:\"\n    echo \"  Max WAL size: ${POSTGRES_MAX_WAL_SIZE}\"\n    echo \"  Min WAL size: ${POSTGRES_MIN_WAL_SIZE}\"\n    echo \"  Checkpoint timeout: ${POSTGRES_CHECKPOINT_TIMEOUT}\"\n    echo \"\"\n    echo \"Logging:\"\n    echo \"  Statement logging: ${POSTGRES_LOG_STATEMENT}\"\n    echo \"  Duration logging: ${POSTGRES_LOG_DURATION}\"\n    echo \"  Connection logging: ${POSTGRES_LOG_CONNECTIONS}\"\n    echo \"\"\n    echo \"Data Directory: ${PGDATA}\"\n    echo \"\"\n    echo \"Commands:\"\n    echo \"  psql                        Connect to database\"\n    echo \"  flox activate -s            Start PostgreSQL service\"\n    echo \"  flox services status        Check service status\"\n    echo \"  flox services logs postgres View service logs\"\n    echo \"  flox services restart postgres Restart with new settings\"\n}\n",
+      "fish": "function postgres-info\n    echo \"PostgreSQL (Headless Mode) - Configuration\"\n    echo \"\"\n    echo \"Connection:\"\n    echo \"  Listen address: $PGHOSTADDR:$PGPORT\"\n    echo \"  Client connects to: $PGHOST\"\n    echo \"  Database: $PGDATABASE\"\n    echo \"  User: $PGUSER\"\n    echo \"  Auth method: $POSTGRES_HOST_AUTH_METHOD\"\n    echo \"\"\n    echo \"Performance:\"\n    echo \"  Max connections: $POSTGRES_MAX_CONNECTIONS\"\n    echo \"  Shared buffers: $POSTGRES_SHARED_BUFFERS\"\n    echo \"  Work mem: $POSTGRES_WORK_MEM\"\n    echo \"  Effective cache size: $POSTGRES_EFFECTIVE_CACHE_SIZE\"\n    echo \"  fsync: $POSTGRES_FSYNC\"\n    echo \"  Synchronous commit: $POSTGRES_SYNCHRONOUS_COMMIT\"\n    echo \"\"\n    echo \"WAL:\"\n    echo \"  Max WAL size: $POSTGRES_MAX_WAL_SIZE\"\n    echo \"  Min WAL size: $POSTGRES_MIN_WAL_SIZE\"\n    echo \"  Checkpoint timeout: $POSTGRES_CHECKPOINT_TIMEOUT\"\n    echo \"\"\n    echo \"Logging:\"\n    echo \"  Statement logging: $POSTGRES_LOG_STATEMENT\"\n    echo \"  Duration logging: $POSTGRES_LOG_DURATION\"\n    echo \"  Connection logging: $POSTGRES_LOG_CONNECTIONS\"\n    echo \"\"\n    echo \"Data Directory: $PGDATA\"\n    echo \"\"\n    echo \"Commands:\"\n    echo \"  psql                        Connect to database\"\n    echo \"  flox activate -s            Start PostgreSQL service\"\n    echo \"  flox services status        Check service status\"\n    echo \"  flox services logs postgres View service logs\"\n    echo \"  flox services restart postgres Restart with new settings\"\nend\n"
+    },
+    "options": {
+      "systems": [
+        "aarch64-darwin",
+        "aarch64-linux",
+        "x86_64-darwin",
+        "x86_64-linux"
+      ]
+    },
+    "services": {
+      "postgres": {
+        "command": "# Ensure socket directory exists\nmkdir -p \"$PGHOST_SOCKET\"\nchmod 700 \"$PGHOST_SOCKET\"\n\n# Start PostgreSQL with all runtime configuration\nexec postgres -D \"$PGDATA\" \\\n  -c listen_addresses=\"$PGHOSTADDR\" \\\n  -p \"$PGPORT\" \\\n  -c unix_socket_directories=\"$PGHOST_SOCKET\" \\\n  -c unix_socket_permissions=0700 \\\n  ${POSTGRES_MAX_CONNECTIONS:+-c max_connections=\"$POSTGRES_MAX_CONNECTIONS\"} \\\n  ${POSTGRES_SHARED_BUFFERS:+-c shared_buffers=\"$POSTGRES_SHARED_BUFFERS\"} \\\n  ${POSTGRES_WORK_MEM:+-c work_mem=\"$POSTGRES_WORK_MEM\"} \\\n  ${POSTGRES_EFFECTIVE_CACHE_SIZE:+-c effective_cache_size=\"$POSTGRES_EFFECTIVE_CACHE_SIZE\"} \\\n  $([ \"$POSTGRES_FSYNC\" = \"off\" ] && echo \"-c fsync=off\") \\\n  ${POSTGRES_SYNCHRONOUS_COMMIT:+-c synchronous_commit=\"$POSTGRES_SYNCHRONOUS_COMMIT\"} \\\n  ${POSTGRES_FULL_PAGE_WRITES:+-c full_page_writes=\"$POSTGRES_FULL_PAGE_WRITES\"} \\\n  ${POSTGRES_MAX_WAL_SIZE:+-c max_wal_size=\"$POSTGRES_MAX_WAL_SIZE\"} \\\n  ${POSTGRES_MIN_WAL_SIZE:+-c min_wal_size=\"$POSTGRES_MIN_WAL_SIZE\"} \\\n  ${POSTGRES_CHECKPOINT_TIMEOUT:+-c checkpoint_timeout=\"$POSTGRES_CHECKPOINT_TIMEOUT\"} \\\n  ${POSTGRES_LOG_STATEMENT:+-c log_statement=\"$POSTGRES_LOG_STATEMENT\"} \\\n  ${POSTGRES_LOG_DURATION:+-c log_duration=\"$POSTGRES_LOG_DURATION\"} \\\n  ${POSTGRES_LOG_MIN_DURATION:+-c log_min_duration_statement=\"$POSTGRES_LOG_MIN_DURATION\"} \\\n  ${POSTGRES_LOG_CONNECTIONS:+-c log_connections=\"$POSTGRES_LOG_CONNECTIONS\"} \\\n  ${POSTGRES_LOG_DISCONNECTIONS:+-c log_disconnections=\"$POSTGRES_LOG_DISCONNECTIONS\"} \\\n  $POSTGRES_EXTRA_OPTS\n"
+      },
+      "temporal-server": {
+        "command": "cd /\nexec temporal-server \\\n    --env development \\\n    --config \"$TEMPORAL_HOME\" \\\n    start\n"
+      }
+    }
+  },
+  "packages": [
+    {
+      "attr_path": "postgresql16Packages.postgis",
+      "broken": false,
+      "derivation": "/nix/store/qwyh6k3lza3cljngnpnzndng3bhrphq9-postgis-3.6.0.drv",
+      "description": "Geographic Objects for PostgreSQL",
+      "install_id": "postgis",
+      "license": "GPL-2.0-or-later",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=b3d51a0365f6695e7dd5cdf3e180604530ed33b4",
+      "name": "postgis-3.6.0",
+      "pname": "postgis",
+      "rev": "b3d51a0365f6695e7dd5cdf3e180604530ed33b4",
+      "rev_count": 888552,
+      "rev_date": "2025-11-02T19:18:41Z",
+      "scrape_date": "2025-11-04T00:35:55.629750Z",
+      "stabilities": [
+        "unstable"
+      ],
+      "unfree": false,
+      "version": "3.6.0",
+      "outputs_to_install": [
+        "out"
+      ],
+      "outputs": {
+        "doc": "/nix/store/1nj5x76xjxja4mlnh3iw3lr0pslc5c2r-postgis-3.6.0-doc",
+        "out": "/nix/store/1qp5743w5hwj4mg0ny00v3q3kxa33gb9-postgis-3.6.0"
+      },
+      "system": "aarch64-darwin",
+      "group": "toplevel",
+      "priority": 5
+    },
+    {
+      "attr_path": "postgresql16Packages.postgis",
+      "broken": false,
+      "derivation": "/nix/store/rqkpwp7l5d4anq21f7yfryjk5did1cgb-postgis-3.6.0.drv",
+      "description": "Geographic Objects for PostgreSQL",
+      "install_id": "postgis",
+      "license": "GPL-2.0-or-later",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=b3d51a0365f6695e7dd5cdf3e180604530ed33b4",
+      "name": "postgis-3.6.0",
+      "pname": "postgis",
+      "rev": "b3d51a0365f6695e7dd5cdf3e180604530ed33b4",
+      "rev_count": 888552,
+      "rev_date": "2025-11-02T19:18:41Z",
+      "scrape_date": "2025-11-05T16:29:57.358841Z",
+      "stabilities": [
+        "unstable"
+      ],
+      "unfree": false,
+      "version": "3.6.0",
+      "outputs_to_install": [
+        "out"
+      ],
+      "outputs": {
+        "doc": "/nix/store/csv07n1inr4q5dxg2nmbfz3ggfgnr6b7-postgis-3.6.0-doc",
+        "out": "/nix/store/zqrkn9pc6irp9jiw0rallymxwm4prr97-postgis-3.6.0"
+      },
+      "system": "aarch64-linux",
+      "group": "toplevel",
+      "priority": 5
+    },
+    {
+      "attr_path": "postgresql16Packages.postgis",
+      "broken": false,
+      "derivation": "/nix/store/2bdh6xbiznnzi57w3i8qp177106116b9-postgis-3.6.0.drv",
+      "description": "Geographic Objects for PostgreSQL",
+      "install_id": "postgis",
+      "license": "GPL-2.0-or-later",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=b3d51a0365f6695e7dd5cdf3e180604530ed33b4",
+      "name": "postgis-3.6.0",
+      "pname": "postgis",
+      "rev": "b3d51a0365f6695e7dd5cdf3e180604530ed33b4",
+      "rev_count": 888552,
+      "rev_date": "2025-11-02T19:18:41Z",
+      "scrape_date": "2025-11-05T16:55:35.233952Z",
+      "stabilities": [
+        "unstable"
+      ],
+      "unfree": false,
+      "version": "3.6.0",
+      "outputs_to_install": [
+        "out"
+      ],
+      "outputs": {
+        "doc": "/nix/store/217vhxlz7hvrw1vm5wcmk9g61szz45pl-postgis-3.6.0-doc",
+        "out": "/nix/store/cvidjamxh41bdj9yv2h95hvspa773x38-postgis-3.6.0"
+      },
+      "system": "x86_64-darwin",
+      "group": "toplevel",
+      "priority": 5
+    },
+    {
+      "attr_path": "postgresql16Packages.postgis",
+      "broken": false,
+      "derivation": "/nix/store/2baksiwc95g1da9sbkkr7c8rsnc4arw2-postgis-3.6.0.drv",
+      "description": "Geographic Objects for PostgreSQL",
+      "install_id": "postgis",
+      "license": "GPL-2.0-or-later",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=b3d51a0365f6695e7dd5cdf3e180604530ed33b4",
+      "name": "postgis-3.6.0",
+      "pname": "postgis",
+      "rev": "b3d51a0365f6695e7dd5cdf3e180604530ed33b4",
+      "rev_count": 888552,
+      "rev_date": "2025-11-02T19:18:41Z",
+      "scrape_date": "2025-11-05T17:21:52.076766Z",
+      "stabilities": [
+        "unstable"
+      ],
+      "unfree": false,
+      "version": "3.6.0",
+      "outputs_to_install": [
+        "out"
+      ],
+      "outputs": {
+        "doc": "/nix/store/klxslfpqrcz3l2ib6gxzj3a420y89w5n-postgis-3.6.0-doc",
+        "out": "/nix/store/g9qb9796bcds3mak9ni2d9g40l63b379-postgis-3.6.0"
+      },
+      "system": "x86_64-linux",
+      "group": "toplevel",
+      "priority": 5
+    },
+    {
+      "attr_path": "postgresql_16",
+      "broken": false,
+      "derivation": "/nix/store/3j4hv97cs1h1h6hm65xbwsjrrwglxi4a-postgresql-16.10.drv",
+      "description": "Powerful, open source object-relational database system",
+      "install_id": "postgresql",
+      "license": "PostgreSQL",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=b3d51a0365f6695e7dd5cdf3e180604530ed33b4",
+      "name": "postgresql-16.10",
+      "pname": "postgresql_16",
+      "rev": "b3d51a0365f6695e7dd5cdf3e180604530ed33b4",
+      "rev_count": 888552,
+      "rev_date": "2025-11-02T19:18:41Z",
+      "scrape_date": "2025-11-04T00:35:56.024172Z",
+      "stabilities": [
+        "unstable"
+      ],
+      "unfree": false,
+      "version": "16.10",
+      "outputs_to_install": [
+        "man",
+        "out"
+      ],
+      "outputs": {
+        "dev": "/nix/store/9b0x64bwjwv5fz0bdv6w1s4mm7960dk2-postgresql-16.10-dev",
+        "doc": "/nix/store/rivqz9k4x942kncpiqa11952vz2yd83w-postgresql-16.10-doc",
+        "jit": "/nix/store/5ma1iibg7rrhr9vk4lgmj4wsds1bn2lq-postgresql-16.10-jit",
+        "lib": "/nix/store/zyry2aqhcrjy6034l53fj2x6p3nbsirc-postgresql-16.10-lib",
+        "man": "/nix/store/19yczwkx2ghpc48h12svzwvdmai43h1d-postgresql-16.10-man",
+        "out": "/nix/store/mjj1ad4p7mhplvqkxir9irbwgncjna8k-postgresql-16.10",
+        "plperl": "/nix/store/k39hh30nj46s748y4x4zgdqavzmwg8l2-postgresql-16.10-plperl",
+        "plpython3": "/nix/store/0yrlydpg6v0pwyj8w9dxa473s7g0kk1a-postgresql-16.10-plpython3",
+        "pltcl": "/nix/store/s59v3p5kpjm6vp0jg03l8ksnacg0vas5-postgresql-16.10-pltcl"
+      },
+      "system": "aarch64-darwin",
+      "group": "toplevel",
+      "priority": 5
+    },
+    {
+      "attr_path": "postgresql_16",
+      "broken": false,
+      "derivation": "/nix/store/4chrcccvgiyhhfcrf7jy69vcdqcm1a6y-postgresql-16.10.drv",
+      "description": "Powerful, open source object-relational database system",
+      "install_id": "postgresql",
+      "license": "PostgreSQL",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=b3d51a0365f6695e7dd5cdf3e180604530ed33b4",
+      "name": "postgresql-16.10",
+      "pname": "postgresql_16",
+      "rev": "b3d51a0365f6695e7dd5cdf3e180604530ed33b4",
+      "rev_count": 888552,
+      "rev_date": "2025-11-02T19:18:41Z",
+      "scrape_date": "2025-11-05T16:29:57.890495Z",
+      "stabilities": [
+        "unstable"
+      ],
+      "unfree": false,
+      "version": "16.10",
+      "outputs_to_install": [
+        "man",
+        "out"
+      ],
+      "outputs": {
+        "debug": "/nix/store/9snr8kwq5mgs99lfrrra84pga7rj028l-postgresql-16.10-debug",
+        "dev": "/nix/store/id2zxdz68yin7ipd5wxsbqrdxnl7dh12-postgresql-16.10-dev",
+        "doc": "/nix/store/ab963h9ffkcix3dyli05ayxvrnd5018c-postgresql-16.10-doc",
+        "jit": "/nix/store/6xb72z48dbd93sv72nlskcq8661hmnzi-postgresql-16.10-jit",
+        "lib": "/nix/store/6vv2r1hfn5v53chb7w35sm91w42f52lx-postgresql-16.10-lib",
+        "man": "/nix/store/mdyaig3jd7js0rhs50m7d2gjlpwp46d5-postgresql-16.10-man",
+        "out": "/nix/store/589gil3s8fd4wdnf8drdgjqsfd0xk5pr-postgresql-16.10",
+        "plperl": "/nix/store/71hqwmvp84nalfvqmz9mzxs9pc7c3z6x-postgresql-16.10-plperl",
+        "plpython3": "/nix/store/nl1cp5sad17p4l74mkiv1krcm7yybhwr-postgresql-16.10-plpython3",
+        "pltcl": "/nix/store/s7phbpyzyq2wjmqvm9ylq4xmfr9plrhg-postgresql-16.10-pltcl"
+      },
+      "system": "aarch64-linux",
+      "group": "toplevel",
+      "priority": 5
+    },
+    {
+      "attr_path": "postgresql_16",
+      "broken": false,
+      "derivation": "/nix/store/8zihm2vywb1f388djadbdhyb6njg6fjz-postgresql-16.10.drv",
+      "description": "Powerful, open source object-relational database system",
+      "install_id": "postgresql",
+      "license": "PostgreSQL",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=b3d51a0365f6695e7dd5cdf3e180604530ed33b4",
+      "name": "postgresql-16.10",
+      "pname": "postgresql_16",
+      "rev": "b3d51a0365f6695e7dd5cdf3e180604530ed33b4",
+      "rev_count": 888552,
+      "rev_date": "2025-11-02T19:18:41Z",
+      "scrape_date": "2025-11-05T16:55:35.624029Z",
+      "stabilities": [
+        "unstable"
+      ],
+      "unfree": false,
+      "version": "16.10",
+      "outputs_to_install": [
+        "man",
+        "out"
+      ],
+      "outputs": {
+        "dev": "/nix/store/rml3rv4slkxc46a0f0xbbbxz53w48alp-postgresql-16.10-dev",
+        "doc": "/nix/store/abm0srgai0ha2kfr191cp55y0jnnv17q-postgresql-16.10-doc",
+        "jit": "/nix/store/12qd19cs7jzwfwbha3d21ml9kymhsw8q-postgresql-16.10-jit",
+        "lib": "/nix/store/8k2kfah4659xhwdg263214kyznci73ra-postgresql-16.10-lib",
+        "man": "/nix/store/3immiw548rhphj9lzpk13p859cy3wwx4-postgresql-16.10-man",
+        "out": "/nix/store/f7n0d7idv9pdja404afxik5r6b9a669x-postgresql-16.10",
+        "plperl": "/nix/store/j1m4qap45swww3xk1xxknrgjp634r559-postgresql-16.10-plperl",
+        "plpython3": "/nix/store/3a8i3dwwwz3amxr0pf1f0qs49f56aggb-postgresql-16.10-plpython3",
+        "pltcl": "/nix/store/ls0pc2m0s68bp5cicwnipard7hqvq7dy-postgresql-16.10-pltcl"
+      },
+      "system": "x86_64-darwin",
+      "group": "toplevel",
+      "priority": 5
+    },
+    {
+      "attr_path": "postgresql_16",
+      "broken": false,
+      "derivation": "/nix/store/57cmk9naly1vs6gnklrjip2rfw3vqqlh-postgresql-16.10.drv",
+      "description": "Powerful, open source object-relational database system",
+      "install_id": "postgresql",
+      "license": "PostgreSQL",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=b3d51a0365f6695e7dd5cdf3e180604530ed33b4",
+      "name": "postgresql-16.10",
+      "pname": "postgresql_16",
+      "rev": "b3d51a0365f6695e7dd5cdf3e180604530ed33b4",
+      "rev_count": 888552,
+      "rev_date": "2025-11-02T19:18:41Z",
+      "scrape_date": "2025-11-05T17:21:52.654847Z",
+      "stabilities": [
+        "unstable"
+      ],
+      "unfree": false,
+      "version": "16.10",
+      "outputs_to_install": [
+        "man",
+        "out"
+      ],
+      "outputs": {
+        "debug": "/nix/store/1bckzc3hq35dwl1qf5c76w53c992dsr9-postgresql-16.10-debug",
+        "dev": "/nix/store/skrx4qah0hy1c3l79znsfza5zzqrxcyn-postgresql-16.10-dev",
+        "doc": "/nix/store/cz4w41bdfnjg4mqfcmw1x0p4jgg61kac-postgresql-16.10-doc",
+        "jit": "/nix/store/2805lajnhh7qd3acb0abyvpm91hn59fw-postgresql-16.10-jit",
+        "lib": "/nix/store/qsn1yfq2cfy03rj4xmaf0g5wybmak6qq-postgresql-16.10-lib",
+        "man": "/nix/store/flpax8rjcj5niv0krcfx8nz4gm64n81c-postgresql-16.10-man",
+        "out": "/nix/store/8lfn9a2a2c16fa2ia7j5yp03pymgmbv1-postgresql-16.10",
+        "plperl": "/nix/store/1ivj0kb6gyzzgdy49g312rm3wdllgkfw-postgresql-16.10-plperl",
+        "plpython3": "/nix/store/bd9rs52j0lrhp6hrr68vn27gi17f11v8-postgresql-16.10-plpython3",
+        "pltcl": "/nix/store/iszsfbryiqfd7z2fk4pfh02c2g41r9h4-postgresql-16.10-pltcl"
+      },
+      "system": "x86_64-linux",
+      "group": "toplevel",
+      "priority": 5
+    },
+    {
+      "attr_path": "temporal",
+      "broken": false,
+      "derivation": "/nix/store/6p0mxac4kygjjawhw87gagf73563bhyx-temporal-1.29.1.drv",
+      "description": "Temporal orchestration platform (server + CLI)",
+      "install_id": "temporal",
+      "license": "MIT",
+      "locked_url": "https://github.com/barstoolbluz/build-temporal.git?rev=35af5973875765009016144bd0fa411a8574454e",
+      "name": "temporal-1.29.1",
+      "pname": "temporal-1.29.1",
+      "rev": "35af5973875765009016144bd0fa411a8574454e",
+      "rev_count": 8,
+      "rev_date": "2025-11-13T17:34:50Z",
+      "scrape_date": "2025-11-13T17:45:52.088627949Z",
+      "stabilities": [
+        "unstable"
+      ],
+      "unfree": false,
+      "version": "unknown",
+      "outputs_to_install": [
+        "out"
+      ],
+      "outputs": {
+        "out": "/nix/store/zqgaykici0knsvz0wn0fqnc58lrq3cs7-temporal-1.29.1"
+      },
+      "system": "x86_64-linux",
+      "group": "toplevel",
+      "priority": 5
+    }
+  ],
+  "compose": {
+    "composer": {
+      "version": 1,
+      "install": {
+        "temporal": {
+          "pkg-path": "barstoolbluz/temporal",
+          "systems": [
+            "x86_64-linux"
+          ]
+        }
+      },
+      "vars": {
+        "TEMPORAL_HOME": "$FLOX_ENV_CACHE/temporal-data"
+      },
+      "hook": {
+        "on-activate": "# === RUNTIME VARIABLES - Core ===\nexport TEMPORAL_HOME=\"${TEMPORAL_HOME:-$FLOX_ENV_CACHE/temporal-data}\"\n\n# === RUNTIME VARIABLES - Connection ===\nexport TEMPORAL_FRONTEND_HOST=\"${TEMPORAL_FRONTEND_HOST:-127.0.0.1}\"\nexport TEMPORAL_FRONTEND_PORT=\"${TEMPORAL_FRONTEND_PORT:-7233}\"\nexport TEMPORAL_WEB_PORT=\"${TEMPORAL_WEB_PORT:-8233}\"\n\n# === RUNTIME VARIABLES - Storage Backend ===\nexport TEMPORAL_STORAGE_TYPE=\"${TEMPORAL_STORAGE_TYPE:-sqlite}\"\nexport TEMPORAL_POSTGRES_URL=\"${TEMPORAL_POSTGRES_URL:-}\"\n\n# === POSTGRES AUTO-CONFIGURATION ===\n# If postgres storage requested but no URL provided, auto-generate from composed environment\nif [ \"$TEMPORAL_STORAGE_TYPE\" = \"postgres\" ] && [ -z \"$TEMPORAL_POSTGRES_URL\" ]; then\n    if command -v postgres >/dev/null 2>&1; then\n        # PostgreSQL available from composition - auto-generate connection URL\n        export PGDATABASE=\"${PGDATABASE:-temporal}\"\n        export TEMPORAL_POSTGRES_URL=\"postgresql://${PGUSER}:${PGPASSWORD}@${PGHOSTADDR:-127.0.0.1}:${PGPORT:-15432}/${PGDATABASE}\"\n    else\n        echo \"⚠️  WARNING: TEMPORAL_STORAGE_TYPE=postgres but PostgreSQL not available\"\n        echo \"   Falling back to SQLite\"\n        export TEMPORAL_STORAGE_TYPE=sqlite\n    fi\nfi\n\n# === CREATE REQUIRED DIRECTORIES ===\nmkdir -p \"$TEMPORAL_HOME\"\nmkdir -p \"$TEMPORAL_HOME/logs\"\n\n# === INITIALIZATION ===\ninitialize_temporal() {\n    # Check if already initialized\n    if [ -f \"$TEMPORAL_HOME/.initialized\" ]; then\n        return 0\n    fi\n\n    # Only show init messages if not in quiet mode\n    if [ \"${TEMPORAL_QUIET:-}\" != \"1\" ]; then\n        echo \"Initializing Temporal configuration...\"\n    fi\n\n    # Create basic config file\n    cat > \"$TEMPORAL_HOME/development.yaml\" << EOF\nlog:\n  stdout: true\n  level: info\n\npersistence:\n  defaultStore: default\n  visibilityStore: visibility\n  numHistoryShards: 4\n  datastores:\n    default:\n$(if [ \"$TEMPORAL_STORAGE_TYPE\" = \"postgres\" ]; then\ncat << POSTGRES_CONFIG\n      sql:\n        pluginName: \"postgres\"\n        databaseName: \"${PGDATABASE:-temporal}\"\n        connectAddr: \"${PGHOSTADDR:-127.0.0.1}:${PGPORT:-15432}\"\n        connectProtocol: \"tcp\"\n        user: \"${PGUSER:-pguser}\"\n        password: \"${PGPASSWORD:-pgpass}\"\n        maxConns: 20\n        maxIdleConns: 20\n        maxConnLifetime: \"1h\"\nPOSTGRES_CONFIG\nelse\ncat << SQLITE_CONFIG\n      sql:\n        pluginName: \"sqlite\"\n        databaseName: \"$TEMPORAL_HOME/temporal.db\"\n        connectAddr: \"localhost\"\n        connectProtocol: \"tcp\"\n        connectAttributes:\n          cache: \"private\"\n          setup: true\n        maxConns: 1\n        maxIdleConns: 1\nSQLITE_CONFIG\nfi)\n    visibility:\n$(if [ \"$TEMPORAL_STORAGE_TYPE\" = \"postgres\" ]; then\ncat << POSTGRES_VIS\n      sql:\n        pluginName: \"postgres\"\n        databaseName: \"${PGDATABASE:-temporal}_visibility\"\n        connectAddr: \"${PGHOSTADDR:-127.0.0.1}:${PGPORT:-15432}\"\n        connectProtocol: \"tcp\"\n        user: \"${PGUSER:-pguser}\"\n        password: \"${PGPASSWORD:-pgpass}\"\n        maxConns: 10\n        maxIdleConns: 10\n        maxConnLifetime: \"1h\"\nPOSTGRES_VIS\nelse\ncat << SQLITE_VIS\n      sql:\n        pluginName: \"sqlite\"\n        databaseName: \"$TEMPORAL_HOME/temporal_visibility.db\"\n        connectAddr: \"localhost\"\n        connectProtocol: \"tcp\"\n        connectAttributes:\n          cache: \"private\"\n          setup: true\n        maxConns: 1\n        maxIdleConns: 1\nSQLITE_VIS\nfi)\n\nglobal:\n  membership:\n    maxJoinDuration: 30s\n    broadcastAddress: \"${TEMPORAL_FRONTEND_HOST:-127.0.0.1}\"\n\nservices:\n  frontend:\n    rpc:\n      grpcPort: ${TEMPORAL_FRONTEND_PORT:-7233}\n      membershipPort: 6933\n      bindOnLocalHost: $([ \"${TEMPORAL_FRONTEND_HOST}\" = \"0.0.0.0\" ] && echo \"false\" || echo \"true\")\n\n  matching:\n    rpc:\n      grpcPort: 7235\n      membershipPort: 6935\n      bindOnLocalHost: true\n\n  history:\n    rpc:\n      grpcPort: 7234\n      membershipPort: 6934\n      bindOnLocalHost: true\n\n  worker:\n    rpc:\n      grpcPort: 7239\n      membershipPort: 6939\n      bindOnLocalHost: true\n\nclusterMetadata:\n  enableGlobalNamespace: false\n  failoverVersionIncrement: 10\n  masterClusterName: \"active\"\n  currentClusterName: \"active\"\n  clusterInformation:\n    active:\n      enabled: true\n      initialFailoverVersion: 1\n      rpcName: \"frontend\"\n      rpcAddress: \"${TEMPORAL_FRONTEND_HOST:-127.0.0.1}:${TEMPORAL_FRONTEND_PORT:-7233}\"\n\ndcRedirectionPolicy:\n  policy: \"noop\"\n\narchival:\n  history:\n    state: \"disabled\"\n  visibility:\n    state: \"disabled\"\n\npublicClient:\n  hostPort: \"${TEMPORAL_FRONTEND_HOST:-127.0.0.1}:${TEMPORAL_FRONTEND_PORT:-7233}\"\n\nnamespaceDefaults:\n  archival:\n    history:\n      state: \"disabled\"\n    visibility:\n      state: \"disabled\"\nEOF\n\n    touch \"$TEMPORAL_HOME/.initialized\"\n\n    if [ \"${TEMPORAL_QUIET:-}\" != \"1\" ]; then\n        echo \"✅ Temporal initialized successfully\"\n    fi\n    return 0\n}\n\n# Run initialization unless explicitly skipped\nif [ \"${TEMPORAL_SKIP_INIT:-}\" != \"1\" ]; then\n    initialize_temporal\nfi\n\n# Minimal activation message for headless mode\nif [ \"${TEMPORAL_QUIET:-}\" != \"1\" ]; then\n    echo \"Temporal headless environment ready. Run 'flox edit' for documentation.\"\nfi\n"
+      },
+      "profile": {},
+      "options": {},
+      "services": {
+        "temporal-server": {
+          "command": "cd /\nexec temporal-server \\\n    --env development \\\n    --config \"$TEMPORAL_HOME\" \\\n    start\n"
+        }
+      },
+      "include": {
+        "environments": [
+          {
+            "remote": "barstoolbluz/postgres-headless"
+          }
+        ]
+      }
+    },
+    "include": [
+      {
+        "manifest": {
+          "version": 1,
+          "install": {
+            "postgis": {
+              "pkg-path": "postgresql16Packages.postgis"
+            },
+            "postgresql": {
+              "pkg-path": "postgresql_16"
+            }
+          },
+          "vars": {
+            "POSTGRES_CONFIG_DIR": "$FLOX_ENV_CACHE/postgres-config",
+            "POSTGRES_DATA_DIR": "$FLOX_ENV_CACHE/postgres-data",
+            "POSTGRES_LOG_DIR": "$FLOX_ENV_CACHE/postgres-logs",
+            "POSTGRES_RUN_DIR": "$FLOX_ENV_CACHE/postgres-run"
+          },
+          "hook": {
+            "on-activate": "# Create required directories\nmkdir -p \"$FLOX_ENV_CACHE/postgres-config\"\nmkdir -p \"$FLOX_ENV_CACHE/postgres-logs\"\nmkdir -p \"$FLOX_ENV_CACHE/postgres-data\"\nmkdir -p \"$FLOX_ENV_CACHE/postgres-run\"\n\n# === INIT-TIME VARIABLES ===\n# These affect initdb and cannot change without deleting PGDATA\nexport PGUSER=\"${PGUSER:-pguser}\"\nexport PGPASSWORD=\"${PGPASSWORD:-pgpass}\"\nexport POSTGRES_HOST_AUTH_METHOD=\"${POSTGRES_HOST_AUTH_METHOD:-md5}\"\nexport POSTGRES_ENCODING=\"${POSTGRES_ENCODING:-UTF8}\"\nexport POSTGRES_LOCALE=\"${POSTGRES_LOCALE:-C}\"\nexport POSTGRES_DATA_CHECKSUMS=\"${POSTGRES_DATA_CHECKSUMS:-}\"\nexport POSTGRES_INITDB_ARGS=\"${POSTGRES_INITDB_ARGS:-}\"\n\n# === RUNTIME VARIABLES - Connection ===\n# These can be changed by restarting the service\nexport PGHOSTADDR=\"${PGHOSTADDR:-127.0.0.1}\"\nexport PGPORT=\"${PGPORT:-15432}\"\nexport PGHOST=\"${PGHOST:-}\"\nexport PGDATABASE=\"${PGDATABASE:-postgres}\"\n\n# === RUNTIME VARIABLES - Performance ===\nexport POSTGRES_MAX_CONNECTIONS=\"${POSTGRES_MAX_CONNECTIONS:-100}\"\nexport POSTGRES_SHARED_BUFFERS=\"${POSTGRES_SHARED_BUFFERS:-128MB}\"\nexport POSTGRES_WORK_MEM=\"${POSTGRES_WORK_MEM:-4MB}\"\nexport POSTGRES_EFFECTIVE_CACHE_SIZE=\"${POSTGRES_EFFECTIVE_CACHE_SIZE:-4GB}\"\nexport POSTGRES_FSYNC=\"${POSTGRES_FSYNC:-on}\"\nexport POSTGRES_SYNCHRONOUS_COMMIT=\"${POSTGRES_SYNCHRONOUS_COMMIT:-on}\"\nexport POSTGRES_FULL_PAGE_WRITES=\"${POSTGRES_FULL_PAGE_WRITES:-on}\"\n\n# === RUNTIME VARIABLES - WAL ===\nexport POSTGRES_MAX_WAL_SIZE=\"${POSTGRES_MAX_WAL_SIZE:-1GB}\"\nexport POSTGRES_MIN_WAL_SIZE=\"${POSTGRES_MIN_WAL_SIZE:-80MB}\"\nexport POSTGRES_CHECKPOINT_TIMEOUT=\"${POSTGRES_CHECKPOINT_TIMEOUT:-5min}\"\n\n# === RUNTIME VARIABLES - Logging ===\nexport POSTGRES_LOG_STATEMENT=\"${POSTGRES_LOG_STATEMENT:-none}\"\nexport POSTGRES_LOG_DURATION=\"${POSTGRES_LOG_DURATION:-off}\"\nexport POSTGRES_LOG_MIN_DURATION=\"${POSTGRES_LOG_MIN_DURATION:-}\"\nexport POSTGRES_LOG_CONNECTIONS=\"${POSTGRES_LOG_CONNECTIONS:-off}\"\nexport POSTGRES_LOG_DISCONNECTIONS=\"${POSTGRES_LOG_DISCONNECTIONS:-off}\"\n\n# === FLEXIBILITY ===\nexport POSTGRES_EXTRA_OPTS=\"${POSTGRES_EXTRA_OPTS:-}\"\n\n# === DERIVED VARIABLES ===\nexport POSTGRES_DIR=\"${POSTGRES_DIR:-$FLOX_ENV_CACHE/postgres-data}\"\nexport PGDATA=\"$POSTGRES_DIR/data\"\nexport PGHOST_SOCKET=\"$POSTGRES_DIR/run\"\n\n# PGHOST logic: If empty or unset, use Unix socket\nif [ -z \"$PGHOST\" ]; then\n    export PGHOST=\"$PGHOST_SOCKET\"\n    export DATABASE_URL=\"postgresql:///$PGDATABASE?host=$PGHOST&port=$PGPORT\"\nelse\n    # User specified host for TCP\n    export DATABASE_URL=\"postgresql://$PGUSER:$PGPASSWORD@$PGHOST:$PGPORT/$PGDATABASE\"\nfi\n\n# === INITIALIZATION FUNCTION ===\ninitialize_postgres() {\n    # Check if already initialized\n    if [ -f \"$PGDATA/PG_VERSION\" ]; then\n        return 0\n    fi\n\n    # Create directories with proper permissions\n    mkdir -p \"$PGDATA\" \"$PGHOST_SOCKET\"\n    chmod 700 \"$PGDATA\" \"$PGHOST_SOCKET\"\n\n    # Initialize PostgreSQL with direct execution\n    echo \"Initializing PostgreSQL database...\"\n    initdb \"$PGDATA\" \\\n        --username=\"$PGUSER\" \\\n        --pwfile=<(echo \"$PGPASSWORD\") \\\n        --encoding=\"$POSTGRES_ENCODING\" \\\n        --locale=\"$POSTGRES_LOCALE\" \\\n        --auth=\"$POSTGRES_HOST_AUTH_METHOD\" \\\n        $([ -n \"$POSTGRES_DATA_CHECKSUMS\" ] && echo \"--data-checksums\") \\\n        $POSTGRES_INITDB_ARGS \\\n        > /dev/null 2>&1\n\n    if [ $? -ne 0 ]; then\n        echo \"❌ Failed to initialize PostgreSQL\"\n        return 1\n    fi\n\n    # Create database if not \"postgres\"\n    if [ \"$PGDATABASE\" != \"postgres\" ]; then\n        echo \"Creating database '$PGDATABASE'...\"\n\n        # Start postgres temporarily\n        postgres -D \"$PGDATA\" \\\n            -c listen_addresses='' \\\n            -c unix_socket_directories=\"$PGHOST_SOCKET\" \\\n            -p \"$PGPORT\" \\\n            > /dev/null 2>&1 &\n        PG_PID=$!\n\n        sleep 3  # Wait for startup\n\n        # Create database\n        createdb \"$PGDATABASE\" > /dev/null 2>&1 || true\n\n        # Stop postgres\n        pg_ctl stop -D \"$PGDATA\" -m fast -w > /dev/null 2>&1\n    fi\n\n    echo \"✅ PostgreSQL initialized successfully\"\n    return 0\n}\n\n# Run initialization\ninitialize_postgres\n\n# Display info with safety warnings\necho \"\"\necho \"✅ PostgreSQL environment ready (headless mode)\"\necho \"\"\n\n# Safety warnings\nif [ \"$POSTGRES_FSYNC\" = \"off\" ]; then\n    echo \"⚠️  WARNING: fsync disabled - DATA LOSS RISK if crash occurs\"\nfi\nif [ \"$POSTGRES_HOST_AUTH_METHOD\" = \"trust\" ]; then\n    echo \"⚠️  WARNING: Authentication disabled - NO PASSWORD REQUIRED\"\nfi\nif [ \"$PGHOSTADDR\" = \"0.0.0.0\" ]; then\n    echo \"⚠️  WARNING: Listening on all interfaces - NETWORK EXPOSED\"\nfi\n[ \"$POSTGRES_FSYNC\" = \"off\" ] || [ \"$POSTGRES_HOST_AUTH_METHOD\" = \"trust\" ] || [ \"$PGHOSTADDR\" = \"0.0.0.0\" ] && echo \"\"\n\necho \"Connection:\"\necho \"  Listen address: ${PGHOSTADDR}:${PGPORT}\"\necho \"  Client connects to: ${PGHOST}\"\necho \"  Database: ${PGDATABASE}\"\necho \"  User: ${PGUSER}\"\necho \"\"\necho \"Performance:\"\necho \"  Max connections: ${POSTGRES_MAX_CONNECTIONS}\"\necho \"  Shared buffers: ${POSTGRES_SHARED_BUFFERS}\"\necho \"  fsync: ${POSTGRES_FSYNC}\"\necho \"\"\necho \"Commands:\"\necho \"  flox activate -s        Start PostgreSQL\"\necho \"  psql                    Connect to database\"\necho \"  postgres-info           Show configuration\"\necho \"\"\n"
+          },
+          "profile": {
+            "bash": "postgres-info() {\n    echo \"PostgreSQL (Headless Mode) - Configuration\"\n    echo \"\"\n    echo \"Connection:\"\n    echo \"  Listen address: ${PGHOSTADDR}:${PGPORT}\"\n    echo \"  Client connects to: ${PGHOST}\"\n    echo \"  Database: ${PGDATABASE}\"\n    echo \"  User: ${PGUSER}\"\n    echo \"  Auth method: ${POSTGRES_HOST_AUTH_METHOD}\"\n    echo \"\"\n    echo \"Performance:\"\n    echo \"  Max connections: ${POSTGRES_MAX_CONNECTIONS}\"\n    echo \"  Shared buffers: ${POSTGRES_SHARED_BUFFERS}\"\n    echo \"  Work mem: ${POSTGRES_WORK_MEM}\"\n    echo \"  Effective cache size: ${POSTGRES_EFFECTIVE_CACHE_SIZE}\"\n    echo \"  fsync: ${POSTGRES_FSYNC}\"\n    echo \"  Synchronous commit: ${POSTGRES_SYNCHRONOUS_COMMIT}\"\n    echo \"\"\n    echo \"WAL:\"\n    echo \"  Max WAL size: ${POSTGRES_MAX_WAL_SIZE}\"\n    echo \"  Min WAL size: ${POSTGRES_MIN_WAL_SIZE}\"\n    echo \"  Checkpoint timeout: ${POSTGRES_CHECKPOINT_TIMEOUT}\"\n    echo \"\"\n    echo \"Logging:\"\n    echo \"  Statement logging: ${POSTGRES_LOG_STATEMENT}\"\n    echo \"  Duration logging: ${POSTGRES_LOG_DURATION}\"\n    echo \"  Connection logging: ${POSTGRES_LOG_CONNECTIONS}\"\n    echo \"\"\n    echo \"Data Directory: ${PGDATA}\"\n    echo \"\"\n    echo \"Commands:\"\n    echo \"  psql                        Connect to database\"\n    echo \"  flox activate -s            Start PostgreSQL service\"\n    echo \"  flox services status        Check service status\"\n    echo \"  flox services logs postgres View service logs\"\n    echo \"  flox services restart postgres Restart with new settings\"\n}\nexport -f postgres-info\n",
+            "zsh": "postgres-info() {\n    echo \"PostgreSQL (Headless Mode) - Configuration\"\n    echo \"\"\n    echo \"Connection:\"\n    echo \"  Listen address: ${PGHOSTADDR}:${PGPORT}\"\n    echo \"  Client connects to: ${PGHOST}\"\n    echo \"  Database: ${PGDATABASE}\"\n    echo \"  User: ${PGUSER}\"\n    echo \"  Auth method: ${POSTGRES_HOST_AUTH_METHOD}\"\n    echo \"\"\n    echo \"Performance:\"\n    echo \"  Max connections: ${POSTGRES_MAX_CONNECTIONS}\"\n    echo \"  Shared buffers: ${POSTGRES_SHARED_BUFFERS}\"\n    echo \"  Work mem: ${POSTGRES_WORK_MEM}\"\n    echo \"  Effective cache size: ${POSTGRES_EFFECTIVE_CACHE_SIZE}\"\n    echo \"  fsync: ${POSTGRES_FSYNC}\"\n    echo \"  Synchronous commit: ${POSTGRES_SYNCHRONOUS_COMMIT}\"\n    echo \"\"\n    echo \"WAL:\"\n    echo \"  Max WAL size: ${POSTGRES_MAX_WAL_SIZE}\"\n    echo \"  Min WAL size: ${POSTGRES_MIN_WAL_SIZE}\"\n    echo \"  Checkpoint timeout: ${POSTGRES_CHECKPOINT_TIMEOUT}\"\n    echo \"\"\n    echo \"Logging:\"\n    echo \"  Statement logging: ${POSTGRES_LOG_STATEMENT}\"\n    echo \"  Duration logging: ${POSTGRES_LOG_DURATION}\"\n    echo \"  Connection logging: ${POSTGRES_LOG_CONNECTIONS}\"\n    echo \"\"\n    echo \"Data Directory: ${PGDATA}\"\n    echo \"\"\n    echo \"Commands:\"\n    echo \"  psql                        Connect to database\"\n    echo \"  flox activate -s            Start PostgreSQL service\"\n    echo \"  flox services status        Check service status\"\n    echo \"  flox services logs postgres View service logs\"\n    echo \"  flox services restart postgres Restart with new settings\"\n}\n",
+            "fish": "function postgres-info\n    echo \"PostgreSQL (Headless Mode) - Configuration\"\n    echo \"\"\n    echo \"Connection:\"\n    echo \"  Listen address: $PGHOSTADDR:$PGPORT\"\n    echo \"  Client connects to: $PGHOST\"\n    echo \"  Database: $PGDATABASE\"\n    echo \"  User: $PGUSER\"\n    echo \"  Auth method: $POSTGRES_HOST_AUTH_METHOD\"\n    echo \"\"\n    echo \"Performance:\"\n    echo \"  Max connections: $POSTGRES_MAX_CONNECTIONS\"\n    echo \"  Shared buffers: $POSTGRES_SHARED_BUFFERS\"\n    echo \"  Work mem: $POSTGRES_WORK_MEM\"\n    echo \"  Effective cache size: $POSTGRES_EFFECTIVE_CACHE_SIZE\"\n    echo \"  fsync: $POSTGRES_FSYNC\"\n    echo \"  Synchronous commit: $POSTGRES_SYNCHRONOUS_COMMIT\"\n    echo \"\"\n    echo \"WAL:\"\n    echo \"  Max WAL size: $POSTGRES_MAX_WAL_SIZE\"\n    echo \"  Min WAL size: $POSTGRES_MIN_WAL_SIZE\"\n    echo \"  Checkpoint timeout: $POSTGRES_CHECKPOINT_TIMEOUT\"\n    echo \"\"\n    echo \"Logging:\"\n    echo \"  Statement logging: $POSTGRES_LOG_STATEMENT\"\n    echo \"  Duration logging: $POSTGRES_LOG_DURATION\"\n    echo \"  Connection logging: $POSTGRES_LOG_CONNECTIONS\"\n    echo \"\"\n    echo \"Data Directory: $PGDATA\"\n    echo \"\"\n    echo \"Commands:\"\n    echo \"  psql                        Connect to database\"\n    echo \"  flox activate -s            Start PostgreSQL service\"\n    echo \"  flox services status        Check service status\"\n    echo \"  flox services logs postgres View service logs\"\n    echo \"  flox services restart postgres Restart with new settings\"\nend\n"
+          },
+          "options": {
+            "systems": [
+              "aarch64-darwin",
+              "aarch64-linux",
+              "x86_64-darwin",
+              "x86_64-linux"
+            ]
+          },
+          "services": {
+            "postgres": {
+              "command": "# Ensure socket directory exists\nmkdir -p \"$PGHOST_SOCKET\"\nchmod 700 \"$PGHOST_SOCKET\"\n\n# Start PostgreSQL with all runtime configuration\nexec postgres -D \"$PGDATA\" \\\n  -c listen_addresses=\"$PGHOSTADDR\" \\\n  -p \"$PGPORT\" \\\n  -c unix_socket_directories=\"$PGHOST_SOCKET\" \\\n  -c unix_socket_permissions=0700 \\\n  ${POSTGRES_MAX_CONNECTIONS:+-c max_connections=\"$POSTGRES_MAX_CONNECTIONS\"} \\\n  ${POSTGRES_SHARED_BUFFERS:+-c shared_buffers=\"$POSTGRES_SHARED_BUFFERS\"} \\\n  ${POSTGRES_WORK_MEM:+-c work_mem=\"$POSTGRES_WORK_MEM\"} \\\n  ${POSTGRES_EFFECTIVE_CACHE_SIZE:+-c effective_cache_size=\"$POSTGRES_EFFECTIVE_CACHE_SIZE\"} \\\n  $([ \"$POSTGRES_FSYNC\" = \"off\" ] && echo \"-c fsync=off\") \\\n  ${POSTGRES_SYNCHRONOUS_COMMIT:+-c synchronous_commit=\"$POSTGRES_SYNCHRONOUS_COMMIT\"} \\\n  ${POSTGRES_FULL_PAGE_WRITES:+-c full_page_writes=\"$POSTGRES_FULL_PAGE_WRITES\"} \\\n  ${POSTGRES_MAX_WAL_SIZE:+-c max_wal_size=\"$POSTGRES_MAX_WAL_SIZE\"} \\\n  ${POSTGRES_MIN_WAL_SIZE:+-c min_wal_size=\"$POSTGRES_MIN_WAL_SIZE\"} \\\n  ${POSTGRES_CHECKPOINT_TIMEOUT:+-c checkpoint_timeout=\"$POSTGRES_CHECKPOINT_TIMEOUT\"} \\\n  ${POSTGRES_LOG_STATEMENT:+-c log_statement=\"$POSTGRES_LOG_STATEMENT\"} \\\n  ${POSTGRES_LOG_DURATION:+-c log_duration=\"$POSTGRES_LOG_DURATION\"} \\\n  ${POSTGRES_LOG_MIN_DURATION:+-c log_min_duration_statement=\"$POSTGRES_LOG_MIN_DURATION\"} \\\n  ${POSTGRES_LOG_CONNECTIONS:+-c log_connections=\"$POSTGRES_LOG_CONNECTIONS\"} \\\n  ${POSTGRES_LOG_DISCONNECTIONS:+-c log_disconnections=\"$POSTGRES_LOG_DISCONNECTIONS\"} \\\n  $POSTGRES_EXTRA_OPTS\n"
+            }
+          }
+        },
+        "name": "postgres-headless",
+        "descriptor": {
+          "remote": "barstoolbluz/postgres-headless"
+        }
+      }
+    ],
+    "warnings": []
+  }
+}

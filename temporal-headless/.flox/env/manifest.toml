@@ -1,0 +1,408 @@
+# Flox manifest version managed by Flox CLI
+version = 1
+
+# ==============================================================================
+# TEMPORAL HEADLESS ENVIRONMENT - TECHNICAL DOCUMENTATION
+# ==============================================================================
+#
+# This environment provides Temporal 1.29.1 orchestration platform configured for
+# CI/CD, containerized deployments, and production use cases.
+#
+# ------------------------------------------------------------------------------
+# ARCHITECTURE
+# ------------------------------------------------------------------------------
+#
+# Multi-service architecture:
+#   - temporal-server: Frontend service (gRPC/HTTP, default port 7233/7243)
+#   - temporal-history: History service for workflow execution
+#   - temporal-matching: Matching service for task dispatch
+#   - temporal-worker: Worker service for task execution
+#
+# Storage backends:
+#   - SQLite (default): Local development, single-instance deployments
+#   - PostgreSQL: Production, multi-instance, high-concurrency workloads
+#
+# ------------------------------------------------------------------------------
+# RUNTIME CONFIGURATION VARIABLES
+# ------------------------------------------------------------------------------
+#
+# All variables support runtime override via: VARIABLE=value flox activate
+#
+# Core Settings:
+#   TEMPORAL_HOME                Instance metadata directory
+#                                Default: $FLOX_ENV_CACHE/temporal-data
+#
+#   TEMPORAL_FRONTEND_HOST       Frontend server bind address
+#                                Default: 127.0.0.1
+#
+#   TEMPORAL_FRONTEND_PORT       Frontend gRPC port
+#                                Default: 7233
+#
+#   TEMPORAL_WEB_PORT            Web UI port
+#                                Default: 8233
+#
+# Storage Backend:
+#   TEMPORAL_STORAGE_TYPE        Storage backend type: "sqlite" or "postgres"
+#                                Default: sqlite
+#
+#   TEMPORAL_POSTGRES_URL        PostgreSQL connection string
+#                                Format: postgresql://user:pass@host:port/dbname
+#                                Auto-generated if postgres composed and not set
+#
+# Control Flags:
+#   TEMPORAL_SKIP_INIT           Set to "1" to skip initialization
+#   TEMPORAL_QUIET               Set to "1" to suppress activation messages
+#
+# ------------------------------------------------------------------------------
+# POSTGRESQL COMPOSITION
+# ------------------------------------------------------------------------------
+#
+# This environment includes barstoolbluz/postgres-headless for optional
+# PostgreSQL storage backend.
+#
+# Auto-configuration behavior:
+#   1. When TEMPORAL_STORAGE_TYPE=postgres and TEMPORAL_POSTGRES_URL is empty:
+#      - Detects if postgres command is available (from composition)
+#      - Auto-generates connection URL from postgres environment variables:
+#        * PGUSER (default: pguser)
+#        * PGPASSWORD (default: pgpass)
+#        * PGHOSTADDR (default: 127.0.0.1)
+#        * PGPORT (default: 15432)
+#        * PGDATABASE (set this to "temporal" for dedicated database)
+#   2. If postgres not available, falls back to SQLite with warning
+#
+# Manual postgres service control:
+#   flox services start postgres
+#   flox services status postgres
+#   flox services logs postgres
+#
+# ------------------------------------------------------------------------------
+# COMMON USAGE PATTERNS
+# ------------------------------------------------------------------------------
+#
+# Local development (SQLite):
+#   flox activate -s
+#
+# Production (PostgreSQL with auto-config):
+#   TEMPORAL_STORAGE_TYPE=postgres PGDATABASE=temporal flox activate -s
+#
+# Production (PostgreSQL with custom URL):
+#   TEMPORAL_STORAGE_TYPE=postgres \
+#   TEMPORAL_POSTGRES_URL="postgresql://user:pass@prod-db:5432/temporal" \
+#   flox activate -s
+#
+# Container deployment:
+#   ENV TEMPORAL_STORAGE_TYPE=postgres
+#   ENV TEMPORAL_POSTGRES_URL="postgresql://user:pass@postgres:5432/temporal"
+#   ENV TEMPORAL_FRONTEND_HOST=0.0.0.0
+#   CMD ["flox", "activate", "-s"]
+#
+# CI/CD (quiet mode):
+#   TEMPORAL_QUIET=1 flox activate -s
+#
+# ------------------------------------------------------------------------------
+# SERVICE MANAGEMENT
+# ------------------------------------------------------------------------------
+#
+# Start all services:
+#   flox activate -s
+#   (or) flox activate --start-services
+#
+# Individual service control:
+#   flox services start temporal-server
+#   flox services stop temporal-server
+#   flox services restart temporal-server
+#
+# Service status and logs:
+#   flox services status
+#   flox services logs temporal-server
+#
+# ------------------------------------------------------------------------------
+# FILES AND DIRECTORIES
+# ------------------------------------------------------------------------------
+#
+# $TEMPORAL_HOME/ (default: $FLOX_ENV_CACHE/temporal-data)
+#   config.yaml               Auto-generated configuration
+#   temporal.db               SQLite database (SQLite mode)
+#   logs/                     Service logs
+#
+# ------------------------------------------------------------------------------
+# TROUBLESHOOTING
+# ------------------------------------------------------------------------------
+#
+# Services won't start:
+#   1. Check service status: flox services status
+#   2. View logs: flox services logs temporal-server
+#   3. Check port availability: netstat -tuln | grep 7233
+#   4. Verify config: cat $TEMPORAL_HOME/config.yaml
+#
+# PostgreSQL connection failures:
+#   1. Verify postgres running: flox services status postgres
+#   2. Check connection URL: echo $TEMPORAL_POSTGRES_URL
+#   3. Test connectivity: pg_isready -h $PGHOSTADDR -p $PGPORT
+#   4. Verify database exists: psql -l
+#
+# Configuration not applied:
+#   1. Delete config: rm $TEMPORAL_HOME/config.yaml
+#   2. Reactivate: flox activate
+#   3. Or skip init and create manually: TEMPORAL_SKIP_INIT=1 flox activate
+#
+# ------------------------------------------------------------------------------
+# PRODUCTION CONSIDERATIONS
+# ------------------------------------------------------------------------------
+#
+# Security:
+#   - Never use TEMPORAL_FRONTEND_HOST=0.0.0.0 without reverse proxy/firewall
+#   - Always use PostgreSQL for production (SQLite has concurrency limits)
+#   - Store TEMPORAL_POSTGRES_URL in secrets manager, not environment files
+#   - Use TLS-encrypted postgres connections in production
+#
+# Performance:
+#   - Use connection pooling (pgbouncer) for high-throughput workloads
+#   - Monitor service logs for execution delays
+#   - Consider separate postgres instance for large deployments
+#
+# High Availability:
+#   - Run multiple frontend/history/matching services behind load balancer
+#   - Use PostgreSQL with replication for storage backend
+#   - Deploy on Kubernetes with appropriate resource limits and probes
+#
+# Monitoring:
+#   - Expose port 7233 for health checks
+#   - Monitor service process health and restart on failure
+#   - Track workflow queue depth and execution times
+#   - Set up alerts for failed workflows
+#
+# ------------------------------------------------------------------------------
+# LINKS
+# ------------------------------------------------------------------------------
+#
+# Temporal Documentation: https://docs.temporal.io/
+# Temporal GitHub: https://github.com/temporalio/temporal
+# Server Configuration: https://docs.temporal.io/references/configuration
+#
+# ==============================================================================
+
+[install]
+temporal.pkg-path = "barstoolbluz/temporal"
+temporal.systems = ["x86_64-linux"]
+
+[vars]
+TEMPORAL_HOME = "$FLOX_ENV_CACHE/temporal-data"
+
+[hook]
+on-activate = '''
+# === RUNTIME VARIABLES - Core ===
+export TEMPORAL_HOME="${TEMPORAL_HOME:-$FLOX_ENV_CACHE/temporal-data}"
+
+# === RUNTIME VARIABLES - Connection ===
+export TEMPORAL_FRONTEND_HOST="${TEMPORAL_FRONTEND_HOST:-127.0.0.1}"
+export TEMPORAL_FRONTEND_PORT="${TEMPORAL_FRONTEND_PORT:-7233}"
+export TEMPORAL_WEB_PORT="${TEMPORAL_WEB_PORT:-8233}"
+
+# === RUNTIME VARIABLES - Storage Backend ===
+export TEMPORAL_STORAGE_TYPE="${TEMPORAL_STORAGE_TYPE:-sqlite}"
+export TEMPORAL_POSTGRES_URL="${TEMPORAL_POSTGRES_URL:-}"
+
+# === POSTGRES AUTO-CONFIGURATION ===
+# If postgres storage requested but no URL provided, auto-generate from composed environment
+if [ "$TEMPORAL_STORAGE_TYPE" = "postgres" ] && [ -z "$TEMPORAL_POSTGRES_URL" ]; then
+    if command -v postgres >/dev/null 2>&1; then
+        # PostgreSQL available from composition - auto-generate connection URL
+        export PGDATABASE="${PGDATABASE:-temporal}"
+        export TEMPORAL_POSTGRES_URL="postgresql://${PGUSER}:${PGPASSWORD}@${PGHOSTADDR:-127.0.0.1}:${PGPORT:-15432}/${PGDATABASE}"
+    else
+        echo "⚠️  WARNING: TEMPORAL_STORAGE_TYPE=postgres but PostgreSQL not available"
+        echo "   Falling back to SQLite"
+        export TEMPORAL_STORAGE_TYPE=sqlite
+    fi
+fi
+
+# === CREATE REQUIRED DIRECTORIES ===
+mkdir -p "$TEMPORAL_HOME"
+mkdir -p "$TEMPORAL_HOME/logs"
+
+# === INITIALIZATION ===
+initialize_temporal() {
+    # Check if already initialized
+    if [ -f "$TEMPORAL_HOME/.initialized" ]; then
+        return 0
+    fi
+
+    # Only show init messages if not in quiet mode
+    if [ "${TEMPORAL_QUIET:-}" != "1" ]; then
+        echo "Initializing Temporal configuration..."
+    fi
+
+    # Create basic config file
+    cat > "$TEMPORAL_HOME/development.yaml" << EOF
+log:
+  stdout: true
+  level: info
+
+persistence:
+  defaultStore: default
+  visibilityStore: visibility
+  numHistoryShards: 4
+  datastores:
+    default:
+$(if [ "$TEMPORAL_STORAGE_TYPE" = "postgres" ]; then
+cat << POSTGRES_CONFIG
+      sql:
+        pluginName: "postgres"
+        databaseName: "${PGDATABASE:-temporal}"
+        connectAddr: "${PGHOSTADDR:-127.0.0.1}:${PGPORT:-15432}"
+        connectProtocol: "tcp"
+        user: "${PGUSER:-pguser}"
+        password: "${PGPASSWORD:-pgpass}"
+        maxConns: 20
+        maxIdleConns: 20
+        maxConnLifetime: "1h"
+POSTGRES_CONFIG
+else
+cat << SQLITE_CONFIG
+      sql:
+        pluginName: "sqlite"
+        databaseName: "$TEMPORAL_HOME/temporal.db"
+        connectAddr: "localhost"
+        connectProtocol: "tcp"
+        connectAttributes:
+          cache: "private"
+          setup: true
+        maxConns: 1
+        maxIdleConns: 1
+SQLITE_CONFIG
+fi)
+    visibility:
+$(if [ "$TEMPORAL_STORAGE_TYPE" = "postgres" ]; then
+cat << POSTGRES_VIS
+      sql:
+        pluginName: "postgres"
+        databaseName: "${PGDATABASE:-temporal}_visibility"
+        connectAddr: "${PGHOSTADDR:-127.0.0.1}:${PGPORT:-15432}"
+        connectProtocol: "tcp"
+        user: "${PGUSER:-pguser}"
+        password: "${PGPASSWORD:-pgpass}"
+        maxConns: 10
+        maxIdleConns: 10
+        maxConnLifetime: "1h"
+POSTGRES_VIS
+else
+cat << SQLITE_VIS
+      sql:
+        pluginName: "sqlite"
+        databaseName: "$TEMPORAL_HOME/temporal_visibility.db"
+        connectAddr: "localhost"
+        connectProtocol: "tcp"
+        connectAttributes:
+          cache: "private"
+          setup: true
+        maxConns: 1
+        maxIdleConns: 1
+SQLITE_VIS
+fi)
+
+global:
+  membership:
+    maxJoinDuration: 30s
+    broadcastAddress: "${TEMPORAL_FRONTEND_HOST:-127.0.0.1}"
+
+services:
+  frontend:
+    rpc:
+      grpcPort: ${TEMPORAL_FRONTEND_PORT:-7233}
+      membershipPort: 6933
+      bindOnLocalHost: $([ "${TEMPORAL_FRONTEND_HOST}" = "0.0.0.0" ] && echo "false" || echo "true")
+
+  matching:
+    rpc:
+      grpcPort: 7235
+      membershipPort: 6935
+      bindOnLocalHost: true
+
+  history:
+    rpc:
+      grpcPort: 7234
+      membershipPort: 6934
+      bindOnLocalHost: true
+
+  worker:
+    rpc:
+      grpcPort: 7239
+      membershipPort: 6939
+      bindOnLocalHost: true
+
+clusterMetadata:
+  enableGlobalNamespace: false
+  failoverVersionIncrement: 10
+  masterClusterName: "active"
+  currentClusterName: "active"
+  clusterInformation:
+    active:
+      enabled: true
+      initialFailoverVersion: 1
+      rpcName: "frontend"
+      rpcAddress: "${TEMPORAL_FRONTEND_HOST:-127.0.0.1}:${TEMPORAL_FRONTEND_PORT:-7233}"
+
+dcRedirectionPolicy:
+  policy: "noop"
+
+archival:
+  history:
+    state: "disabled"
+  visibility:
+    state: "disabled"
+
+publicClient:
+  hostPort: "${TEMPORAL_FRONTEND_HOST:-127.0.0.1}:${TEMPORAL_FRONTEND_PORT:-7233}"
+
+namespaceDefaults:
+  archival:
+    history:
+      state: "disabled"
+    visibility:
+      state: "disabled"
+EOF
+
+    touch "$TEMPORAL_HOME/.initialized"
+
+    if [ "${TEMPORAL_QUIET:-}" != "1" ]; then
+        echo "✅ Temporal initialized successfully"
+    fi
+    return 0
+}
+
+# Run initialization unless explicitly skipped
+if [ "${TEMPORAL_SKIP_INIT:-}" != "1" ]; then
+    initialize_temporal
+fi
+
+# Minimal activation message for headless mode
+if [ "${TEMPORAL_QUIET:-}" != "1" ]; then
+    echo "Temporal headless environment ready. Run 'flox edit' for documentation."
+fi
+'''
+
+[profile]
+
+[services]
+temporal-server.command = '''
+cd /
+exec temporal-server \
+    --env development \
+    --config "$TEMPORAL_HOME" \
+    start
+'''
+
+[include]
+environments = [
+  { remote = "barstoolbluz/postgres-headless" }
+]
+
+[options]
+# Systems that environment is compatible with
+#systems = [
+#  "x86_64-linux",
+#]
+# Uncomment to disable CUDA detection.
+# cuda-detection = false
