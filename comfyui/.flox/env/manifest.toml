@@ -1,0 +1,174 @@
+version = 1
+
+
+[install]
+## comfyui
+comfyui.pkg-path = "flox/comfyui"
+comfyui.priority = 1
+comfyui.pkg-group = "comfyui"
+## comfyui add-ons | custom nodes for advanced usage
+comfyui-extras.pkg-path = "flox/comfyui-extras"
+comfyui-extras.priority = 2
+comfyui-extras.pkg-group = "comfyui-extras"
+
+## custom cuda-accelerated pytorch packages | uncomment to use
+#torch-cuda.pkg-path = "flox-cuda/python3Packages.torch"
+#torch-cuda.systems = ["x86_64-linux", "aarch64-linux"]
+#torch-cuda.priority = 1
+#torch-cuda.pkg-group = "torch-cuda"
+
+#torchvision-cuda.pkg-path = "flox-cuda/python3Packages.torchvision"
+#torchvision-cuda.systems = ["x86_64-linux", "aarch64-linux"]
+#torchvision-cuda.priority = 2
+#torchvision-cuda.pkg-group = "torchvision-cuda"
+
+#torchaudio-cuda.pkg-path = "flox-cuda/python3Packages.torchaudio"
+#torchaudio-cuda.systems = ["x86_64-linux", "aarch64-linux"]
+#torchaudio-cuda.priority = 3
+#torchaudio-cuda.pkg-group = "torchvision-cuda"
+
+## build + publish your own custom cuda-accelerated pytorch at:
+## https://github.com/barstoolbluz/build-pytorch
+## https://github.com/barstoolbluz/build-torchvision
+## https://github.com/barstoolbluz/build-torchaudio
+
+
+## cuda-acclerated python dependencies | uncomment to use
+#numpy.pkg-path = "flox-cuda/python3Packages.numpy"
+#numpy.systems = ["x86_64-linux"]
+#numpy.priority = 3
+
+#scipy.pkg-path = "flox-cuda/python3Packages.scipy"
+#scipy.systems = ["x86_64-linux"]
+#scipy.priority = 4
+
+#scikit-image.pkg-path = "flox-cuda/python3Packages.scikit-image"
+#scikit-image.systems = ["aarch64-linux", "x86_64-linux"]
+#scikit-image.priority = 1
+
+#opencv4.pkg-path = "flox-cuda/python3Packages.opencv4"
+#opencv4.systems = ["x86_64-linux", "aarch64-linux"]
+#opencv4.priority = 2
+
+
+[vars]
+# comfyui work directory (models, outputs, etc.)
+COMFYUI_WORK_DIR = "$HOME/comfyui-work"
+
+# model directories
+COMFYUI_MODELS_DIR = "$HOME/comfyui-work/models"
+COMFYUI_OUTPUT_DIR = "$HOME/comfyui-work/output"
+COMFYUI_INPUT_DIR = "$HOME/comfyui-work/input"
+COMFYUI_TEMP_DIR = "$HOME/comfyui-work/temp"
+
+# comfyUI database | change this to whatever you like
+COMFYUI_DATABASE_URL = "sqlite:///${FLOX_ENV_CACHE:-$HOME/.flox/cache}/comfyui.db"
+
+# default comfyui server settings
+COMFYUI_LISTEN = "0.0.0.0"
+COMFYUI_PORT = "8188"
+
+
+[hook]
+on-activate = '''
+  WORK_DIR="${HOME}/comfyui-work"
+  mkdir -p "$WORK_DIR/models"/{checkpoints,clip,unet,vae,loras,upscale_models,controlnet,embeddings}
+  mkdir -p "$WORK_DIR/output"
+  mkdir -p "$WORK_DIR/input"
+  mkdir -p "$WORK_DIR/temp"
+  mkdir -p "$WORK_DIR/custom_nodes"
+  mkdir -p "$WORK_DIR/default/workflows"
+
+  EXTRA_PATHS_FILE="$FLOX_ENV_CACHE/extra_model_paths.yaml"
+  if [ ! -f "$EXTRA_PATHS_FILE" ]; then
+    cat > "$EXTRA_PATHS_FILE" <<'EOF'
+comfyui:
+  base_path: ~/comfyui-work/
+
+  checkpoints: models/checkpoints/
+  clip: models/clip/
+  unet: models/unet/
+  vae: models/vae/
+  loras: models/loras/
+  upscale_models: models/upscale_models/
+  controlnet: models/controlnet/
+  embeddings: models/embeddings/
+  custom_nodes: custom_nodes/
+EOF
+    echo "✓ Created extra_model_paths.yaml"
+  fi
+'''
+
+
+[profile]
+common = '''
+  echo ""
+  echo "🎨 ComfyUI Environment Ready"
+  echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+  echo "  Work Dir:   ${COMFYUI_WORK_DIR}"
+  echo "  Models:     ${COMFYUI_MODELS_DIR}"
+  echo "  Output:     ${COMFYUI_OUTPUT_DIR}"
+  echo ""
+  echo "Quick Commands:"
+  echo "  flox services start comfyui  → Start ComfyUI service"
+  echo "  flox services logs comfyui   → View service logs"
+  echo "  comfyui-download             → Download AI models"
+  echo ""
+  echo "Models Directory Structure:"
+  echo "  checkpoints/  clip/  unet/  vae/  loras/"
+  echo "  upscale_models/  controlnet/  embeddings/"
+  echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+  echo ""
+'''
+
+bash = '''
+  # helper aliases
+  alias cdwork="cd ${COMFYUI_WORK_DIR}"
+  alias cdmodels="cd ${COMFYUI_MODELS_DIR}"
+  alias cdoutput="cd ${COMFYUI_OUTPUT_DIR}"
+'''
+
+zsh = '''
+  # helper aliases
+  alias cdwork="cd ${COMFYUI_WORK_DIR}"
+  alias cdmodels="cd ${COMFYUI_MODELS_DIR}"
+  alias cdoutput="cd ${COMFYUI_OUTPUT_DIR}"
+'''
+
+
+[services]
+[services.comfyui]
+command = '''
+  # auto-detect compute backend
+  if python3 -c "import torch; exit(0 if torch.cuda.is_available() else 1)" 2>/dev/null; then
+    echo "🚀 CUDA detected - running with GPU acceleration"
+    CPU_FLAG=""
+  elif python3 -c "import torch; exit(0 if torch.backends.mps.is_available() else 1)" 2>/dev/null; then
+    echo "🍎 Metal (MPS) detected - running with Apple Silicon acceleration"
+    CPU_FLAG=""
+  else
+    echo "💻 No GPU acceleration available - running in CPU mode"
+    CPU_FLAG="--cpu"
+  fi
+
+  exec comfyui \
+    --user-directory $COMFYUI_WORK_DIR \
+    --database-url $COMFYUI_DATABASE_URL \
+    --listen $COMFYUI_LISTEN \
+    --port $COMFYUI_PORT \
+    $CPU_FLAG \
+    --extra-model-paths-config $FLOX_ENV_CACHE/extra_model_paths.yaml \
+    --output-directory $COMFYUI_OUTPUT_DIR \
+    --input-directory $COMFYUI_INPUT_DIR \
+    --temp-directory $COMFYUI_TEMP_DIR
+'''
+is-daemon = true
+
+[services.comfyui.shutdown]
+command = "kill $FLOX_PROCESS_PID"
+
+
+[include]
+# environments = [
+#     { dir = "../common" }
+# ]

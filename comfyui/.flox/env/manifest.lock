@@ -1,0 +1,296 @@
+{
+  "lockfile-version": 1,
+  "manifest": {
+    "version": 1,
+    "install": {
+      "comfyui": {
+        "pkg-path": "flox/comfyui",
+        "pkg-group": "comfyui",
+        "priority": 1
+      },
+      "comfyui-extras": {
+        "pkg-path": "flox/comfyui-extras",
+        "pkg-group": "comfyui-extras",
+        "priority": 2
+      }
+    },
+    "vars": {
+      "COMFYUI_DATABASE_URL": "sqlite:///${FLOX_ENV_CACHE:-$HOME/.flox/cache}/comfyui.db",
+      "COMFYUI_INPUT_DIR": "$HOME/comfyui-work/input",
+      "COMFYUI_LISTEN": "0.0.0.0",
+      "COMFYUI_MODELS_DIR": "$HOME/comfyui-work/models",
+      "COMFYUI_OUTPUT_DIR": "$HOME/comfyui-work/output",
+      "COMFYUI_PORT": "8188",
+      "COMFYUI_TEMP_DIR": "$HOME/comfyui-work/temp",
+      "COMFYUI_WORK_DIR": "$HOME/comfyui-work"
+    },
+    "hook": {
+      "on-activate": "  WORK_DIR=\"${HOME}/comfyui-work\"\n  mkdir -p \"$WORK_DIR/models\"/{checkpoints,clip,unet,vae,loras,upscale_models,controlnet,embeddings}\n  mkdir -p \"$WORK_DIR/output\"\n  mkdir -p \"$WORK_DIR/input\"\n  mkdir -p \"$WORK_DIR/temp\"\n  mkdir -p \"$WORK_DIR/custom_nodes\"\n  mkdir -p \"$WORK_DIR/default/workflows\"\n\n  EXTRA_PATHS_FILE=\"$FLOX_ENV_CACHE/extra_model_paths.yaml\"\n  if [ ! -f \"$EXTRA_PATHS_FILE\" ]; then\n    cat > \"$EXTRA_PATHS_FILE\" <<'EOF'\ncomfyui:\n  base_path: ~/comfyui-work/\n\n  checkpoints: models/checkpoints/\n  clip: models/clip/\n  unet: models/unet/\n  vae: models/vae/\n  loras: models/loras/\n  upscale_models: models/upscale_models/\n  controlnet: models/controlnet/\n  embeddings: models/embeddings/\n  custom_nodes: custom_nodes/\nEOF\n    echo \"✓ Created extra_model_paths.yaml\"\n  fi\n"
+    },
+    "profile": {
+      "common": "  echo \"\"\n  echo \"🎨 ComfyUI Environment Ready\"\n  echo \"━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\"\n  echo \"  Work Dir:   ${COMFYUI_WORK_DIR}\"\n  echo \"  Models:     ${COMFYUI_MODELS_DIR}\"\n  echo \"  Output:     ${COMFYUI_OUTPUT_DIR}\"\n  echo \"\"\n  echo \"Quick Commands:\"\n  echo \"  flox services start comfyui  → Start ComfyUI service\"\n  echo \"  flox services logs comfyui   → View service logs\"\n  echo \"  comfyui-download             → Download AI models\"\n  echo \"\"\n  echo \"Models Directory Structure:\"\n  echo \"  checkpoints/  clip/  unet/  vae/  loras/\"\n  echo \"  upscale_models/  controlnet/  embeddings/\"\n  echo \"━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\"\n  echo \"\"\n",
+      "bash": "  # helper aliases\n  alias cdwork=\"cd ${COMFYUI_WORK_DIR}\"\n  alias cdmodels=\"cd ${COMFYUI_MODELS_DIR}\"\n  alias cdoutput=\"cd ${COMFYUI_OUTPUT_DIR}\"\n",
+      "zsh": "  # helper aliases\n  alias cdwork=\"cd ${COMFYUI_WORK_DIR}\"\n  alias cdmodels=\"cd ${COMFYUI_MODELS_DIR}\"\n  alias cdoutput=\"cd ${COMFYUI_OUTPUT_DIR}\"\n"
+    },
+    "options": {},
+    "services": {
+      "comfyui": {
+        "command": "  # auto-detect compute backend\n  if python3 -c \"import torch; exit(0 if torch.cuda.is_available() else 1)\" 2>/dev/null; then\n    echo \"🚀 CUDA detected - running with GPU acceleration\"\n    CPU_FLAG=\"\"\n  elif python3 -c \"import torch; exit(0 if torch.backends.mps.is_available() else 1)\" 2>/dev/null; then\n    echo \"🍎 Metal (MPS) detected - running with Apple Silicon acceleration\"\n    CPU_FLAG=\"\"\n  else\n    echo \"💻 No GPU acceleration available - running in CPU mode\"\n    CPU_FLAG=\"--cpu\"\n  fi\n\n  exec comfyui \\\n    --user-directory $COMFYUI_WORK_DIR \\\n    --database-url $COMFYUI_DATABASE_URL \\\n    --listen $COMFYUI_LISTEN \\\n    --port $COMFYUI_PORT \\\n    $CPU_FLAG \\\n    --extra-model-paths-config $FLOX_ENV_CACHE/extra_model_paths.yaml \\\n    --output-directory $COMFYUI_OUTPUT_DIR \\\n    --input-directory $COMFYUI_INPUT_DIR \\\n    --temp-directory $COMFYUI_TEMP_DIR\n",
+        "is-daemon": true,
+        "shutdown": {
+          "command": "kill $FLOX_PROCESS_PID"
+        }
+      }
+    }
+  },
+  "packages": [
+    {
+      "attr_path": "comfyui",
+      "broken": false,
+      "derivation": "/nix/store/262ysg9xba89f9yqqf5vim451d3g84z8-comfyui-0.3.75.drv",
+      "description": "The most powerful and modular diffusion model GUI and backend",
+      "install_id": "comfyui",
+      "license": "GPL-3.0-only",
+      "locked_url": "https://github.com/barstoolbluz/build-comfyui?rev=e69da57e962a65f622777751f921ff5b496a054d",
+      "name": "comfyui-0.3.75",
+      "pname": "comfyui",
+      "rev": "e69da57e962a65f622777751f921ff5b496a054d",
+      "rev_count": 6,
+      "rev_date": "2025-11-26T21:59:40Z",
+      "scrape_date": "2025-11-27T02:36:43.958636244Z",
+      "stabilities": [
+        "stable",
+        "staging",
+        "unstable"
+      ],
+      "unfree": false,
+      "version": "0.3.75",
+      "outputs_to_install": [
+        "out"
+      ],
+      "outputs": {
+        "out": "/nix/store/2mk2n07yzgb8d066p0g6w3frhipasbhm-comfyui-0.3.75"
+      },
+      "system": "aarch64-darwin",
+      "group": "comfyui",
+      "priority": 1
+    },
+    {
+      "attr_path": "comfyui",
+      "broken": false,
+      "derivation": "/nix/store/jn4qs968czwg033b8zg0cvxm6fnf8cav-comfyui-0.3.75.drv",
+      "description": "The most powerful and modular diffusion model GUI and backend",
+      "install_id": "comfyui",
+      "license": "GPL-3.0-only",
+      "locked_url": "https://github.com/barstoolbluz/build-comfyui?rev=ca890a6f3be190748e931d79d3e8096acb8d5cab",
+      "name": "comfyui-0.3.75",
+      "pname": "comfyui",
+      "rev": "ca890a6f3be190748e931d79d3e8096acb8d5cab",
+      "rev_count": 8,
+      "rev_date": "2025-11-27T02:29:04Z",
+      "scrape_date": "2025-11-27T02:36:43.958640290Z",
+      "stabilities": [
+        "stable",
+        "staging",
+        "unstable"
+      ],
+      "unfree": false,
+      "version": "0.3.75",
+      "outputs_to_install": [
+        "out"
+      ],
+      "outputs": {
+        "out": "/nix/store/yhqyxm5614qkhanl2382kc27ac9w5ll3-comfyui-0.3.75"
+      },
+      "system": "aarch64-linux",
+      "group": "comfyui",
+      "priority": 1
+    },
+    {
+      "attr_path": "comfyui",
+      "broken": false,
+      "derivation": "/nix/store/qky5nqhn61ra11mckih4b6xx4sb5132r-comfyui-0.3.75.drv",
+      "description": "The most powerful and modular diffusion model GUI and backend",
+      "install_id": "comfyui",
+      "license": "GPL-3.0-only",
+      "locked_url": "https://github.com/barstoolbluz/build-comfyui.git?rev=e69da57e962a65f622777751f921ff5b496a054d",
+      "name": "comfyui-0.3.75",
+      "pname": "comfyui",
+      "rev": "e69da57e962a65f622777751f921ff5b496a054d",
+      "rev_count": 6,
+      "rev_date": "2025-11-26T21:59:40Z",
+      "scrape_date": "2025-11-27T02:36:43.958641182Z",
+      "stabilities": [
+        "stable",
+        "staging",
+        "unstable"
+      ],
+      "unfree": false,
+      "version": "0.3.75",
+      "outputs_to_install": [
+        "out"
+      ],
+      "outputs": {
+        "out": "/nix/store/b8wayaqm0lnq7mv37ab8ra1yfgs5h4yw-comfyui-0.3.75"
+      },
+      "system": "x86_64-darwin",
+      "group": "comfyui",
+      "priority": 1
+    },
+    {
+      "attr_path": "comfyui",
+      "broken": false,
+      "derivation": "/nix/store/1ila9n9w2x3qbisilzlfhwa0mfvqnhaf-comfyui-0.3.75.drv",
+      "description": "The most powerful and modular diffusion model GUI and backend",
+      "install_id": "comfyui",
+      "license": "GPL-3.0-only",
+      "locked_url": "https://github.com/barstoolbluz/build-comfyui?rev=e69da57e962a65f622777751f921ff5b496a054d",
+      "name": "comfyui-0.3.75",
+      "pname": "comfyui",
+      "rev": "e69da57e962a65f622777751f921ff5b496a054d",
+      "rev_count": 6,
+      "rev_date": "2025-11-26T21:59:40Z",
+      "scrape_date": "2025-11-27T02:36:43.958641692Z",
+      "stabilities": [
+        "stable",
+        "staging",
+        "unstable"
+      ],
+      "unfree": false,
+      "version": "0.3.75",
+      "outputs_to_install": [
+        "out"
+      ],
+      "outputs": {
+        "out": "/nix/store/c1kg2brlv44ra5x3r0wbvj0p54r1jpmd-comfyui-0.3.75"
+      },
+      "system": "x86_64-linux",
+      "group": "comfyui",
+      "priority": 1
+    },
+    {
+      "attr_path": "comfyui-extras",
+      "broken": false,
+      "derivation": "/nix/store/bs712jm52pl6881smm9532f15kilwsam-python3.13-comfyui-extras-0.3.75.drv",
+      "description": "Extra dependencies for ComfyUI custom nodes",
+      "install_id": "comfyui-extras",
+      "license": "MIT",
+      "locked_url": "https://github.com/barstoolbluz/build-comfyui-extras.git?rev=cad8a46b8abaf56d3fe2671e40f0871d24374dd9",
+      "name": "python3.13-comfyui-extras-0.3.75",
+      "pname": "comfyui-extras",
+      "rev": "cad8a46b8abaf56d3fe2671e40f0871d24374dd9",
+      "rev_count": 25,
+      "rev_date": "2025-11-27T17:08:15Z",
+      "scrape_date": "2025-11-27T17:39:07.847644027Z",
+      "stabilities": [
+        "stable",
+        "staging",
+        "unstable"
+      ],
+      "unfree": false,
+      "version": "0.3.75",
+      "outputs_to_install": [
+        "out"
+      ],
+      "outputs": {
+        "out": "/nix/store/xwv2gvzjp77zq6yyk478h95l1l6s6lm6-python3.13-comfyui-extras-0.3.75"
+      },
+      "system": "aarch64-darwin",
+      "group": "comfyui-extras",
+      "priority": 2
+    },
+    {
+      "attr_path": "comfyui-extras",
+      "broken": false,
+      "derivation": "/nix/store/2ansc1qdrw7v2bm2n2jdra5krknzbqnb-python3.13-comfyui-extras-0.3.75.drv",
+      "description": "Extra dependencies for ComfyUI custom nodes",
+      "install_id": "comfyui-extras",
+      "license": "MIT",
+      "locked_url": "https://github.com/barstoolbluz/build-comfyui-extras.git?rev=66fb4810e32efc15ad5654546437159adb0bc3b6",
+      "name": "python3.13-comfyui-extras-0.3.75",
+      "pname": "comfyui-extras",
+      "rev": "66fb4810e32efc15ad5654546437159adb0bc3b6",
+      "rev_count": 22,
+      "rev_date": "2025-11-27T16:43:36Z",
+      "scrape_date": "2025-11-27T17:39:07.847648213Z",
+      "stabilities": [
+        "stable",
+        "staging",
+        "unstable"
+      ],
+      "unfree": false,
+      "version": "0.3.75",
+      "outputs_to_install": [
+        "out"
+      ],
+      "outputs": {
+        "out": "/nix/store/4v2a9lalspqwzhg6rb7fannrhh5qd8x1-python3.13-comfyui-extras-0.3.75"
+      },
+      "system": "aarch64-linux",
+      "group": "comfyui-extras",
+      "priority": 2
+    },
+    {
+      "attr_path": "comfyui-extras",
+      "broken": false,
+      "derivation": "/nix/store/hq3bf19dlkdbk4aldpdb590d7l5dhb33-python3.13-comfyui-extras-0.3.75.drv",
+      "description": "Extra dependencies for ComfyUI custom nodes",
+      "install_id": "comfyui-extras",
+      "license": "MIT",
+      "locked_url": "https://github.com/barstoolbluz/build-comfyui-extras.git?rev=cad8a46b8abaf56d3fe2671e40f0871d24374dd9",
+      "name": "python3.13-comfyui-extras-0.3.75",
+      "pname": "comfyui-extras",
+      "rev": "cad8a46b8abaf56d3fe2671e40f0871d24374dd9",
+      "rev_count": 25,
+      "rev_date": "2025-11-27T17:08:15Z",
+      "scrape_date": "2025-11-27T17:39:07.847649034Z",
+      "stabilities": [
+        "stable",
+        "staging",
+        "unstable"
+      ],
+      "unfree": false,
+      "version": "0.3.75",
+      "outputs_to_install": [
+        "out"
+      ],
+      "outputs": {
+        "out": "/nix/store/565g2k3ldag3jrkr31i78mnw5hzxrg83-python3.13-comfyui-extras-0.3.75"
+      },
+      "system": "x86_64-darwin",
+      "group": "comfyui-extras",
+      "priority": 2
+    },
+    {
+      "attr_path": "comfyui-extras",
+      "broken": false,
+      "derivation": "/nix/store/xx4gs0ks81zkqrkqizmwxihbicd25hlx-python3.13-comfyui-extras-0.3.75.drv",
+      "description": "Extra dependencies for ComfyUI custom nodes",
+      "install_id": "comfyui-extras",
+      "license": "MIT",
+      "locked_url": "https://github.com/barstoolbluz/build-comfyui-extras?rev=66fb4810e32efc15ad5654546437159adb0bc3b6",
+      "name": "python3.13-comfyui-extras-0.3.75",
+      "pname": "comfyui-extras",
+      "rev": "66fb4810e32efc15ad5654546437159adb0bc3b6",
+      "rev_count": 22,
+      "rev_date": "2025-11-27T16:43:36Z",
+      "scrape_date": "2025-11-27T17:39:07.847649725Z",
+      "stabilities": [
+        "stable",
+        "staging",
+        "unstable"
+      ],
+      "unfree": false,
+      "version": "0.3.75",
+      "outputs_to_install": [
+        "out"
+      ],
+      "outputs": {
+        "out": "/nix/store/jg391sixp6l4xvzbcav6krmmg76nvr3k-python3.13-comfyui-extras-0.3.75"
+      },
+      "system": "x86_64-linux",
+      "group": "comfyui-extras",
+      "priority": 2
+    }
+  ]
+}
