@@ -3,6 +3,9 @@
   "manifest": {
     "version": 1,
     "install": {
+      "bat": {
+        "pkg-path": "bat"
+      },
       "comfyui": {
         "pkg-path": "flox/comfyui",
         "pkg-group": "comfyui",
@@ -12,6 +15,9 @@
         "pkg-path": "flox/comfyui-extras",
         "pkg-group": "comfyui-extras",
         "priority": 2
+      },
+      "curl": {
+        "pkg-path": "curl"
       }
     },
     "vars": {
@@ -25,12 +31,12 @@
       "COMFYUI_WORK_DIR": "$HOME/comfyui-work"
     },
     "hook": {
-      "on-activate": "  WORK_DIR=\"${HOME}/comfyui-work\"\n  mkdir -p \"$WORK_DIR/models\"/{checkpoints,clip,unet,vae,loras,upscale_models,controlnet,embeddings}\n  mkdir -p \"$WORK_DIR/output\"\n  mkdir -p \"$WORK_DIR/input\"\n  mkdir -p \"$WORK_DIR/temp\"\n  mkdir -p \"$WORK_DIR/custom_nodes\"\n  mkdir -p \"$WORK_DIR/default/workflows\"\n\n  EXTRA_PATHS_FILE=\"$FLOX_ENV_CACHE/extra_model_paths.yaml\"\n  if [ ! -f \"$EXTRA_PATHS_FILE\" ]; then\n    cat > \"$EXTRA_PATHS_FILE\" <<'EOF'\ncomfyui:\n  base_path: ~/comfyui-work/\n\n  checkpoints: models/checkpoints/\n  clip: models/clip/\n  unet: models/unet/\n  vae: models/vae/\n  loras: models/loras/\n  upscale_models: models/upscale_models/\n  controlnet: models/controlnet/\n  embeddings: models/embeddings/\n  custom_nodes: custom_nodes/\nEOF\n    echo \"✓ Created extra_model_paths.yaml\"\n  fi\n"
+      "on-activate": "  WORK_DIR=\"${HOME}/comfyui-work\"\n  mkdir -p \"$WORK_DIR/models\"/{checkpoints,clip,unet,vae,loras,upscale_models,controlnet,embeddings}\n  mkdir -p \"$WORK_DIR/output\"\n  mkdir -p \"$WORK_DIR/input\"\n  mkdir -p \"$WORK_DIR/temp\"\n  mkdir -p \"$WORK_DIR/custom_nodes\"\n  mkdir -p \"$WORK_DIR/default/workflows\"\n\n  EXTRA_PATHS_FILE=\"$FLOX_ENV_CACHE/extra_model_paths.yaml\"\n  if [ ! -f \"$EXTRA_PATHS_FILE\" ]; then\n    cat > \"$EXTRA_PATHS_FILE\" <<'EOF'\ncomfyui:\n  base_path: ~/comfyui-work/\n\n  checkpoints: models/checkpoints/\n  clip: models/clip/\n  unet: models/unet/\n  vae: models/vae/\n  loras: models/loras/\n  upscale_models: models/upscale_models/\n  controlnet: models/controlnet/\n  embeddings: models/embeddings/\n  custom_nodes: custom_nodes/\nEOF\n    echo \"✓ Created extra_model_paths.yaml\"\n  fi\n\n  # Fetch README.md if not present\n  README_FILE=\"$FLOX_ENV_PROJECT/README.md\"\n  if [ ! -f \"$README_FILE\" ]; then\n    if curl -fsSL https://raw.githubusercontent.com/barstoolbluz/floxenvs/main/comfyui/README.md -o \"$README_FILE\" 2>/dev/null; then\n      echo \"✓ Downloaded README.md (use 'helpf' to view)\"\n    fi\n  fi\n"
     },
     "profile": {
-      "common": "  echo \"\"\n  echo \"🎨 ComfyUI Environment Ready\"\n  echo \"━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\"\n  echo \"  Work Dir:   ${COMFYUI_WORK_DIR}\"\n  echo \"  Models:     ${COMFYUI_MODELS_DIR}\"\n  echo \"  Output:     ${COMFYUI_OUTPUT_DIR}\"\n  echo \"\"\n  echo \"Quick Commands:\"\n  echo \"  flox services start comfyui  → Start ComfyUI service\"\n  echo \"  flox services logs comfyui   → View service logs\"\n  echo \"  comfyui-download             → Download AI models\"\n  echo \"\"\n  echo \"Models Directory Structure:\"\n  echo \"  checkpoints/  clip/  unet/  vae/  loras/\"\n  echo \"  upscale_models/  controlnet/  embeddings/\"\n  echo \"━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\"\n  echo \"\"\n",
-      "bash": "  # helper aliases\n  alias cdwork=\"cd ${COMFYUI_WORK_DIR}\"\n  alias cdmodels=\"cd ${COMFYUI_MODELS_DIR}\"\n  alias cdoutput=\"cd ${COMFYUI_OUTPUT_DIR}\"\n",
-      "zsh": "  # helper aliases\n  alias cdwork=\"cd ${COMFYUI_WORK_DIR}\"\n  alias cdmodels=\"cd ${COMFYUI_MODELS_DIR}\"\n  alias cdoutput=\"cd ${COMFYUI_OUTPUT_DIR}\"\n"
+      "common": "  echo \"\"\n  echo \"🎨 ComfyUI Environment Ready\"\n  echo \"━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\"\n  echo \"  Work Dir:   ${COMFYUI_WORK_DIR}\"\n  echo \"  Models:     ${COMFYUI_MODELS_DIR}\"\n  echo \"  Output:     ${COMFYUI_OUTPUT_DIR}\"\n  echo \"\"\n  echo \"Quick Commands:\"\n  echo \"  flox services start comfyui  → Start ComfyUI service\"\n  echo \"  flox services logs comfyui   → View service logs\"\n  echo \"  comfyui-download             → Download AI models\"\n  echo \"  helpf                        → View environment documentation\"\n  echo \"\"\n  echo \"Models Directory Structure:\"\n  echo \"  checkpoints/  clip/  unet/  vae/  loras/\"\n  echo \"  upscale_models/  controlnet/  embeddings/\"\n  echo \"━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\"\n  echo \"\"\n",
+      "bash": "  # helper aliases\n  alias cdwork=\"cd ${COMFYUI_WORK_DIR}\"\n  alias cdmodels=\"cd ${COMFYUI_MODELS_DIR}\"\n  alias cdoutput=\"cd ${COMFYUI_OUTPUT_DIR}\"\n\n  # helpf - View environment documentation\n  helpf() {\n    local README_FILE=\"$FLOX_ENV_PROJECT/README.md\"\n    local README_URL=\"https://raw.githubusercontent.com/barstoolbluz/floxenvs/main/comfyui/README.md\"\n\n    if [ \"$1\" = \"--help\" ]; then\n      echo \"Usage: helpf [OPTIONS]\"\n      echo \"\"\n      echo \"View ComfyUI environment documentation\"\n      echo \"\"\n      echo \"Options:\"\n      echo \"  --force    Force download fresh copy from GitHub\"\n      echo \"  --help     Show this help message\"\n      echo \"\"\n      echo \"The README is cached locally and only downloaded if missing.\"\n      return 0\n    fi\n\n    if [ \"$1\" = \"--force\" ]; then\n      echo \"Fetching latest README.md from GitHub...\"\n      if curl -fsSL \"$README_URL\" -o \"$README_FILE\"; then\n        echo \"✓ Downloaded README.md\"\n      else\n        echo \"✗ Failed to download README.md\"\n        return 1\n      fi\n    elif [ ! -f \"$README_FILE\" ]; then\n      echo \"README.md not found, downloading...\"\n      if curl -fsSL \"$README_URL\" -o \"$README_FILE\"; then\n        echo \"✓ Downloaded README.md\"\n      else\n        echo \"✗ Failed to download README.md\"\n        return 1\n      fi\n    fi\n\n    if [ -f \"$README_FILE\" ]; then\n      bat --style=auto --paging=always \"$README_FILE\"\n    else\n      echo \"✗ README.md not found at $README_FILE\"\n      return 1\n    fi\n  }\n",
+      "zsh": "  # helper aliases\n  alias cdwork=\"cd ${COMFYUI_WORK_DIR}\"\n  alias cdmodels=\"cd ${COMFYUI_MODELS_DIR}\"\n  alias cdoutput=\"cd ${COMFYUI_OUTPUT_DIR}\"\n\n  # helpf - View environment documentation\n  helpf() {\n    local README_FILE=\"$FLOX_ENV_PROJECT/README.md\"\n    local README_URL=\"https://raw.githubusercontent.com/barstoolbluz/floxenvs/main/comfyui/README.md\"\n\n    if [ \"$1\" = \"--help\" ]; then\n      echo \"Usage: helpf [OPTIONS]\"\n      echo \"\"\n      echo \"View ComfyUI environment documentation\"\n      echo \"\"\n      echo \"Options:\"\n      echo \"  --force    Force download fresh copy from GitHub\"\n      echo \"  --help     Show this help message\"\n      echo \"\"\n      echo \"The README is cached locally and only downloaded if missing.\"\n      return 0\n    fi\n\n    if [ \"$1\" = \"--force\" ]; then\n      echo \"Fetching latest README.md from GitHub...\"\n      if curl -fsSL \"$README_URL\" -o \"$README_FILE\"; then\n        echo \"✓ Downloaded README.md\"\n      else\n        echo \"✗ Failed to download README.md\"\n        return 1\n      fi\n    elif [ ! -f \"$README_FILE\" ]; then\n      echo \"README.md not found, downloading...\"\n      if curl -fsSL \"$README_URL\" -o \"$README_FILE\"; then\n        echo \"✓ Downloaded README.md\"\n      else\n        echo \"✗ Failed to download README.md\"\n        return 1\n      fi\n    fi\n\n    if [ -f \"$README_FILE\" ]; then\n      bat --style=auto --paging=always \"$README_FILE\"\n    else\n      echo \"✗ README.md not found at $README_FILE\"\n      return 1\n    fi\n  }\n"
     },
     "options": {},
     "services": {
@@ -291,6 +297,260 @@
       "system": "x86_64-linux",
       "group": "comfyui-extras",
       "priority": 2
+    },
+    {
+      "attr_path": "bat",
+      "broken": false,
+      "derivation": "/nix/store/bb8m193f4azrby6x67709vd84bhammig-bat-0.26.0.drv",
+      "description": "Cat(1) clone with syntax highlighting and Git integration",
+      "install_id": "bat",
+      "license": "[ Apache-2.0, MIT ]",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=5ae3b07d8d6527c42f17c876e404993199144b6a",
+      "name": "bat-0.26.0",
+      "pname": "bat",
+      "rev": "5ae3b07d8d6527c42f17c876e404993199144b6a",
+      "rev_count": 901419,
+      "rev_date": "2025-11-24T06:39:56Z",
+      "scrape_date": "2025-11-26T02:53:23.525715Z",
+      "stabilities": [
+        "unstable"
+      ],
+      "unfree": false,
+      "version": "0.26.0",
+      "outputs_to_install": [
+        "out"
+      ],
+      "outputs": {
+        "out": "/nix/store/09p75pqsy6ybv79msnwikxf2n3lzv60b-bat-0.26.0"
+      },
+      "system": "aarch64-darwin",
+      "group": "toplevel",
+      "priority": 5
+    },
+    {
+      "attr_path": "bat",
+      "broken": false,
+      "derivation": "/nix/store/3rx7bp6gn6slylwwwgads7h8n7h7fd45-bat-0.26.0.drv",
+      "description": "Cat(1) clone with syntax highlighting and Git integration",
+      "install_id": "bat",
+      "license": "[ Apache-2.0, MIT ]",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=5ae3b07d8d6527c42f17c876e404993199144b6a",
+      "name": "bat-0.26.0",
+      "pname": "bat",
+      "rev": "5ae3b07d8d6527c42f17c876e404993199144b6a",
+      "rev_count": 901419,
+      "rev_date": "2025-11-24T06:39:56Z",
+      "scrape_date": "2025-11-26T03:02:38.142174Z",
+      "stabilities": [
+        "unstable"
+      ],
+      "unfree": false,
+      "version": "0.26.0",
+      "outputs_to_install": [
+        "out"
+      ],
+      "outputs": {
+        "out": "/nix/store/f0nz9yqd2ys8gjca0kdyk1ahm15dg1vc-bat-0.26.0"
+      },
+      "system": "aarch64-linux",
+      "group": "toplevel",
+      "priority": 5
+    },
+    {
+      "attr_path": "bat",
+      "broken": false,
+      "derivation": "/nix/store/ln9adzycljj5m8jjcd3cr7chcn78i136-bat-0.26.0.drv",
+      "description": "Cat(1) clone with syntax highlighting and Git integration",
+      "install_id": "bat",
+      "license": "[ Apache-2.0, MIT ]",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=5ae3b07d8d6527c42f17c876e404993199144b6a",
+      "name": "bat-0.26.0",
+      "pname": "bat",
+      "rev": "5ae3b07d8d6527c42f17c876e404993199144b6a",
+      "rev_count": 901419,
+      "rev_date": "2025-11-24T06:39:56Z",
+      "scrape_date": "2025-11-26T03:12:23.508970Z",
+      "stabilities": [
+        "unstable"
+      ],
+      "unfree": false,
+      "version": "0.26.0",
+      "outputs_to_install": [
+        "out"
+      ],
+      "outputs": {
+        "out": "/nix/store/nybsshcfpq7x9mmi27lqksbawdkkgvps-bat-0.26.0"
+      },
+      "system": "x86_64-darwin",
+      "group": "toplevel",
+      "priority": 5
+    },
+    {
+      "attr_path": "bat",
+      "broken": false,
+      "derivation": "/nix/store/9ikxgf7cmwg434l8ig00wzykjyqc9sq7-bat-0.26.0.drv",
+      "description": "Cat(1) clone with syntax highlighting and Git integration",
+      "install_id": "bat",
+      "license": "[ Apache-2.0, MIT ]",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=5ae3b07d8d6527c42f17c876e404993199144b6a",
+      "name": "bat-0.26.0",
+      "pname": "bat",
+      "rev": "5ae3b07d8d6527c42f17c876e404993199144b6a",
+      "rev_count": 901419,
+      "rev_date": "2025-11-24T06:39:56Z",
+      "scrape_date": "2025-11-26T03:21:45.170921Z",
+      "stabilities": [
+        "unstable"
+      ],
+      "unfree": false,
+      "version": "0.26.0",
+      "outputs_to_install": [
+        "out"
+      ],
+      "outputs": {
+        "out": "/nix/store/7hvin9iffbz3krad04nsb06frc4vcznl-bat-0.26.0"
+      },
+      "system": "x86_64-linux",
+      "group": "toplevel",
+      "priority": 5
+    },
+    {
+      "attr_path": "curl",
+      "broken": false,
+      "derivation": "/nix/store/m32hif61caakwkghi7wqagqd7xhyqi72-curl-8.17.0.drv",
+      "description": "Command line tool for transferring files with URL syntax",
+      "install_id": "curl",
+      "license": "curl",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=5ae3b07d8d6527c42f17c876e404993199144b6a",
+      "name": "curl-8.17.0",
+      "pname": "curl",
+      "rev": "5ae3b07d8d6527c42f17c876e404993199144b6a",
+      "rev_count": 901419,
+      "rev_date": "2025-11-24T06:39:56Z",
+      "scrape_date": "2025-11-26T02:53:23.917873Z",
+      "stabilities": [
+        "unstable"
+      ],
+      "unfree": false,
+      "version": "8.17.0",
+      "outputs_to_install": [
+        "bin",
+        "man"
+      ],
+      "outputs": {
+        "bin": "/nix/store/qfwqcndy8bji6xww0gizclf2nqi2qpph-curl-8.17.0-bin",
+        "dev": "/nix/store/ydp55g2mbd6rk6lfw0krkk3jwgdiqj5d-curl-8.17.0-dev",
+        "devdoc": "/nix/store/8s884m82fmrbiyz8malglqc4sd632dkc-curl-8.17.0-devdoc",
+        "man": "/nix/store/rk815zvrhwzbi7c6d589v2mhxzyzb400-curl-8.17.0-man",
+        "out": "/nix/store/yxv8fxaz0fyhc31dv3rz89kc50zw5hgj-curl-8.17.0"
+      },
+      "system": "aarch64-darwin",
+      "group": "toplevel",
+      "priority": 5
+    },
+    {
+      "attr_path": "curl",
+      "broken": false,
+      "derivation": "/nix/store/yj9yps30x00a54zi1wfhz3qw8shwajmp-curl-8.17.0.drv",
+      "description": "Command line tool for transferring files with URL syntax",
+      "install_id": "curl",
+      "license": "curl",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=5ae3b07d8d6527c42f17c876e404993199144b6a",
+      "name": "curl-8.17.0",
+      "pname": "curl",
+      "rev": "5ae3b07d8d6527c42f17c876e404993199144b6a",
+      "rev_count": 901419,
+      "rev_date": "2025-11-24T06:39:56Z",
+      "scrape_date": "2025-11-26T03:02:38.721672Z",
+      "stabilities": [
+        "unstable"
+      ],
+      "unfree": false,
+      "version": "8.17.0",
+      "outputs_to_install": [
+        "bin",
+        "man"
+      ],
+      "outputs": {
+        "bin": "/nix/store/4x19j6zihdl6pya63xs8g360f2r614sx-curl-8.17.0-bin",
+        "debug": "/nix/store/5hmbdk99knmbg8b0fzh96bv6bkcf6v5i-curl-8.17.0-debug",
+        "dev": "/nix/store/iqs9mjscns3h5npgkrhgr5xa7qzwd0si-curl-8.17.0-dev",
+        "devdoc": "/nix/store/1fwncv08c8g78k3hj3cj375vx92ndrp8-curl-8.17.0-devdoc",
+        "man": "/nix/store/b29qbmbfvzkm34k0jnj8ykqg2gzj3rdy-curl-8.17.0-man",
+        "out": "/nix/store/b0a6qc92vybjiggh0kg387cg0zp3kl6j-curl-8.17.0"
+      },
+      "system": "aarch64-linux",
+      "group": "toplevel",
+      "priority": 5
+    },
+    {
+      "attr_path": "curl",
+      "broken": false,
+      "derivation": "/nix/store/b4b30fps6wdnyb5bwvm6hzci57vlimr5-curl-8.17.0.drv",
+      "description": "Command line tool for transferring files with URL syntax",
+      "install_id": "curl",
+      "license": "curl",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=5ae3b07d8d6527c42f17c876e404993199144b6a",
+      "name": "curl-8.17.0",
+      "pname": "curl",
+      "rev": "5ae3b07d8d6527c42f17c876e404993199144b6a",
+      "rev_count": 901419,
+      "rev_date": "2025-11-24T06:39:56Z",
+      "scrape_date": "2025-11-26T03:12:23.895346Z",
+      "stabilities": [
+        "unstable"
+      ],
+      "unfree": false,
+      "version": "8.17.0",
+      "outputs_to_install": [
+        "bin",
+        "man"
+      ],
+      "outputs": {
+        "bin": "/nix/store/w2336wv560g1n58cwashmmczdn3bfkq1-curl-8.17.0-bin",
+        "dev": "/nix/store/39zfdgq9kg3mb4sycf8pj4pdssrzki6c-curl-8.17.0-dev",
+        "devdoc": "/nix/store/ipa7v9z7pjcnnv0fmdya1fldcxv0a28z-curl-8.17.0-devdoc",
+        "man": "/nix/store/i6xmhcan8g4abda7ivv20nvwxrsssjqj-curl-8.17.0-man",
+        "out": "/nix/store/x9gyg634fi8mgcyay9mqa1ral7xg72fm-curl-8.17.0"
+      },
+      "system": "x86_64-darwin",
+      "group": "toplevel",
+      "priority": 5
+    },
+    {
+      "attr_path": "curl",
+      "broken": false,
+      "derivation": "/nix/store/nxfmgcdlh44nnd17z62r7588waj6lqln-curl-8.17.0.drv",
+      "description": "Command line tool for transferring files with URL syntax",
+      "install_id": "curl",
+      "license": "curl",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=5ae3b07d8d6527c42f17c876e404993199144b6a",
+      "name": "curl-8.17.0",
+      "pname": "curl",
+      "rev": "5ae3b07d8d6527c42f17c876e404993199144b6a",
+      "rev_count": 901419,
+      "rev_date": "2025-11-24T06:39:56Z",
+      "scrape_date": "2025-11-26T03:21:45.771655Z",
+      "stabilities": [
+        "unstable"
+      ],
+      "unfree": false,
+      "version": "8.17.0",
+      "outputs_to_install": [
+        "bin",
+        "man"
+      ],
+      "outputs": {
+        "bin": "/nix/store/0rfz69vp1nl0q2hxzig20hc60sk72z62-curl-8.17.0-bin",
+        "debug": "/nix/store/h1fxw0xrifxvbhcp7b8hxsgirxxxfzav-curl-8.17.0-debug",
+        "dev": "/nix/store/ikmdk37frjdblkba3wl3xws2wwgln17x-curl-8.17.0-dev",
+        "devdoc": "/nix/store/jm6irg81cc0hqg43l39lkxr6pb0w2xk5-curl-8.17.0-devdoc",
+        "man": "/nix/store/ijd0yybyzwm98d3q6x7a9cyixgxk0i5d-curl-8.17.0-man",
+        "out": "/nix/store/8idis3j5l13c3x74jl8xly0k4qyk9mx6-curl-8.17.0"
+      },
+      "system": "x86_64-linux",
+      "group": "toplevel",
+      "priority": 5
     }
   ]
 }
