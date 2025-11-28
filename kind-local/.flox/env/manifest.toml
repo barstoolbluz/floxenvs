@@ -1,0 +1,291 @@
+## Flox Environment Manifest -----------------------------------------
+##
+##   _Everything_ you need to know about the _manifest_ is here:
+##
+##               https://flox.dev/docs/concepts/manifest
+##
+## -------------------------------------------------------------------
+# Flox manifest version managed by Flox CLI
+version = 1
+
+
+## Install Packages --------------------------------------------------
+##  $ flox install gum  <- puts a package in [install] section below
+##  $ flox search gum   <- search for a package
+##  $ flox show gum     <- show all versions of a package
+## -------------------------------------------------------------------
+[install]
+bat.pkg-path = "bat"
+curl.pkg-path = "curl"
+kind.pkg-path = "kind"
+kubectl.pkg-path = "kubectl"
+k9s.pkg-path = "k9s"
+stern.pkg-path = "stern"
+gum.pkg-path = "gum"
+jq.pkg-path = "jq"
+helm.pkg-path = "helm"
+helm.systems = ["aarch64-linux", "x86_64-linux"]
+coreutils.pkg-path = "coreutils"
+# gum.pkg-path = "gum"
+# gum.version = "^0.14.5"
+
+
+## Environment Variables ---------------------------------------------
+##  ... available for use in the activated environment
+##      as well as [hook], [profile] scripts and [services] below.
+## -------------------------------------------------------------------
+[vars]
+# INTRO_MESSAGE = "It's gettin' Flox in here"
+
+
+## Activation Hook ---------------------------------------------------
+##  ... run by _bash_ shell when you run 'flox activate'.
+## -------------------------------------------------------------------
+[hook]
+on-activate = '''
+# Show the welcome message
+show_kind_help() {
+    # Get current cluster context     fi
+fi
+
+  # Fetch README.md if not present
+  README_FILE="$FLOX_ENV_PROJECT/README.md"
+  if [ ! -f "$README_FILE" ]; then
+    if curl -fsSL https://raw.githubusercontent.com/barstoolbluz/floxenvs/main/kind/README.md -o "$README_FILE" 2>/dev/null; then
+      echo "✓ Downloaded README.md (use 'helpf' to view)"
+    fi
+  fi
+'''
+
+[profile]
+bash = '''
+# Source the bootstrap function
+if [ -f "$FLOX_ENV_CACHE/kind_wizard.bash" ]; then
+    source "$FLOX_ENV_CACHE/kind_wizard.bash"
+fi
+
+create-cluster() {
+    local cluster_name=${1:-$(gum input --placeholder "cluster name")}
+    kind create cluster --name "$cluster_name" --config "${cluster_name}-kind.yaml"
+}
+
+delete-cluster() {
+    local cluster_name=${1:-$(gum input --placeholder "cluster to delete")}
+    kind delete cluster --name "$cluster_name"
+}
+
+# View environment documentation
+
+  helpf() {
+    local README_FILE="$FLOX_ENV_PROJECT/README.md"
+    local README_URL="https://raw.githubusercontent.com/barstoolbluz/floxenvs/main/kind/README.md"
+
+    if [ "$1" = "--help" ]; then
+      echo "Usage: helpf [OPTIONS]"
+      echo ""
+      echo "View environment documentation"
+      echo ""
+      echo "Options:"
+      echo "  --force    Force download fresh copy from GitHub"
+      echo "  --help     Show this help message"
+      echo ""
+      echo "The README is cached locally and only downloaded if missing."
+      return 0
+    fi
+
+    if [ "$1" = "--force" ]; then
+      echo "Fetching latest README.md from GitHub..."
+      if curl -fsSL "$README_URL" -o "$README_FILE"; then
+        echo "✓ Downloaded README.md"
+      else
+        echo "✗ Failed to download README.md"
+        return 1
+      fi
+    elif [ ! -f "$README_FILE" ]; then
+      echo "README.md not found, downloading..."
+      if curl -fsSL "$README_URL" -o "$README_FILE"; then
+        echo "✓ Downloaded README.md"
+      else
+        echo "✗ Failed to download README.md"
+        return 1
+      fi
+    fi
+
+    if [ -f "$README_FILE" ]; then
+      bat --style=auto --paging=always "$README_FILE"
+    else
+      echo "✗ README.md not found at $README_FILE"
+      return 1
+    fi
+  }
+  export -f helpf
+'''
+
+zsh = '''
+# Source the kind_wizard function
+if [ -f "$FLOX_ENV_CACHE/kind_wizard.zsh" ]; then
+    source "$FLOX_ENV_CACHE/kind_wizard.zsh"
+fi
+
+create-cluster() {
+    local cluster_name=${1:-$(gum input --placeholder "cluster name")}
+    kind create cluster --name "$cluster_name" --config "${cluster_name}-kind.yaml"
+}
+
+delete-cluster() {
+    local cluster_name=${1:-$(gum input --placeholder "cluster to delete")}
+    kind delete cluster --name "$cluster_name"
+}
+
+# View environment documentation
+
+  helpf() {
+    local README_FILE="$FLOX_ENV_PROJECT/README.md"
+    local README_URL="https://raw.githubusercontent.com/barstoolbluz/floxenvs/main/kind/README.md"
+
+    if [ "$1" = "--help" ]; then
+      echo "Usage: helpf [OPTIONS]"
+      echo ""
+      echo "View environment documentation"
+      echo ""
+      echo "Options:"
+      echo "  --force    Force download fresh copy from GitHub"
+      echo "  --help     Show this help message"
+      echo ""
+      echo "The README is cached locally and only downloaded if missing."
+      return 0
+    fi
+
+    if [ "$1" = "--force" ]; then
+      echo "Fetching latest README.md from GitHub..."
+      if curl -fsSL "$README_URL" -o "$README_FILE"; then
+        echo "✓ Downloaded README.md"
+      else
+        echo "✗ Failed to download README.md"
+        return 1
+      fi
+    elif [ ! -f "$README_FILE" ]; then
+      echo "README.md not found, downloading..."
+      if curl -fsSL "$README_URL" -o "$README_FILE"; then
+        echo "✓ Downloaded README.md"
+      else
+        echo "✗ Failed to download README.md"
+        return 1
+      fi
+    fi
+
+    if [ -f "$README_FILE" ]; then
+      bat --style=auto --paging=always "$README_FILE"
+    else
+      echo "✗ README.md not found at $README_FILE"
+      return 1
+    fi
+  }
+'''
+
+fish = '''
+# Source the kind_wizard function
+if test -f "$FLOX_ENV_CACHE/kind_wizard.fish"
+    source "$FLOX_ENV_CACHE/kind_wizard.fish"
+end
+
+function create-cluster
+    set cluster_name $argv[1]
+    if test -z "$cluster_name"
+        set cluster_name (gum input --placeholder "cluster name")
+    end
+    kind create cluster --name "$cluster_name" --config "$cluster_name-kind.yaml"
+end
+
+function delete-cluster
+    set cluster_name $argv[1]
+    if test -z "$cluster_name"
+        set cluster_name (gum input --placeholder "cluster to delete")
+    end
+    kind delete cluster --name "$cluster_name"
+end
+
+# View environment documentationend
+
+  # Fetch README if missing or --force specified
+  if test "$force_fetch" = true; or test ! -s "$README_FILE"
+    if curl -fsSL "$README_URL" -o "$README_FILE" 2>/dev/null
+      test "$force_fetch" = true; and echo "README refreshed from $README_URL"
+    else
+      echo "Warning: Failed to fetch README from $README_URL"
+      test ! -s "$README_FILE"; and return 1
+    end
+  end
+
+  # Display with bat (if available) or cat
+  if command -v bat >/dev/null 2>&1
+    bat --paging=always "$README_FILE"
+  else
+    cat "$README_FILE"
+  end
+end
+
+function helpf
+    set README_FILE "$FLOX_ENV_PROJECT/README.md"
+    set README_URL "https://raw.githubusercontent.com/barstoolbluz/floxenvs/main/kind/README.md"
+
+    if test "$argv[1]" = "--help"
+        echo "Usage: helpf [OPTIONS]"
+        echo ""
+        echo "View environment documentation"
+        echo ""
+        echo "Options:"
+        echo "  --force    Force download fresh copy from GitHub"
+        echo "  --help     Show this help message"
+        echo ""
+        echo "The README is cached locally and only downloaded if missing."
+        return 0
+    end
+
+    if test "$argv[1]" = "--force"
+        echo "Fetching latest README.md from GitHub..."
+        if curl -fsSL "$README_URL" -o "$README_FILE"
+            echo "✓ Downloaded README.md"
+        else
+            echo "✗ Failed to download README.md"
+            return 1
+        end
+    else if not test -f "$README_FILE"
+        echo "README.md not found, downloading..."
+        if curl -fsSL "$README_URL" -o "$README_FILE"
+            echo "✓ Downloaded README.md"
+        else
+            echo "✗ Failed to download README.md"
+            return 1
+        end
+    end
+
+    if test -f "$README_FILE"
+        bat --style=auto --paging=always "$README_FILE"
+    else
+        echo "✗ README.md not found at $README_FILE"
+        return 1
+    end
+end
+'''
+
+## Services ----------------------------------------------------------
+##  $ flox services start             <- Starts all services
+##  $ flox services status            <- Status of running services
+##  $ flox activate --start-services  <- Activates & starts all
+## -------------------------------------------------------------------
+[services]
+# myservice.command = "python3 -m http.server"
+
+
+## Other Environment Options -----------------------------------------
+[options]
+# Systems that environment is compatible with
+systems = [
+  "aarch64-darwin",
+  "aarch64-linux",
+  "x86_64-darwin",
+  "x86_64-linux",
+]
+# Uncomment to disable CUDA detection.
+# cuda-detection = false

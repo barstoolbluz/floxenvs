@@ -9,6 +9,10 @@ airflow.systems = ["x86_64-linux"]
 kubectl.pkg-path = "kubectl"
 n8n.pkg-path = "n8n"
 
+# For helpf documentation viewer
+bat.pkg-path = "bat"
+curl.pkg-path = "curl"
+
 [include]
 environments = [
   { remote = "barstoolbluz/kind-headless" },
@@ -166,7 +170,18 @@ echo "Commands:"
 echo "  flox activate -s        Setup Kubernetes RBAC"
 echo "  k8s-airflow-info        Show configuration"
 echo "  k8s-test-pod            Test pod creation"
+echo "  helpf                   View environment documentation"
 echo ""
+
+fi
+
+  # Fetch README.md if not present
+  README_FILE="$FLOX_ENV_PROJECT/README.md"
+  if [ ! -f "$README_FILE" ]; then
+    if curl -fsSL https://raw.githubusercontent.com/barstoolbluz/floxenvs/main/airflow-k8s-executor/README.md -o "$README_FILE" 2>/dev/null; then
+      echo "✓ Downloaded README.md (use 'helpf' to view)"
+    fi
+  fi
 '''
 
 [services]
@@ -278,6 +293,50 @@ k8s-test-pod() {
     fi
 }
 export -f k8s-test-pod
+
+  helpf() {
+    local README_FILE="$FLOX_ENV_PROJECT/README.md"
+    local README_URL="https://raw.githubusercontent.com/barstoolbluz/floxenvs/main/airflow-k8s-executor/README.md"
+
+    if [ "$1" = "--help" ]; then
+      echo "Usage: helpf [OPTIONS]"
+      echo ""
+      echo "View environment documentation"
+      echo ""
+      echo "Options:"
+      echo "  --force    Force download fresh copy from GitHub"
+      echo "  --help     Show this help message"
+      echo ""
+      echo "The README is cached locally and only downloaded if missing."
+      return 0
+    fi
+
+    if [ "$1" = "--force" ]; then
+      echo "Fetching latest README.md from GitHub..."
+      if curl -fsSL "$README_URL" -o "$README_FILE"; then
+        echo "✓ Downloaded README.md"
+      else
+        echo "✗ Failed to download README.md"
+        return 1
+      fi
+    elif [ ! -f "$README_FILE" ]; then
+      echo "README.md not found, downloading..."
+      if curl -fsSL "$README_URL" -o "$README_FILE"; then
+        echo "✓ Downloaded README.md"
+      else
+        echo "✗ Failed to download README.md"
+        return 1
+      fi
+    fi
+
+    if [ -f "$README_FILE" ]; then
+      bat --style=auto --paging=always "$README_FILE"
+    else
+      echo "✗ README.md not found at $README_FILE"
+      return 1
+    fi
+  }
+  export -f helpf
 '''
 
 zsh = '''
@@ -321,6 +380,7 @@ k8s-airflow-info() {
     echo "  kubectl logs <pod> -n $AIRFLOW_KUBE_NAMESPACE     View pod logs"
     echo "  k8s-test-pod                                       Test pod creation"
     echo "  flox services logs k8s-setup                       View setup logs"
+    echo "  helpf                                              View environment documentation"
 }
 
 k8s-test-pod() {
@@ -346,6 +406,49 @@ k8s-test-pod() {
         echo "Check RBAC with: kubectl get sa airflow -n $AIRFLOW_KUBE_NAMESPACE"
     fi
 }
+
+  helpf() {
+    local README_FILE="$FLOX_ENV_PROJECT/README.md"
+    local README_URL="https://raw.githubusercontent.com/barstoolbluz/floxenvs/main/airflow-k8s-executor/README.md"
+
+    if [ "$1" = "--help" ]; then
+      echo "Usage: helpf [OPTIONS]"
+      echo ""
+      echo "View environment documentation"
+      echo ""
+      echo "Options:"
+      echo "  --force    Force download fresh copy from GitHub"
+      echo "  --help     Show this help message"
+      echo ""
+      echo "The README is cached locally and only downloaded if missing."
+      return 0
+    fi
+
+    if [ "$1" = "--force" ]; then
+      echo "Fetching latest README.md from GitHub..."
+      if curl -fsSL "$README_URL" -o "$README_FILE"; then
+        echo "✓ Downloaded README.md"
+      else
+        echo "✗ Failed to download README.md"
+        return 1
+      fi
+    elif [ ! -f "$README_FILE" ]; then
+      echo "README.md not found, downloading..."
+      if curl -fsSL "$README_URL" -o "$README_FILE"; then
+        echo "✓ Downloaded README.md"
+      else
+        echo "✗ Failed to download README.md"
+        return 1
+      fi
+    fi
+
+    if [ -f "$README_FILE" ]; then
+      bat --style=auto --paging=always "$README_FILE"
+    else
+      echo "✗ README.md not found at $README_FILE"
+      return 1
+    fi
+  }
 '''
 
 fish = '''
@@ -389,6 +492,7 @@ function k8s-airflow-info
     echo "  kubectl logs <pod> -n $AIRFLOW_KUBE_NAMESPACE     View pod logs"
     echo "  k8s-test-pod                                       Test pod creation"
     echo "  flox services logs k8s-setup                       View setup logs"
+    echo "  helpf                                              View environment documentation"
 end
 
 function k8s-test-pod
@@ -412,6 +516,49 @@ function k8s-test-pod
         echo ""
         echo "❌ Pod creation failed"
         echo "Check RBAC with: kubectl get sa airflow -n $AIRFLOW_KUBE_NAMESPACE"
+    end
+end
+
+function helpf
+    set README_FILE "$FLOX_ENV_PROJECT/README.md"
+    set README_URL "https://raw.githubusercontent.com/barstoolbluz/floxenvs/main/airflow-k8s-executor/README.md"
+
+    if test "$argv[1]" = "--help"
+        echo "Usage: helpf [OPTIONS]"
+        echo ""
+        echo "View environment documentation"
+        echo ""
+        echo "Options:"
+        echo "  --force    Force download fresh copy from GitHub"
+        echo "  --help     Show this help message"
+        echo ""
+        echo "The README is cached locally and only downloaded if missing."
+        return 0
+    end
+
+    if test "$argv[1]" = "--force"
+        echo "Fetching latest README.md from GitHub..."
+        if curl -fsSL "$README_URL" -o "$README_FILE"
+            echo "✓ Downloaded README.md"
+        else
+            echo "✗ Failed to download README.md"
+            return 1
+        end
+    else if not test -f "$README_FILE"
+        echo "README.md not found, downloading..."
+        if curl -fsSL "$README_URL" -o "$README_FILE"
+            echo "✓ Downloaded README.md"
+        else
+            echo "✗ Failed to download README.md"
+            return 1
+        end
+    end
+
+    if test -f "$README_FILE"
+        bat --style=auto --paging=always "$README_FILE"
+    else
+        echo "✗ README.md not found at $README_FILE"
+        return 1
     end
 end
 '''

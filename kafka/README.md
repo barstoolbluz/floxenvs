@@ -1,350 +1,425 @@
-# Apache Kafka (KRaft Mode) - Interactive Environment
+# 🚀 Flox Environment for Apache Kafka Event Streaming
 
-Interactive development environment for Apache Kafka using KRaft mode (no ZooKeeper required).
+This `kafka-headless` environment is designed for CI, headless setups, or scripted workflows—i.e., any non-interactive context.
 
-## Features
+## ✨ Features
 
-- **KRaft Mode Support** - Kafka without ZooKeeper using Raft consensus protocol
-- **Multiple Deployment Modes** - Combined (single-node), Controller-only, Broker-only, or Client-only
-- **Interactive Configuration Wizard** - Guided setup using `gum` for optimal UX
-- **Cross-Shell Compatibility** - Works with Bash, ZSH, and Fish shells
-- **Helper Functions** - Convenient commands for common Kafka operations
-- **Service Management** - Integrated Flox services for Kafka server lifecycle
-- **Persistent Storage** - Configuration and data stored in `$FLOX_ENV_CACHE`
+- Dynamic environment variable configuration for KRaft mode (broker, controller, or combined)
+- Intelligent auto-detection of network settings with manual override capabilities
+- Hash-based configuration detection for automatic state reset when settings change
+- Support for various client operations (producers and consumers)
+- Cross-platform compatibility (Linux x86_64 and ARM64, macOS)
+- Flox service management for Kafka resources
+- Default configurations that "just work" with minimal setup
 
-## Quick Start
+## 🧰 Included Tools
 
-### First Time Setup
+The environment includes these essential tools:
 
-```bash
-cd kafka
-flox activate
-# The configuration wizard runs automatically on first activation
-# Follow the prompts to configure your Kafka deployment
+- `kafka` - Apache Kafka distributed streaming platform
+- `jdk` - Java Development Kit, required to run Kafka
+- `bat` - Better `cat` for viewing this `README.md`
+- `curl` - HTTP client for downloading this `README.md` + other uses
+- `jq` - JSON processor for supporting Kafka helper functions
+- `gum` - Shell script toolkit for Kafka helper functions
+- `gawk` - GNU implementation of `awk` # included for macOS/Darwin compatibility
+- `coreutils` - GNU `coreutils` # idem
+- `gnugrep` - GNU implementation of `grep` # idem
+
+## 🏁 Getting Started
+
+### 📋 Prerequisites
+
+- [Flox](https://flox.dev/get) installed on your system
+- That's it.
+
+### 💻 Installation & Activation
+
+Get started with:
+
+```sh
+# Clone the repo
+git clone https://github.com/barstoolbluz/floxenvs && cd floxenvs/kafka-headless
+
+# Activate the environment
+flox activate -s # uses hard-coded defaults (kraft-combined mode)
 ```
 
-### Start Kafka Service
+## 📝 Usage Scenarios
+
+### Setting Up a KRaft Combined Node (Broker + Controller)
+
+To configure a machine as a combined Kafka broker and controller:
 
 ```bash
-# Start with services enabled
+# Set combined node configuration
+KAFKA_MODE="kraft-combined" \
+KAFKA_NODE_ID="1" \
+KAFKA_HOST="localhost" \
+KAFKA_PORT="9092" \
+KRAFT_CONTROLLER_PORT="9093" \
+KAFKA_CLUSTER_ID="EBzt0KoZR5ynZ9hTiJQuFA" \
+KAFKA_REPLICATION_FACTOR="1" \
+KAFKA_NUM_PARTITIONS="1" \
+KAFKA_HEAP_OPTS="-Xmx512M -Xms512M" \
 flox activate -s
-
-# Or start service from within activated environment
-flox services start kafka
 ```
 
-### Using Kafka
+One-liner:
+```bash
+KAFKA_MODE=kraft-combined KAFKA_NODE_ID=1 KAFKA_HOST=localhost KAFKA_PORT=9092 KRAFT_CONTROLLER_PORT=9093 KAFKA_REPLICATION_FACTOR=1 KAFKA_NUM_PARTITIONS=1 KAFKA_HEAP_OPTS="-Xmx512M -Xms512M" flox activate -s
+```
+
+### Setting Up a KRaft Controller-Only Node
+
+To configure a machine as a Kafka controller node:
 
 ```bash
-# Create a topic
-kreate my-topic 3 1
-
-# Produce messages
-produce my-topic
-
-# Consume messages
-konsume my-topic
-
-# List all topics
-list
+# Set controller configuration
+KAFKA_MODE="kraft-controller" \
+KAFKA_NODE_ID="1" \
+KAFKA_HOST="localhost" \
+KRAFT_CONTROLLER_PORT="9093" \
+KAFKA_CLUSTER_ID="EBzt0KoZR5ynZ9hTiJQuFA" \
+KAFKA_HEAP_OPTS="-Xmx512M -Xms512M" \
+flox activate -s
 ```
 
-## Deployment Modes
+One-liner:
+```bash
+KAFKA_MODE=kraft-controller KAFKA_NODE_ID=1 KAFKA_HOST=localhost KRAFT_CONTROLLER_PORT=9093 KAFKA_HEAP_OPTS="-Xmx512M -Xms512M" flox activate -s
+```
 
-The environment supports four deployment modes:
+### Setting Up a KRaft Broker-Only Node
 
-1. **kraft-combined** (default)
-   - Single-node deployment with combined controller and broker roles
-   - Ideal for development and testing
-   - Default ports: 9092 (broker), 9093 (controller)
-
-2. **kraft-controller**
-   - Controller-only node for distributed KRaft clusters
-   - Participates in metadata quorum but doesn't handle client requests
-   - Requires configuring quorum voters
-
-3. **kraft-broker**
-   - Broker-only node for distributed KRaft clusters
-   - Handles client produce/consume requests
-   - Connects to remote controllers
-
-4. **client**
-   - Client-only mode for connecting to existing Kafka clusters
-   - No local Kafka server started
-   - Provides helper functions to interact with remote clusters
-
-## Configuration
-
-### Interactive Wizard
-
-On first activation, the configuration wizard runs automatically. It will prompt you to configure:
-
-- **Deployment Mode**: kraft-combined, kraft-controller, kraft-broker, or client
-- **Network Settings**: Host, broker port, controller port
-- **Cluster Settings**: Node ID, cluster ID, process roles
-- **Advanced Options**: Log directories, JMX settings, performance tuning
-
-### Reconfiguring
-
-To reconfigure your environment, run:
+To configure a machine as a Kafka broker node:
 
 ```bash
-bootstrap
+# Set broker configuration
+KAFKA_MODE="kraft-broker" \
+KAFKA_NODE_ID="2" \
+KAFKA_HOST="localhost" \
+KAFKA_PORT="9092" \
+CONTROLLER_QUORUM="1@controller-host:9093" \
+KAFKA_CLUSTER_ID="EBzt0KoZR5ynZ9hTiJQuFA" \
+KAFKA_REPLICATION_FACTOR="1" \
+KAFKA_NUM_PARTITIONS="1" \
+KAFKA_HEAP_OPTS="-Xmx512M -Xms512M" \
+flox activate -s
 ```
 
-This will re-run the configuration wizard and update your saved settings.
+One-liner:
+```bash
+KAFKA_MODE=kraft-broker KAFKA_NODE_ID=2 KAFKA_HOST=localhost KAFKA_PORT=9092 CONTROLLER_QUORUM="1@controller-host:9093" KAFKA_CLUSTER_ID="EBzt0KoZR5ynZ9hTiJQuFA" KAFKA_REPLICATION_FACTOR=1 KAFKA_NUM_PARTITIONS=1 KAFKA_HEAP_OPTS="-Xmx512M -Xms512M" flox activate -s
+```
 
-### Runtime Override (Advanced)
+### Setting Up a Kafka Producer Client
 
-Only one variable supports runtime override:
-
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `KAFKA_TIMEOUT` | 5 | Timeout in seconds for connectivity checks |
-
-Example:
+To configure a machine as a Kafka producer:
 
 ```bash
-# Use shorter timeout for faster feedback
-KAFKA_TIMEOUT=2 flox activate
+# Set producer configuration
+KAFKA_MODE="client" \
+CLIENT_TYPE="producer" \
+BOOTSTRAP_SERVERS="localhost:9092" \
+KAFKA_TOPICS="my-topic" \
+KAFKA_CLIENT_COUNT="1" \
+KAFKA_CLIENT_PARALLEL="false" \
+KAFKA_MESSAGE_PROCESSING_MODE="echo" \
+flox activate -s
 ```
 
-### Configuration Persistence
+One-liner:
+```bash
+KAFKA_MODE=client CLIENT_TYPE=producer BOOTSTRAP_SERVERS="localhost:9092" KAFKA_TOPICS="my-topic" KAFKA_CLIENT_COUNT=1 KAFKA_CLIENT_PARALLEL=false KAFKA_MESSAGE_PROCESSING_MODE=echo flox activate -s
+```
 
-- Configuration saved to: `$FLOX_ENV_CACHE/config/kafka_config.sh`
-- Kafka data stored in: `$FLOX_ENV_CACHE/data/kafka-logs/`
-- Server logs available at: `$FLOX_ENV_CACHE/logs/kafka.log`
+### Setting Up a Kafka Consumer Client
 
-## Helper Functions
-
-Convenient commands available in all shells (bash/zsh/fish):
-
-### Topic Management
-
-- **`kreate <topic-name> [partitions] [replication-factor]`**
-  - Create a new Kafka topic
-  - Example: `kreate my-topic 3 1`
-  - Note: Replication factor cannot exceed broker count
-
-- **`list`**
-  - List all topics in the cluster
-
-- **`describe <topic-name>`**
-  - Show detailed information about a topic
-
-### Data Operations
-
-- **`produce <topic-name>`**
-  - Start interactive producer console for a topic
-  - Type messages and press Enter to send
-  - Ctrl+C to exit
-
-- **`konsume <topic-name> [offset]`**
-  - Start consumer to read messages from a topic
-  - Default: reads from beginning (`--from-beginning`)
-  - Specify offset: `earliest`, `latest`, or numeric offset
-
-### Cluster Information
-
-- **`status`**
-  - Show Kafka cluster status and configuration
-
-- **`topos`**
-  - Display cluster topology and broker information
-
-### Environment Management
-
-- **`bootstrap`**
-  - Re-run the configuration wizard
-  - Use this to change your Kafka deployment mode or settings
-
-- **`info`**
-  - Show comprehensive environment information
-  - Displays configuration, available commands, and quick start guide
-
-- **`readme`**
-  - Display this README file in the terminal
-
-### Service Management
-
-Use standard Flox service commands:
+To configure a machine as a Kafka consumer:
 
 ```bash
-# Start Kafka service
-flox services start kafka
-
-# Stop Kafka service
-flox services stop kafka
-
-# Restart Kafka service
-flox services restart kafka
-
-# View service status
-flox services status
-
-# Tail service logs
-flox services logs kafka
+# Set consumer configuration
+KAFKA_MODE="client" \
+CLIENT_TYPE="consumer" \
+BOOTSTRAP_SERVERS="localhost:9092" \
+KAFKA_TOPICS="my-topic" \
+KAFKA_CLIENT_COUNT="1" \
+KAFKA_CLIENT_PARALLEL="false" \
+KAFKA_MESSAGE_PROCESSING_MODE="echo" \
+KAFKA_MESSAGE_OUTPUT_DIR="$HOME/kafka-output" \
+flox activate -s
 ```
 
-## Known Limitations
-
-### ZSH Argument Quoting (Issue #12)
-
-**ZSH users**: Topic names and arguments with spaces are not supported due to word-splitting in the `bash -c` wrapper.
-
-❌ **Doesn't work:**
+One-liner:
 ```bash
-kreate "topic with spaces" 3 2
-produce "my topic name"
+KAFKA_MODE=client CLIENT_TYPE=consumer BOOTSTRAP_SERVERS="localhost:9092" KAFKA_TOPICS="my-topic" KAFKA_CLIENT_COUNT=1 KAFKA_CLIENT_PARALLEL=false KAFKA_MESSAGE_PROCESSING_MODE=echo flox activate -s
 ```
 
-✅ **Works (use hyphens or underscores):**
-```bash
-kreate my-topic 3 2
-kreate user_events 3 2
-produce order-stream
-```
+### Using Flox Environment Composition
 
-This follows standard Kafka naming conventions. Other shells (bash, fish) are unaffected.
-
-### Controller Configuration
-
-- **Maximum controllers**: 50 (prevents accidental infinite loops)
-- **Numeric validation**: Controller IDs and port numbers must be valid integers
-- **Replication limits**: Replication factor cannot exceed available broker count
-
-## Troubleshooting
-
-### Service Won't Start
-
-```bash
-# Check service status
-flox services status
-
-# View detailed logs
-flox services logs kafka
-
-# Check if port is already in use (default: 9092)
-lsof -i :9092
-
-# Review configuration
-info
-```
-
-### Connection Refused
-
-```bash
-# Verify Kafka is running
-flox services status
-
-# Check bootstrap server configuration
-status
-
-# Test connectivity with longer timeout
-KAFKA_TIMEOUT=10 flox activate -- status
-```
-
-### Topic Creation Fails
-
-```bash
-# Ensure replication factor doesn't exceed broker count
-# For single-node (kraft-combined): replication factor must be 1
-kreate my-topic 3 1  # 3 partitions, 1 replica
-
-# Verify topic name (no spaces in ZSH)
-kreate my-topic-name 3 1  # use hyphens instead of spaces
-```
-
-### Reconfigure Environment
-
-```bash
-# Re-run the configuration wizard
-flox activate -- bootstrap
-
-# Or from within an activated environment
-bootstrap
-```
-
-### Clean Kafka Data
-
-```bash
-# WARNING: Deletes all topics and messages
-rm -rf "$FLOX_ENV_CACHE/data/kafka-logs"
-# Restart environment to regenerate
-```
-
-## Directory Structure
-
-```
-$FLOX_ENV_CACHE/
-├── config/
-│   ├── kafka_config.sh          # Saved configuration
-│   ├── server.properties        # Kafka server config
-│   └── controller.properties    # Controller config (if applicable)
-├── data/
-│   └── kafka-logs/              # Kafka data and metadata
-├── logs/
-│   └── kafka.log                # Server logs
-└── helper-functions/
-    └── helper-functions.sh      # Helper function definitions
-```
-
-## Advanced Usage
-
-### Multi-Node KRaft Cluster
-
-This environment uses an interactive wizard. For multi-node clusters:
-
-**On each node:**
-1. Run `flox activate`
-2. When prompted, select the appropriate mode:
-   - **kraft-controller** for controller-only nodes
-   - **kraft-broker** for broker-only nodes
-   - **kraft-combined** for combined nodes
-3. Use the **same Cluster ID** across all nodes
-4. Configure unique Node IDs for each node
-5. Set controller quorum voters correctly
-
-### Client-Only Mode
-
-To connect to an existing Kafka cluster:
-
-1. Run `flox activate`
-2. Select **client** mode when prompted
-3. Enter your bootstrap servers (e.g., `kafka1:9092,kafka2:9092`)
-4. Use helper functions to interact with the cluster:
-
-```bash
-kreate my-topic 3 2
-produce my-topic
-konsume my-topic
-```
-
-## Composition
-
-This environment can be included in other Flox environments:
+Flox v1.4+ supports environment composition, allowing you to create a customized environment that builds upon `kafka-headless`. The env vars you define in `[vars]` override those hard-coded into `kafka-headless`.
 
 ```toml
+# manifest.toml for your composed environment
+version = 1
+
+[vars]
+KAFKA_MODE=kraft-broker
+KAFKA_NODE_ID=2
+KAFKA_HOST=localhost
+KAFKA_PORT=9092
+CONTROLLER_QUORUM="1@controller-host:9093"
+KAFKA_CLUSTER_ID="EBzt0KoZR5ynZ9hTiJQuFA"
+KAFKA_REPLICATION_FACTOR=1
+KAFKA_NUM_PARTITIONS=1
+KAFKA_HEAP_OPTS="-Xmx512M -Xms512M"
+ 
 [include]
 environments = [
-  { remote = "yourorg/kafka" },
+    { remote = "barstoolbluz/kafka-headless" }
+]
+ 
+[options]
+systems = [
+  "aarch64-darwin",
+  "aarch64-linux",
+  "x86_64-darwin",
+  "x86_64-linux",
 ]
 ```
 
-All helper functions (kreate, list, produce, etc.) will be available in the composing environment.
+This approach allows you to:
+- Customize the Kafka configuration
+- Reuse the `kafka-headless` environment without modifying it
+- Create different compositions for different deployment scenarios
 
-## Resources
+### Managing Your Kafka Cluster
 
-- [Apache Kafka Documentation](https://kafka.apache.org/documentation/)
-- [KRaft Mode Overview](https://kafka.apache.org/documentation/#kraft)
-- [Kafka Quick Start](https://kafka.apache.org/quickstart)
+```bash
+# Start Kafka service
+flox services start
 
-## Version
+# Check service status
+flox services status
 
-- **Kafka**: 3.x (provided by nixpkgs)
-- **Java**: OpenJDK 17
-- **Environment**: Flox-managed declarative environment
+# View service logs
+flox services logs [--follow] kafka 	# the `--follow` option continuously prints log events to the console
 
----
+# Stop service
+flox services stop
+```
 
-**Note**: This is an interactive development environment. For production deployments, consider the headless variant or proper Kafka cluster configuration with appropriate security, monitoring, and high availability settings.
+## Kafka Command Reference
+
+### Topic Management
+
+```bash
+# Create a topic
+kafka-topics.sh --bootstrap-server localhost:9092 --create --topic my-topic --partitions 1 --replication-factor 1
+
+# List topics
+kafka-topics.sh --bootstrap-server localhost:9092 --list
+
+# Describe a topic
+kafka-topics.sh --bootstrap-server localhost:9092 --describe --topic my-topic
+
+# Delete a topic
+kafka-topics.sh --bootstrap-server localhost:9092 --delete --topic my-topic
+```
+
+### Message Production and Consumption
+
+```bash
+# Produce messages (interactive)
+kafka-console-producer.sh --bootstrap-server localhost:9092 --topic my-topic
+
+# Produce messages from a file
+cat data.txt | kafka-console-producer.sh --bootstrap-server localhost:9092 --topic my-topic
+
+# Consume messages
+kafka-console-consumer.sh --bootstrap-server localhost:9092 --topic my-topic --from-beginning
+
+# Consume messages with formatted output
+kafka-console-consumer.sh --bootstrap-server localhost:9092 --topic my-topic --from-beginning --property print.key=true --property print.value=true --property key.separator=:
+```
+
+### Consumer Group Management
+
+```bash
+# List consumer groups
+kafka-consumer-groups.sh --bootstrap-server localhost:9092 --list
+
+# Describe a consumer group
+kafka-consumer-groups.sh --bootstrap-server localhost:9092 --describe --group my-group
+
+# Reset consumer group offsets
+kafka-consumer-groups.sh --bootstrap-server localhost:9092 --group my-group --topic my-topic --reset-offsets --to-earliest --execute
+```
+
+### Performance Testing
+
+```bash
+# Producer performance test
+kafka-producer-perf-test.sh --topic my-topic --num-records 1000000 --record-size 1000 --throughput 10000 --producer-props bootstrap.servers=localhost:9092
+
+# Consumer performance test
+kafka-consumer-perf-test.sh --bootstrap-server localhost:9092 --topic my-topic --messages 1000000
+```
+
+## 🔍 Architecture and KRaft Mode
+
+Apache Kafka 4.0+ uses the KRaft (Kafka Raft) consensus protocol, which eliminates the dependency on ZooKeeper. This environment is configured to use KRaft mode, which offers several benefits:
+
+- **Simplified Architecture**: No need for a separate ZooKeeper ensemble
+- **Improved Performance**: Reduced client latency and better scalability
+- **Easier Operations**: Single system to monitor and maintain
+
+### KRaft Deployment Models
+
+This environment supports three KRaft deployment modes:
+
+1. **Combined Mode (Default)**: Controller and broker roles on the same node. Ideal for development, testing, and small deployments.
+
+2. **Separate Mode**: Dedicated nodes for controller and broker roles:
+   - **Controller Nodes**: Manage metadata, handle leadership, and maintain cluster state
+   - **Broker Nodes**: Handle message storage and client requests
+
+3. **Client Mode**: For applications that produce or consume messages from Kafka
+
+### Node ID Management
+
+In KRaft mode, every node must have a unique ID:
+
+- For combined mode, use a single ID (default: 1)
+- For controller-only nodes, use low numbers (e.g., 1, 2, 3)
+- For broker-only nodes, use different numbers that don't conflict with controllers
+- **Important**: In broker-only mode, the node ID must NOT be included in the controller quorum voters list
+
+### Cluster ID Management
+
+All nodes in a Kafka cluster must share the same cluster ID:
+
+- When setting up a new cluster, the ID is generated automatically for the first controller
+- Subsequent nodes must use the same cluster ID value
+- You can retrieve the cluster ID from the controller node with: `cat $FLOX_ENV_CACHE/kafka-config/cluster_id`
+
+## 🔍 How It Works
+
+### 🌐 Configuration Management
+
+1. **Hash-Based Configuration Detection**:
+   - Generates a unique hash of your configuration
+   - Automatically detects configuration changes
+   - Resets Kafka state when necessary for clean restarts
+
+2. **Dynamic IP Detection**:
+   - Automatically detects network interfaces
+   - Falls back to localhost if detection fails
+   - Allows manual override via environment variables
+
+3. **KRaft Mode Validation**:
+   - Ensures proper node ID separation for broker and controller roles
+   - Validates controller quorum settings
+   - Prevents common configuration errors
+
+### 🛠️ Environment Variable Handling
+
+This environment accepts pre-set environment variables:
+
+- Kafka-specific variables (e.g., `KAFKA_MODE`, `KAFKA_NODE_ID`) set before activation take precedence
+- Defaults are only applied when variables aren't already defined
+- Supports both environment variables and manifest.toml configuration
+
+### 📂 Directory Structure
+
+The environment organizes Kafka data and logs in consistent locations:
+
+- `$FLOX_ENV_CACHE/kafka-config` - Configuration files
+- `$FLOX_ENV_CACHE/kafka-logs` - Kafka service logs
+- `$FLOX_ENV_CACHE/data/kafka` - Kafka data storage
+- `$FLOX_ENV_CACHE/kafka-message-output` - Client message outputs (when using file mode)
+- `$FLOX_ENV_CACHE/kafka-scripts` - Custom processing scripts
+
+## 🔧 Troubleshooting
+
+If you encounter issues with your Kafka setup:
+
+1. **Broker/Controller Communication Issues**:
+   - Verify that node IDs are unique across the cluster
+   - Ensure controller quorum settings are correct
+   - Check that all nodes are using the same cluster ID
+
+2. **Service Startup Problems**:
+   - View logs with `flox services logs kafka`
+   - Check for errors in `$FLOX_ENV_CACHE/kafka-logs`
+   - Verify environment variables with `env | grep KAFKA`
+
+3. **Configuration Conflicts**:
+   - If changing modes (e.g., from combined to broker), ensure a clean reset
+   - Check that broker node IDs are not included in controller quorum voters
+   - Verify IP addresses and ports are correct and available
+
+4. **Client Connection Issues**:
+   - Verify bootstrap servers configuration
+   - Check network connectivity between client and broker
+   - Ensure topics exist before attempting to produce/consume
+
+5. **Common Errors**:
+
+   - `DUPLICATE_BROKER_REGISTRATION`: The broker ID is already registered in the cluster
+     - Solution: Use a different node ID or clean up the existing registration
+
+   - `NODE_ID_MISSING_FROM_VOTERS`: In controller mode, the node ID must be in the voters list
+     - Solution: Ensure the controller node ID is included in the controller quorum voters
+
+   - `NODE_ID_IN_VOTERS`: In broker-only mode, the node ID must NOT be in the voters list
+     - Solution: Use a different node ID for the broker that doesn't conflict with controllers
+
+   - `Error while fetching metadata with correlation id`: Connection issue between client and broker
+     - Solution: Check network connectivity and broker availability
+
+## 🌐 Networking Considerations
+
+For a production Kafka deployment:
+
+1. **Internal vs. External Communication**:
+   - Set `KAFKA_HOST` to the internal IP for node-to-node communication
+   - Configure `advertised.listeners` appropriately for client communication
+   - Consider network security groups and firewall rules
+
+2. **Port Requirements**:
+   - Broker port (default: 9092): For client and inter-broker communication
+   - Controller port (default: 9093): For controller-to-controller communication
+
+3. **Multi-Datacenter Setup**:
+   - For geo-distributed deployments, use MirrorMaker 2.0
+   - Configure separate clusters with appropriate networking
+
+## 💻 System Compatibility
+
+This environment works on:
+- Linux (ARM64, x86_64)
+- macOS (ARM64, x86_64)
+
+## 📚 Additional Resources
+
+- [Apache Kafka Documentation](https://kafka.apache.org/documentation)
+- [Kafka KRaft Mode](https://kafka.apache.org/documentation/#kraft)
+- [Kafka Quickstart](https://kafka.apache.org/quickstart)
+- [Kafka Operations](https://kafka.apache.org/documentation/#operations)
+- [Kafka Configuration](https://kafka.apache.org/documentation/#configuration)
+
+## 🔗 Key Features of Flox
+
+[Flox](https://flox.dev/docs) builds on [Nix](https://github.com/NixOS/nix) to provide:
+
+- **Declarative environments** - Software, variables, services defined in TOML
+- **Input- and path-addressed storage** - Multiple package versions coexist without conflicts
+- **Reproducibility** - Same environment across dev, CI, and production
+- **Deterministic builds** - Same inputs always produce identical outputs
+- **Huge package collection** - Access to 150,000+ packages from Nixpkgs
+
+## 📝 License
+
+MIT

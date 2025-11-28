@@ -1,0 +1,381 @@
+# Flox manifest version managed by Flox CLI
+version = 1
+
+# ==============================================================================
+# TEMPORAL HEADLESS ENVIRONMENT - TECHNICAL DOCUMENTATION
+# ==============================================================================
+#
+# This environment provides Temporal 1.29.1 orchestration platform configured for
+# CI/CD, containerized deployments, and production use cases.
+#
+# ------------------------------------------------------------------------------
+# ARCHITECTURE
+# ------------------------------------------------------------------------------
+#
+# Multi-service architecture:
+#   - temporal-server: Frontend service (gRPC/HTTP, default port 7233/7243)
+#   - temporal-history: History service for workflow execution
+#   - temporal-matching: Matching service for task dispatch
+#   - temporal-worker: Worker service for task execution
+#
+# Storage backends:
+#   - SQLite (default): Local development, single-instance deployments
+#   - PostgreSQL: Production, multi-instance, high-concurrency workloads
+#
+# ------------------------------------------------------------------------------
+# RUNTIME CONFIGURATION VARIABLES
+# ------------------------------------------------------------------------------
+#
+# All variables support runtime override via: VARIABLE=value flox activate
+#
+# Core Settings:
+#   TEMPORAL_HOME                Instance metadata directory
+#                                Default: $FLOX_ENV_CACHE/temporal-data
+#
+#   TEMPORAL_FRONTEND_HOST       Frontend server bind address
+#                                Default: 127.0.0.1
+#
+#   TEMPORAL_FRONTEND_PORT       Frontend gRPC port
+#                                Default: 7233
+#
+#   TEMPORAL_WEB_PORT            Web UI port
+#                                Default: 8233
+#
+# Storage Backend:
+#   TEMPORAL_STORAGE_TYPE        Storage backend type: "sqlite" or "postgres"
+#                                Default: sqlite
+#
+#   TEMPORAL_POSTGRES_URL        PostgreSQL connection string
+#                                Format: postgresql://user:pass@host:port/dbname
+#                                Auto-generated if postgres composed and not set
+#
+# Control Flags:
+#   TEMPORAL_SKIP_INIT           Set to "1" to skip initialization
+#   TEMPORAL_QUIET               Set to "1" to suppress activation messages
+#
+# ------------------------------------------------------------------------------
+# POSTGRESQL COMPOSITION
+# ------------------------------------------------------------------------------
+#
+# This environment includes barstoolbluz/postgres-headless for optional
+# PostgreSQL storage backend.
+#
+# Auto-configuration behavior:
+#   1. When TEMPORAL_STORAGE_TYPE=postgres and TEMPORAL_POSTGRES_URL is empty:
+#      - Detects if postgres command is available (from composition)
+#      - Auto-generates connection URL from postgres environment variables:
+#        * PGUSER (default: pguser)
+#        * PGPASSWORD (default: pgpass)
+#        * PGHOSTADDR (default: 127.0.0.1)
+#        * PGPORT (default: 15432)
+#        * PGDATABASE (set this to "temporal" for dedicated database)
+#   2. If postgres not available, falls back to SQLite with warning
+#
+# Manual postgres service control:
+#   flox services start postgres
+#   flox services status postgres
+#   flox services logs postgres
+#
+# ------------------------------------------------------------------------------
+# COMMON USAGE PATTERNS
+# ------------------------------------------------------------------------------
+#
+# Local development (SQLite):
+#   flox activate -s
+#
+# Production (PostgreSQL with auto-config):
+#   TEMPORAL_STORAGE_TYPE=postgres PGDATABASE=temporal flox activate -s
+#
+# Production (PostgreSQL with custom URL):
+#   TEMPORAL_STORAGE_TYPE=postgres \
+#   TEMPORAL_POSTGRES_URL="postgresql://user:pass@prod-db:5432/temporal" \
+#   flox activate -s
+#
+# Container deployment:
+#   ENV TEMPORAL_STORAGE_TYPE=postgres
+#   ENV TEMPORAL_POSTGRES_URL="postgresql://user:pass@postgres:5432/temporal"
+#   ENV TEMPORAL_FRONTEND_HOST=0.0.0.0
+#   CMD ["flox", "activate", "-s"]
+#
+# CI/CD (quiet mode):
+#   TEMPORAL_QUIET=1 flox activate -s
+#
+# ------------------------------------------------------------------------------
+# SERVICE MANAGEMENT
+# ------------------------------------------------------------------------------
+#
+# Start all services:
+#   flox activate -s
+#   (or) flox activate --start-services
+#
+# Individual service control:
+#   flox services start temporal-server
+#   flox services stop temporal-server
+#   flox services restart temporal-server
+#
+# Service status and logs:
+#   flox services status
+#   flox services logs temporal-server
+#
+# ------------------------------------------------------------------------------
+# FILES AND DIRECTORIES
+# ------------------------------------------------------------------------------
+#
+# $TEMPORAL_HOME/ (default: $FLOX_ENV_CACHE/temporal-data)
+#   config.yaml               Auto-generated configuration
+#   temporal.db               SQLite database (SQLite mode)
+#   logs/                     Service logs
+#
+# ------------------------------------------------------------------------------
+# TROUBLESHOOTING
+# ------------------------------------------------------------------------------
+#
+# Services won't start:
+#   1. Check service status: flox services status
+#   2. View logs: flox services logs temporal-server
+#   3. Check port availability: netstat -tuln | grep 7233
+#   4. Verify config: cat $TEMPORAL_HOME/config.yaml
+#
+# PostgreSQL connection failures:
+#   1. Verify postgres running: flox services status postgres
+#   2. Check connection URL: echo $TEMPORAL_POSTGRES_URL
+#   3. Test connectivity: pg_isready -h $PGHOSTADDR -p $PGPORT
+#   4. Verify database exists: psql -l
+#
+# Configuration not applied:
+#   1. Delete config: rm $TEMPORAL_HOME/config.yaml
+#   2. Reactivate: flox activate
+#   3. Or skip init and create manually: TEMPORAL_SKIP_INIT=1 flox activate
+#
+# ------------------------------------------------------------------------------
+# PRODUCTION CONSIDERATIONS
+# ------------------------------------------------------------------------------
+#
+# Security:
+#   - Never use TEMPORAL_FRONTEND_HOST=0.0.0.0 without reverse proxy/firewall
+#   - Always use PostgreSQL for production (SQLite has concurrency limits)
+#   - Store TEMPORAL_POSTGRES_URL in secrets manager, not environment files
+#   - Use TLS-encrypted postgres connections in production
+#
+# Performance:
+#   - Use connection pooling (pgbouncer) for high-throughput workloads
+#   - Monitor service logs for execution delays
+#   - Consider separate postgres instance for large deployments
+#
+# High Availability:
+#   - Run multiple frontend/history/matching services behind load balancer
+#   - Use PostgreSQL with replication for storage backend
+#   - Deploy on Kubernetes with appropriate resource limits and probes
+#
+# Monitoring:
+#   - Expose port 7233 for health checks
+#   - Monitor service process health and restart on failure
+#   - Track workflow queue depth and execution times
+#   - Set up alerts for failed workflows
+#
+# ------------------------------------------------------------------------------
+# LINKS
+# ------------------------------------------------------------------------------
+#
+# Temporal Documentation: https://docs.temporal.io/
+# Temporal GitHub: https://github.com/temporalio/temporal
+# Server Configuration: https://docs.temporal.io/references/configuration
+#
+# ==============================================================================
+
+[install]
+temporal.pkg-path = "barstoolbluz/temporal"
+temporal.systems = ["x86_64-linux"]
+bat.pkg-path = "bat"
+curl.pkg-path = "curl"
+
+[vars]
+TEMPORAL_HOME = "$FLOX_ENV_CACHE/temporal-data"
+
+[hook]
+on-activate = '''
+# Fetch README # === RUNTIME VARIABLES - Core ===
+export TEMPORAL_HOME="${TEMPORAL_HOME:-$FLOX_ENV_CACHE/temporal-data}"
+
+# === RUNTIME VARIABLES - Connection ===
+export TEMPORAL_FRONTEND_HOST="${TEMPORAL_FRONTEND_HOST:-127.0.0.1}"
+export TEMPORAL_FRONTEND_PORT="${TEMPORAL_FRONTEND_PORT:-7233}"
+export TEMPORAL_WEB_PORT="${TEMPORAL_WEB_PORT:-8233}"
+
+# === RUNTIME VARIABLES - Storage Backend ===
+export TEMPORAL_STORAGE_TYPE="${TEMPORAL_STORAGE_TYPE:-sqlite}"
+export TEMPORAL_POSTGRES_URL="${TEMPORAL_POSTGRES_URL:-}"
+
+# === POSTGRES AUTO-CONFIGURATION ===
+# If postgres storage requested but no URL provided, auto-generate from composed environment
+
+  # Fetch README.md if not present
+  README_FILE="$FLOX_ENV_PROJECT/README.md"
+  if [ ! -f "$README_FILE" ]; then
+    if curl -fsSL https://raw.githubusercontent.com/barstoolbluz/floxenvs/main/temporal-headless/README.md -o "$README_FILE" 2>/dev/null; then
+      echo "✓ Downloaded README.md (use 'helpf' to view)"
+    fi
+  fi
+'''
+
+[profile]
+bash = '''
+
+  helpf() {
+    local README_FILE="$FLOX_ENV_PROJECT/README.md"
+    local README_URL="https://raw.githubusercontent.com/barstoolbluz/floxenvs/main/temporal-headless/README.md"
+
+    if [ "$1" = "--help" ]; then
+      echo "Usage: helpf [OPTIONS]"
+      echo ""
+      echo "View environment documentation"
+      echo ""
+      echo "Options:"
+      echo "  --force    Force download fresh copy from GitHub"
+      echo "  --help     Show this help message"
+      echo ""
+      echo "The README is cached locally and only downloaded if missing."
+      return 0
+    fi
+
+    if [ "$1" = "--force" ]; then
+      echo "Fetching latest README.md from GitHub..."
+      if curl -fsSL "$README_URL" -o "$README_FILE"; then
+        echo "✓ Downloaded README.md"
+      else
+        echo "✗ Failed to download README.md"
+        return 1
+      fi
+    elif [ ! -f "$README_FILE" ]; then
+      echo "README.md not found, downloading..."
+      if curl -fsSL "$README_URL" -o "$README_FILE"; then
+        echo "✓ Downloaded README.md"
+      else
+        echo "✗ Failed to download README.md"
+        return 1
+      fi
+    fi
+
+    if [ -f "$README_FILE" ]; then
+      bat --style=auto --paging=always "$README_FILE"
+    else
+      echo "✗ README.md not found at $README_FILE"
+      return 1
+    fi
+  }
+  export -f helpf
+'''
+
+zsh = '''
+
+  helpf() {
+    local README_FILE="$FLOX_ENV_PROJECT/README.md"
+    local README_URL="https://raw.githubusercontent.com/barstoolbluz/floxenvs/main/temporal-headless/README.md"
+
+    if [ "$1" = "--help" ]; then
+      echo "Usage: helpf [OPTIONS]"
+      echo ""
+      echo "View environment documentation"
+      echo ""
+      echo "Options:"
+      echo "  --force    Force download fresh copy from GitHub"
+      echo "  --help     Show this help message"
+      echo ""
+      echo "The README is cached locally and only downloaded if missing."
+      return 0
+    fi
+
+    if [ "$1" = "--force" ]; then
+      echo "Fetching latest README.md from GitHub..."
+      if curl -fsSL "$README_URL" -o "$README_FILE"; then
+        echo "✓ Downloaded README.md"
+      else
+        echo "✗ Failed to download README.md"
+        return 1
+      fi
+    elif [ ! -f "$README_FILE" ]; then
+      echo "README.md not found, downloading..."
+      if curl -fsSL "$README_URL" -o "$README_FILE"; then
+        echo "✓ Downloaded README.md"
+      else
+        echo "✗ Failed to download README.md"
+        return 1
+      fi
+    fi
+
+    if [ -f "$README_FILE" ]; then
+      bat --style=auto --paging=always "$README_FILE"
+    else
+      echo "✗ README.md not found at $README_FILE"
+      return 1
+    fi
+  }
+'''
+
+fish = '''
+
+function helpf
+    set README_FILE "$FLOX_ENV_PROJECT/README.md"
+    set README_URL "https://raw.githubusercontent.com/barstoolbluz/floxenvs/main/temporal-headless/README.md"
+
+    if test "$argv[1]" = "--help"
+        echo "Usage: helpf [OPTIONS]"
+        echo ""
+        echo "View environment documentation"
+        echo ""
+        echo "Options:"
+        echo "  --force    Force download fresh copy from GitHub"
+        echo "  --help     Show this help message"
+        echo ""
+        echo "The README is cached locally and only downloaded if missing."
+        return 0
+    end
+
+    if test "$argv[1]" = "--force"
+        echo "Fetching latest README.md from GitHub..."
+        if curl -fsSL "$README_URL" -o "$README_FILE"
+            echo "✓ Downloaded README.md"
+        else
+            echo "✗ Failed to download README.md"
+            return 1
+        end
+    else if not test -f "$README_FILE"
+        echo "README.md not found, downloading..."
+        if curl -fsSL "$README_URL" -o "$README_FILE"
+            echo "✓ Downloaded README.md"
+        else
+            echo "✗ Failed to download README.md"
+            return 1
+        end
+    end
+
+    if test -f "$README_FILE"
+        bat --style=auto --paging=always "$README_FILE"
+    else
+        echo "✗ README.md not found at $README_FILE"
+        return 1
+    end
+end
+'''
+
+[services]
+temporal-server.command = '''
+cd /
+exec temporal-server \
+    --env development \
+    --config "$TEMPORAL_HOME" \
+    start
+'''
+
+[include]
+environments = [
+  { remote = "barstoolbluz/postgres-headless" }
+]
+
+[options]
+# Systems that environment is compatible with
+#systems = [
+#  "x86_64-linux",
+#]
+# Uncomment to disable CUDA detection.
+# cuda-detection = false

@@ -184,18 +184,13 @@ end
 EOFISH
 chmod +x "${FLOX_ENV_CACHE}/shell/wrapper.fish"
 
-# curl README.md from github repo
-get_help() {
-  local fail_silently=${1:-true}
-  local readme_path="${FLOX_ENV_CACHE}/README.md"
-  local readme_url="https://raw.githubusercontent.com/barstoolbluz/floxenvs/main/aws-1pass/README.md"
-
-  if $fail_silently; then
-    curl -s "$readme_url" -o "$readme_path" >/dev/null 2>&1 || true
-  else
-    curl -s "$readme_url" -o "$readme_path"
+  # Fetch README.md if not present
+  README_FILE="$FLOX_ENV_PROJECT/README.md"
+  if [ ! -f "$README_FILE" ]; then
+    if curl -fsSL https://raw.githubusercontent.com/barstoolbluz/floxenvs/main/aws-1pass/README.md -o "$README_FILE" 2>/dev/null; then
+      echo "✓ Downloaded README.md (use 'helpf' to view)"
+    fi
   fi
-}
 
 # informational message; comment-out or delete 'show_help' under # runnit to disable
 show_help() {
@@ -225,7 +220,7 @@ show_help() {
         "$(gum style --foreground 141 --bold 'This is a  F l o x  environment for AWS CLI with 1Password')
 
 👉  Getting Help:
-    $(gum style --foreground 212 'help')        Display this help message
+    $(gum style --foreground 212 'helpf')       Display this help message
 
 👉  Integrated Tools:
     $(gum style --foreground 212 'aws')         AWS CLI with 1Password credentials
@@ -259,7 +254,48 @@ bash = '''
 # source 1password wrapper functions
 [[ -f "${FLOX_ENV_CACHE}/shell/wrapper.bash" ]] && source "${FLOX_ENV_CACHE}/shell/wrapper.bash"
 
-help() { [[ -f "$FLOX_ENV_CACHE/README.md" ]] && bat --paging=always --style=plain "$FLOX_ENV_CACHE/README.md"; }
+  helpf() {
+    local README_FILE="$FLOX_ENV_PROJECT/README.md"
+    local README_URL="https://raw.githubusercontent.com/barstoolbluz/floxenvs/main/aws-1pass/README.md"
+
+    if [ "$1" = "--help" ]; then
+      echo "Usage: helpf [OPTIONS]"
+      echo ""
+      echo "View environment documentation"
+      echo ""
+      echo "Options:"
+      echo "  --force    Force download fresh copy from GitHub"
+      echo "  --help     Show this help message"
+      echo ""
+      echo "The README is cached locally and only downloaded if missing."
+      return 0
+    fi
+
+    if [ "$1" = "--force" ]; then
+      echo "Fetching latest README.md from GitHub..."
+      if curl -fsSL "$README_URL" -o "$README_FILE"; then
+        echo "✓ Downloaded README.md"
+      else
+        echo "✗ Failed to download README.md"
+        return 1
+      fi
+    elif [ ! -f "$README_FILE" ]; then
+      echo "README.md not found, downloading..."
+      if curl -fsSL "$README_URL" -o "$README_FILE"; then
+        echo "✓ Downloaded README.md"
+      else
+        echo "✗ Failed to download README.md"
+        return 1
+      fi
+    fi
+
+    if [ -f "$README_FILE" ]; then
+      bat --style=auto --paging=always "$README_FILE"
+    else
+      echo "✗ README.md not found at $README_FILE"
+      return 1
+    fi
+  }
 
 # bootstrap 1password cli setup
 op-bootstrap() {
@@ -379,7 +415,48 @@ zsh = '''
 # source 1password wrapper functions
 [[ -f "${FLOX_ENV_CACHE}/shell/wrapper.zsh" ]] && source "${FLOX_ENV_CACHE}/shell/wrapper.zsh"
 
-help() { [[ -f "$FLOX_ENV_CACHE/README.md" ]] && bat --paging=always --style=plain "$FLOX_ENV_CACHE/README.md"; }
+  helpf() {
+    local README_FILE="$FLOX_ENV_PROJECT/README.md"
+    local README_URL="https://raw.githubusercontent.com/barstoolbluz/floxenvs/main/aws-1pass/README.md"
+
+    if [ "$1" = "--help" ]; then
+      echo "Usage: helpf [OPTIONS]"
+      echo ""
+      echo "View environment documentation"
+      echo ""
+      echo "Options:"
+      echo "  --force    Force download fresh copy from GitHub"
+      echo "  --help     Show this help message"
+      echo ""
+      echo "The README is cached locally and only downloaded if missing."
+      return 0
+    fi
+
+    if [ "$1" = "--force" ]; then
+      echo "Fetching latest README.md from GitHub..."
+      if curl -fsSL "$README_URL" -o "$README_FILE"; then
+        echo "✓ Downloaded README.md"
+      else
+        echo "✗ Failed to download README.md"
+        return 1
+      fi
+    elif [ ! -f "$README_FILE" ]; then
+      echo "README.md not found, downloading..."
+      if curl -fsSL "$README_URL" -o "$README_FILE"; then
+        echo "✓ Downloaded README.md"
+      else
+        echo "✗ Failed to download README.md"
+        return 1
+      fi
+    fi
+
+    if [ -f "$README_FILE" ]; then
+      bat --style=auto --paging=always "$README_FILE"
+    else
+      echo "✗ README.md not found at $README_FILE"
+      return 1
+    fi
+  }
 
 # bootstrap 1password cli setup
 op-bootstrap() {
@@ -499,7 +576,48 @@ fish = '''
 # source the 1password wrapper functions
 test -f "$FLOX_ENV_CACHE/shell/wrapper.fish" && source "$FLOX_ENV_CACHE/shell/wrapper.fish"
 
-function help; test -f "$FLOX_ENV_CACHE/README.md" && bat --paging=always --style=plain "$FLOX_ENV_CACHE/README.md"; end
+function helpf
+    set README_FILE "$FLOX_ENV_PROJECT/README.md"
+    set README_URL "https://raw.githubusercontent.com/barstoolbluz/floxenvs/main/aws-1pass/README.md"
+
+    if test "$argv[1]" = "--help"
+        echo "Usage: helpf [OPTIONS]"
+        echo ""
+        echo "View environment documentation"
+        echo ""
+        echo "Options:"
+        echo "  --force    Force download fresh copy from GitHub"
+        echo "  --help     Show this help message"
+        echo ""
+        echo "The README is cached locally and only downloaded if missing."
+        return 0
+    end
+
+    if test "$argv[1]" = "--force"
+        echo "Fetching latest README.md from GitHub..."
+        if curl -fsSL "$README_URL" -o "$README_FILE"
+            echo "✓ Downloaded README.md"
+        else
+            echo "✗ Failed to download README.md"
+            return 1
+        end
+    else if not test -f "$README_FILE"
+        echo "README.md not found, downloading..."
+        if curl -fsSL "$README_URL" -o "$README_FILE"
+            echo "✓ Downloaded README.md"
+        else
+            echo "✗ Failed to download README.md"
+            return 1
+        end
+    end
+
+    if test -f "$README_FILE"
+        bat --style=auto --paging=always "$README_FILE"
+    else
+        echo "✗ README.md not found at $README_FILE"
+        return 1
+    end
+end
 
 # bootstrap 1password cli setup
 function op-bootstrap

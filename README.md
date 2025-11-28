@@ -100,6 +100,7 @@ cd postgres-headless && PGPORT=5432 PGDATABASE=mydb flox activate -s
 - [**python-postgres**](./python-postgres) - Python 3.12 with PostgreSQL tools and SQLAlchemy
 
 ### AI & Machine Learning
+- [**comfyui**](./comfyui) - ComfyUI node-based AI image generation with CUDA/Metal support, model downloads, and custom node dependencies
 - [**ollama-headless**](./ollama-headless) - Ollama LLM runtime with CUDA support (headless, composable)
 - [**open-webui**](./open-webui) - Web UI for Ollama (includes ollama-headless)
 - [**wsl2-ollama**](./wsl2-ollama) - Ollama LLM runtime optimized for WSL2

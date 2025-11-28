@@ -1,440 +1,507 @@
 version = 1
 
 [install]
-gum.pkg-path = "gum"
+bat.pkg-path = "bat"
+curl.pkg-path = "curl"
 mariadb.pkg-path = "mariadb"
 
 [vars]
-# define env vars available at runtime
-MARIADB_BIND_ADDRESS = "127.0.0.1"
-MARIADB_PORT = "13307"
-MARIADB_ROOT_PASSWORD = "mariadbpass"
-MARIADB_DATABASE = "mysql"
+# Base configuration paths (invariant)
+MARIADB_CONFIG_DIR = "$FLOX_ENV_CACHE/mariadb-config"
+MARIADB_LOG_DIR = "$FLOX_ENV_CACHE/mariadb-logs"
+MARIADB_DATA_DIR = "$FLOX_ENV_CACHE/mariadb-data"
+MARIADB_RUN_DIR = "$FLOX_ENV_CACHE/mariadb-run"
 
 [hook]
 on-activate = '''
-# define env vars available during activation
-export MARIADB_DIR="${FLOX_ENV_CACHE}/mariadb"
-export CONFIG_FILE="${FLOX_ENV_CACHE}/mariadb.config"
-export DEFAULT_MARIADB_BIND_ADDRESS="127.0.0.1"
-export DEFAULT_MARIADB_PORT="13307"
-export DEFAULT_MARIADB_ROOT_PASSWORD="mariadbpass"
-export DEFAULT_MARIADB_DATABASE="mysql"
-export DEFAULT_MARIADB_DIR="${FLOX_ENV_CACHE}/mariadb"
+# Create required directories
+mkdir -p "$FLOX_ENV_CACHE/mariadb-config"
+mkdir -p "$FLOX_ENV_CACHE/mariadb-logs"
+mkdir -p "$FLOX_ENV_CACHE/mariadb-data"
+mkdir -p "$FLOX_ENV_CACHE/mariadb-run"
 
-# enable/disable debugging; set to "true" to enable verbose output
-export MARIADB_DEBUG="false"
+# === INIT-TIME VARIABLES ===
+# These affect mysql_install_db and cannot change without deleting datadir
+export MARIADB_ROOT_PASSWORD="${MARIADB_ROOT_PASSWORD:-mariadbpass}"
+export MARIADB_USER="${MARIADB_USER:-}"
+export MARIADB_PASSWORD="${MARIADB_PASSWORD:-}"
+export MARIADB_CHARSET="${MARIADB_CHARSET:-utf8mb4}"
+export MARIADB_COLLATION="${MARIADB_COLLATION:-utf8mb4_unicode_ci}"
+export MARIADB_INIT_ARGS="${MARIADB_INIT_ARGS:-}"
 
-# this function checks if first run
-check_first_run() {
-    if [[ ! -f "$CONFIG_FILE" ]]; then
-        return 0 # True, this is the first run
-    else
-        return 1 # False, not the first run
-    fi
-}
+# === RUNTIME VARIABLES - Connection ===
+# These can be changed by restarting the service
+export MARIADB_BIND_ADDRESS="${MARIADB_BIND_ADDRESS:-127.0.0.1}"
+export MARIADB_PORT="${MARIADB_PORT:-13307}"
+export MARIADB_DATABASE="${MARIADB_DATABASE:-mysql}"
 
-# this function loads mariadb.config if exists
-load_config() {
-    if [[ -f "$CONFIG_FILE" ]]; then
-        source "$CONFIG_FILE"
-    else
-        # set defaults if no mariadb.config
-        export MARIADB_BIND_ADDRESS="$DEFAULT_MARIADB_BIND_ADDRESS"
-        export MARIADB_PORT="$DEFAULT_MARIADB_PORT"
-        export MARIADB_ROOT_PASSWORD="$DEFAULT_MARIADB_ROOT_PASSWORD"
-        export MARIADB_DATABASE="$DEFAULT_MARIADB_DATABASE"
-        export MARIADB_DIR="$DEFAULT_MARIADB_DIR"
-    fi
-}
+# === RUNTIME VARIABLES - Performance Basic ===
+export MARIADB_MAX_CONNECTIONS="${MARIADB_MAX_CONNECTIONS:-151}"
+export MARIADB_INNODB_BUFFER_POOL_SIZE="${MARIADB_INNODB_BUFFER_POOL_SIZE:-128M}"
+export MARIADB_TMP_TABLE_SIZE="${MARIADB_TMP_TABLE_SIZE:-16M}"
+export MARIADB_MAX_HEAP_TABLE_SIZE="${MARIADB_MAX_HEAP_TABLE_SIZE:-16M}"
+export MARIADB_THREAD_CACHE_SIZE="${MARIADB_THREAD_CACHE_SIZE:-9}"
 
-# this function saves mariadb.config to file
-save_config() {
-    mkdir -p "$(dirname "$CONFIG_FILE")"
-    cat > "$CONFIG_FILE" << EOF
-# mariadb configuration - Generated on $(date)
-export MARIADB_BIND_ADDRESS="$MARIADB_BIND_ADDRESS"
-export MARIADB_PORT="$MARIADB_PORT"
-export MARIADB_ROOT_PASSWORD="$MARIADB_ROOT_PASSWORD"
-export MARIADB_DATABASE="$MARIADB_DATABASE"
-export MARIADB_DIR="$MARIADB_DIR"
-export MARIADB_DEBUG="$MARIADB_DEBUG"
+# === RUNTIME VARIABLES - Query Memory ===
+export MARIADB_SORT_BUFFER_SIZE="${MARIADB_SORT_BUFFER_SIZE:-256K}"
+export MARIADB_JOIN_BUFFER_SIZE="${MARIADB_JOIN_BUFFER_SIZE:-256K}"
 
-## BEGIN ACTIVATION HOOK ##
-$(declare -f debug_log)
-$(declare -f check_first_run)
-$(declare -f load_config)
-$(declare -f save_config)
-$(declare -f prompt_for_config)
-$(declare -f update_dependent_vars)
-$(declare -f initialize_mariadb)
-$(declare -f start_mariadb)
-$(declare -f set_root_password)
-$(declare -f create_database)
-$(declare -f stop_mariadb)
-$(declare -f reconfigure_mariadb)
-$(declare -f first_run_setup)
-$(declare -f display_mariadb_config_ui)
-$(declare -f mariadb_setup)
-$(declare -f main)
-## END ACTIVATION HOOK ##
-EOF
-    chmod 644 "$CONFIG_FILE"
-}
+# === RUNTIME VARIABLES - InnoDB ===
+export MARIADB_INNODB_LOG_FILE_SIZE="${MARIADB_INNODB_LOG_FILE_SIZE:-96M}"
+export MARIADB_INNODB_FLUSH_LOG_AT_TRX_COMMIT="${MARIADB_INNODB_FLUSH_LOG_AT_TRX_COMMIT:-1}"
+export MARIADB_INNODB_FLUSH_METHOD="${MARIADB_INNODB_FLUSH_METHOD:-}"
+export MARIADB_INNODB_FILE_PER_TABLE="${MARIADB_INNODB_FILE_PER_TABLE:-ON}"
 
-# this function prompts user 'do you want to custom configure mariadb vars?'
-prompt_for_config() {
-    echo ""
-    if gum confirm "$(gum style --foreground 240 'Would you like to customize your MariaDB configuration?')" --default=false; then
-        MARIADB_BIND_ADDRESS=$(gum input --placeholder "$DEFAULT_MARIADB_BIND_ADDRESS" --value "$DEFAULT_MARIADB_BIND_ADDRESS" --prompt "Bind Address: ")
-        MARIADB_PORT=$(gum input --placeholder "$DEFAULT_MARIADB_PORT" --value "$DEFAULT_MARIADB_PORT" --prompt "Port: ")
-        MARIADB_ROOT_PASSWORD=$(gum input --placeholder "$DEFAULT_MARIADB_ROOT_PASSWORD" --value "$DEFAULT_MARIADB_ROOT_PASSWORD" --prompt "Root Password: " --password)
-        MARIADB_DATABASE=$(gum input --placeholder "$DEFAULT_MARIADB_DATABASE" --value "$DEFAULT_MARIADB_DATABASE" --prompt "Database: ")
+# === RUNTIME VARIABLES - MariaDB Specific ===
+export MARIADB_THREAD_POOL_SIZE="${MARIADB_THREAD_POOL_SIZE:-auto}"
 
-        if gum confirm "Use default directory for MariaDB data?" --default=true; then
-            MARIADB_DIR="$DEFAULT_MARIADB_DIR"
-        else
-            MARIADB_DIR=$(gum input --placeholder "$DEFAULT_MARIADB_DIR" --value "$DEFAULT_MARIADB_DIR" --prompt "MariaDB Data Directory: ")
-        fi
-    else
-        # defaults for gum prompts
-        MARIADB_BIND_ADDRESS="$DEFAULT_MARIADB_BIND_ADDRESS"
-        MARIADB_PORT="$DEFAULT_MARIADB_PORT"
-        MARIADB_ROOT_PASSWORD="$DEFAULT_MARIADB_ROOT_PASSWORD"
-        MARIADB_DATABASE="$DEFAULT_MARIADB_DATABASE"
-        MARIADB_DIR="$DEFAULT_MARIADB_DIR"
-    fi
+# === RUNTIME VARIABLES - Logging ===
+export MARIADB_SLOW_QUERY_LOG="${MARIADB_SLOW_QUERY_LOG:-OFF}"
+export MARIADB_LONG_QUERY_TIME="${MARIADB_LONG_QUERY_TIME:-10}"
+export MARIADB_LOG_BIN="${MARIADB_LOG_BIN:-}"
 
-    # export user-defined variables
-    export MARIADB_BIND_ADDRESS MARIADB_PORT MARIADB_ROOT_PASSWORD MARIADB_DATABASE MARIADB_DIR
+# === RUNTIME VARIABLES - Binary Log Management ===
+export MARIADB_BINLOG_FORMAT="${MARIADB_BINLOG_FORMAT:-MIXED}"
+export MARIADB_MAX_BINLOG_SIZE="${MARIADB_MAX_BINLOG_SIZE:-1G}"
+export MARIADB_BINLOG_EXPIRE_LOGS_SECONDS="${MARIADB_BINLOG_EXPIRE_LOGS_SECONDS:-2592000}"
+export MARIADB_SYNC_BINLOG="${MARIADB_SYNC_BINLOG:-1}"
 
-    # save to mariadb.config
-    save_config
-}
+# === FLEXIBILITY ===
+export MARIADB_EXTRA_OPTS="${MARIADB_EXTRA_OPTS:-}"
 
-# this function handles debug logging
-debug_log() {
-    if [[ "$MARIADB_DEBUG" == "true" ]]; then
-        echo "$@"
-    fi
-}
+# === DERIVED VARIABLES ===
+export MARIADB_DIR="${MARIADB_DIR:-$FLOX_ENV_CACHE/mariadb-data}"
+export MARIADB_DATADIR="$MARIADB_DIR/data"
+export MARIADB_SOCKET_DIR="$MARIADB_DIR/run"
+export MARIADB_SOCKET="$MARIADB_SOCKET_DIR/mysql.sock"
+export MARIADB_LOG_ERROR="$MARIADB_SOCKET_DIR/error.log"
+export DATABASE_URL="mysql://root:$MARIADB_ROOT_PASSWORD@$MARIADB_BIND_ADDRESS:$MARIADB_PORT/$MARIADB_DATABASE"
 
-# this function updates dependent vars after loading mariadb.config
-update_dependent_vars() {
-    # is $MARIADB_DIR an absolute path?
-    if [[ ! "$MARIADB_DIR" = /* ]]; then
-        MARIADB_DIR="$(pwd)/$MARIADB_DIR"
-        export MARIADB_DIR
-    fi
-
-    # set dependent vars with absolute paths
-    export MARIADB_DATADIR="$MARIADB_DIR/data"
-    export MARIADB_SOCKET="$MARIADB_DIR/run/mysql.sock"
-    export MARIADB_SOCKET_DIR="$MARIADB_DIR/run"
-    export MARIADB_LOG_ERROR="$MARIADB_DIR/run/error.log"
-    export DATABASE_URL="mysql://root:$MARIADB_ROOT_PASSWORD@$MARIADB_BIND_ADDRESS:$MARIADB_PORT/$MARIADB_DATABASE"
-
-    # debug output
-    debug_log "Configuration paths:"
-    debug_log "  MARIADB_DIR: $MARIADB_DIR"
-    debug_log "  MARIADB_DATADIR: $MARIADB_DATADIR"
-    debug_log "  MARIADB_SOCKET: $MARIADB_SOCKET"
-}
-
-# this function initializes mariadb
+# === INITIALIZATION FUNCTION ===
 initialize_mariadb() {
-    mkdir -p "$(dirname "$MARIADB_DATADIR")" && chmod 700 "$(dirname "$MARIADB_DATADIR")"
-    rm -rf "$MARIADB_DATADIR" && mkdir -p "$MARIADB_DATADIR" && chmod 700 "$MARIADB_DATADIR"
-    mkdir -p "$MARIADB_SOCKET_DIR" && chmod 700 "$MARIADB_SOCKET_DIR"
-
-    if [[ "$MARIADB_DEBUG" == "true" ]]; then
-        if ! mysql_install_db --datadir="$MARIADB_DATADIR" --user="$USER"; then
-            echo "Retrying without --user flag..."
-            mysql_install_db --datadir="$MARIADB_DATADIR"
-        fi
-    else
-        if ! mysql_install_db --datadir="$MARIADB_DATADIR" --user="$USER" > /dev/null 2>&1; then
-            mysql_install_db --datadir="$MARIADB_DATADIR" > /dev/null 2>&1
-        fi
+    # Check if already initialized
+    if [ -d "$MARIADB_DATADIR/mysql" ]; then
+        return 0
     fi
 
-    return $?
-}
+    # Create directories with proper permissions
+    mkdir -p "$MARIADB_DATADIR" "$MARIADB_SOCKET_DIR"
+    chmod 700 "$MARIADB_DATADIR" "$MARIADB_SOCKET_DIR"
 
-# this function starts mariadb
-start_mariadb() {
-    # is $MARIADB_SOCKET_DIR an absolute path?
-    if [[ ! "$MARIADB_SOCKET_DIR" = /* ]]; then
-        debug_log "Warning: MARIADB_SOCKET_DIR is not an absolute path. Using absolute path instead."
-        MARIADB_SOCKET_DIR="$(pwd)/$MARIADB_SOCKET_DIR"
-        export MARIADB_SOCKET_DIR
-        export MARIADB_SOCKET="$MARIADB_SOCKET_DIR/mysql.sock"
+    # Initialize MariaDB with direct execution
+    echo "Initializing MariaDB database..."
+    if ! mysql_install_db \
+        --datadir="$MARIADB_DATADIR" \
+        --user="$USER" \
+        $MARIADB_INIT_ARGS \
+        > /dev/null 2>&1; then
+        echo "❌ Failed to initialize MariaDB"
+        echo "Trying without --user flag..."
+        mysql_install_db \
+            --datadir="$MARIADB_DATADIR" \
+            $MARIADB_INIT_ARGS \
+            > /dev/null 2>&1 || { echo "❌ Failed again"; return 1; }
     fi
 
-    # create socket dir
-    debug_log "Creating MariaDB socket directory at: $MARIADB_SOCKET_DIR"
-    mkdir -p "$MARIADB_SOCKET_DIR"
-    chmod 700 "$MARIADB_SOCKET_DIR"
+    # Start MariaDB temporarily to set password and create database
+    echo "Configuring MariaDB..."
+    mysqld --datadir="$MARIADB_DATADIR" \
+        --socket="$MARIADB_SOCKET" \
+        --bind-address=127.0.0.1 \
+        --port="$MARIADB_PORT" \
+        --skip-networking \
+        --log-error="$MARIADB_LOG_ERROR" \
+        > /dev/null 2>&1 &
+    MARIADB_PID=$!
 
-    # was / was not socket dir created successfully?
-    if [[ ! -d "$MARIADB_SOCKET_DIR" ]]; then
-        echo "Error: Failed to create MariaDB socket directory at $MARIADB_SOCKET_DIR"
-        return 1
-    fi
+    sleep 3  # Wait for startup
 
-    debug_log "Starting MariaDB with socket: $MARIADB_SOCKET"
-    debug_log "Data directory: $MARIADB_DATADIR"
-
-    # start mariadb with or without debugging
-    if [[ "$MARIADB_DEBUG" == "true" ]]; then
-        mysqld --datadir="$MARIADB_DATADIR" \
-               --socket="$MARIADB_SOCKET" \
-               --bind-address="$MARIADB_BIND_ADDRESS" \
-               --port="$MARIADB_PORT" \
-               --log-error="$MARIADB_LOG_ERROR" &
-        MARIADB_PID=$!
-    else
-        mysqld --datadir="$MARIADB_DATADIR" \
-               --socket="$MARIADB_SOCKET" \
-               --bind-address="$MARIADB_BIND_ADDRESS" \
-               --port="$MARIADB_PORT" \
-               --log-error="$MARIADB_LOG_ERROR" > /dev/null 2>&1 &
-        MARIADB_PID=$!
-    fi
-
-    export MARIADB_PID
-    sleep 3  # Wait for MariaDB to start
-
-    return 0
-}
-
-# this function sets root password
-set_root_password() {
-    debug_log "Setting root password..."
-    # MariaDB uses unix_socket by default, so connect without password first
+    # Set root password (MariaDB uses unix_socket by default, so connect without password first)
     mysql -u root --socket="$MARIADB_SOCKET" <<EOF > /dev/null 2>&1
 ALTER USER 'root'@'localhost' IDENTIFIED BY '$MARIADB_ROOT_PASSWORD';
 FLUSH PRIVILEGES;
 EOF
-    return 0
-}
 
-# this function creates database if not exist
-create_database() {
-    if [[ "$MARIADB_DATABASE" != "mysql" ]]; then
-        debug_log "Creating database $MARIADB_DATABASE..."
-        mysql -u root --password="$MARIADB_ROOT_PASSWORD" --socket="$MARIADB_SOCKET" -e "CREATE DATABASE IF NOT EXISTS \`$MARIADB_DATABASE\`;" > /dev/null 2>&1
+    # Create additional user if specified
+    if [ -n "$MARIADB_USER" ] && [ -n "$MARIADB_PASSWORD" ]; then
+        mysql -u root --password="$MARIADB_ROOT_PASSWORD" --socket="$MARIADB_SOCKET" <<EOF > /dev/null 2>&1
+CREATE USER IF NOT EXISTS '$MARIADB_USER'@'localhost' IDENTIFIED BY '$MARIADB_PASSWORD';
+CREATE USER IF NOT EXISTS '$MARIADB_USER'@'%' IDENTIFIED BY '$MARIADB_PASSWORD';
+GRANT ALL PRIVILEGES ON *.* TO '$MARIADB_USER'@'localhost';
+GRANT ALL PRIVILEGES ON *.* TO '$MARIADB_USER'@'%';
+FLUSH PRIVILEGES;
+EOF
     fi
-    return 0
-}
 
-# this function stops mariadb
-stop_mariadb() {
-    if [[ -n "$MARIADB_PID" ]]; then
-        debug_log "Stopping MariaDB (PID: $MARIADB_PID)..."
-        if mysqladmin -u root --password="$MARIADB_ROOT_PASSWORD" --socket="$MARIADB_SOCKET" shutdown > /dev/null 2>&1; then
-            wait $MARIADB_PID 2>/dev/null
-        else
-            # If shutdown fails, try kill
-            kill $MARIADB_PID 2>/dev/null
-            sleep 1
-            kill -9 $MARIADB_PID 2>/dev/null
-        fi
+    # Create database if not "mysql"
+    if [ "$MARIADB_DATABASE" != "mysql" ]; then
+        mysql -u root --password="$MARIADB_ROOT_PASSWORD" --socket="$MARIADB_SOCKET" \
+            -e "CREATE DATABASE IF NOT EXISTS \`$MARIADB_DATABASE\`;" > /dev/null 2>&1
     fi
-    return 0
-}
 
-# we call this function from profile if we want/need to reconfigure mariadb
-reconfigure_mariadb() {
-    rm -f "$CONFIG_FILE"
-    first_run_setup
-    mariadb_setup
-}
-
-# it's tautological!
-first_run_setup() {
-    if check_first_run; then
-        display_mariadb_config_ui
+    # Stop MariaDB
+    if mysqladmin -u root --password="$MARIADB_ROOT_PASSWORD" --socket="$MARIADB_SOCKET" shutdown > /dev/null 2>&1; then
+        wait $MARIADB_PID 2>/dev/null
     else
-        load_config
+        # If shutdown fails, try kill
+        kill $MARIADB_PID 2>/dev/null
+        sleep 1
+        kill -9 $MARIADB_PID 2>/dev/null
     fi
 
-    update_dependent_vars
-}
-
-# our gum-ified tui (thank you ye good folk at charmbracelet!)
-display_mariadb_config_ui() {
-    clear
-
-    # customize header + colors
-    gum style \
-        --border rounded \
-        --border-foreground 240 \
-        --padding "1 2" \
-        --margin "1 0" \
-        --width 70 \
-        "$(gum style --foreground 42 --bold 'MariaDB Configuration')
-
-$(gum style --foreground 240 'First-time setup for your local development database')"
-
-    prompt_for_config
-}
-
-# mariadb setup master function
-mariadb_setup() {
-    debug_log "Setting up MariaDB..."
-
-    # this is where we init mariadb
-    debug_log "Initializing MariaDB..."
-    initialize_mariadb || { echo "Failed to initialize MariaDB"; return 1; }
-
-    if [[ -d "$MARIADB_DATADIR/mysql" ]]; then
-        debug_log "MariaDB data directory initialized successfully"
-
-        # this is where we start it up
-        debug_log "Starting MariaDB..."
-        start_mariadb || { echo "Failed to start MariaDB"; return 1; }
-
-        # set root password
-        debug_log "Setting root password..."
-        set_root_password || { echo "Failed to set root password"; return 1; }
-
-        # this is where we create database
-        debug_log "Creating database..."
-        create_database || { echo "Failed to create database"; return 1; }
-
-        # this is where we shut it down
-        debug_log "Stopping MariaDB..."
-        stop_mariadb || { echo "Failed to stop MariaDB"; return 1; }
-
-        debug_log "MariaDB setup completed successfully"
-    else
-        echo "Error: MariaDB data directory was not initialized correctly"
-        return 1
-    fi
-
+    echo "✅ MariaDB initialized successfully"
     return 0
 }
 
-# gummified help message
-show_mariadb_help() {
-    # Determine display host
-    local display_host
-    if [[ "$MARIADB_BIND_ADDRESS" == "0.0.0.0" ]]; then
-        display_host="localhost"
-    else
-        display_host="$MARIADB_BIND_ADDRESS"
+# Run initialization
+initialize_mariadb
+
+# Display info with safety warnings
+echo ""
+echo "✅ MariaDB environment ready (headless mode)"
+echo ""
+
+# Safety warnings
+if [ "$MARIADB_BIND_ADDRESS" = "0.0.0.0" ]; then
+    echo "⚠️  WARNING: Listening on all interfaces - NETWORK EXPOSED"
+fi
+if [ "$MARIADB_INNODB_FLUSH_LOG_AT_TRX_COMMIT" = "0" ] || [ "$MARIADB_INNODB_FLUSH_LOG_AT_TRX_COMMIT" = "2" ]; then
+    echo "⚠️  WARNING: innodb_flush_log_at_trx_commit=$MARIADB_INNODB_FLUSH_LOG_AT_TRX_COMMIT - DATA LOSS RISK"
+fi
+[ "$MARIADB_BIND_ADDRESS" = "0.0.0.0" ] || [ "$MARIADB_INNODB_FLUSH_LOG_AT_TRX_COMMIT" = "0" ] || [ "$MARIADB_INNODB_FLUSH_LOG_AT_TRX_COMMIT" = "2" ] && echo ""
+
+echo "Connection:"
+echo "  Bind address: ${MARIADB_BIND_ADDRESS}:${MARIADB_PORT}"
+echo "  Socket: ${MARIADB_SOCKET}"
+echo "  Database: ${MARIADB_DATABASE}"
+echo "  Root password: ${MARIADB_ROOT_PASSWORD}"
+echo ""
+echo "Performance:"
+echo "  Max connections: ${MARIADB_MAX_CONNECTIONS}"
+echo "  InnoDB buffer pool: ${MARIADB_INNODB_BUFFER_POOL_SIZE}"
+echo "  InnoDB flush at commit: ${MARIADB_INNODB_FLUSH_LOG_AT_TRX_COMMIT}"
+echo "  Thread pool size: ${MARIADB_THREAD_POOL_SIZE}"
+echo ""
+echo "Commands:"
+echo "  flox activate -s        Start MariaDB"
+echo "  mysql -u root -p        Connect to database"
+echo "  mariadb-info            Show configuration"
+echo "  helpf                   View environment documentation"
+echo ""
+
+# Fetch README if missing
+
+  # Fetch README.md if not present
+  README_FILE="$FLOX_ENV_PROJECT/README.md"
+  if [ ! -f "$README_FILE" ]; then
+    if curl -fsSL https://raw.githubusercontent.com/barstoolbluz/floxenvs/main/mariadb-headless/README.md -o "$README_FILE" 2>/dev/null; then
+      echo "✓ Downloaded README.md (use 'helpf' to view)"
     fi
-
-    # Create the help message with Gum styling
-    gum style \
-        --border rounded \
-        --border-foreground 240 \
-        --padding "1 2" \
-        --margin "1 0" \
-        --width 96 \
-        "$(gum style --foreground 42 --bold 'This is a  F l o x  MariaDB Environment')
-
-👉  Service Management:
-    $(gum style --foreground 49 'flox activate -s')      Start MariaDB at activation
-    $(gum style --foreground 49 'mariadbstart')          Start MariaDB post activation
-    $(gum style --foreground 49 'mariadbstop')           Stop MariaDB post activation
-    $(gum style --foreground 49 'mariadbrestart')        Restart MariaDB post activation
-
-👉  Configuration:
-    $(gum style --foreground 49 'mariadbconfigure')      Reconfigure MariaDB post activation
-
-👉  Connection:
-    $(gum style --foreground 49 'mysql -u root -p')      Connect to MariaDB (password: $MARIADB_ROOT_PASSWORD)
-
-👉  Connection Details:
-    Host:     $(gum style --foreground 49 "${display_host}")
-    Port:     $(gum style --foreground 49 "${MARIADB_PORT}")
-    Database: $(gum style --foreground 49 "${MARIADB_DATABASE}")
-    Socket:   $(gum style --foreground 49 "${MARIADB_SOCKET}")"
-
-    echo ""
-}
-
-# it's tautological!
-main() {
-    first_run_setup
-
-    mariadb_setup
-
-    show_mariadb_help
-}
-
-# runnit all
-main
-'''
-
-[profile]
-common = '''
-'''
-
-bash = '''
-source "${FLOX_ENV_CACHE}/mariadb.config" 2>/dev/null || true
-mariadbstart() { flox services start mariadb; }
-mariadbstop() { flox services stop mariadb; }
-mariadbrestart() { flox services restart mariadb; }
-mariadbconfigure() {
-  flox services stop mariadb
-  source "${FLOX_ENV_CACHE}/mariadb.config" 2>/dev/null || true
-  reconfigure_mariadb
-  flox services start mariadb
-}
-export -f mariadbstart mariadbstop mariadbrestart mariadbconfigure
-unset -f debug_log initialize_mariadb start_mariadb stop_mariadb
-unset -f set_root_password create_database check_first_run
-unset -f load_config prompt_for_config display_mariadb_config_ui main
-'''
-
-zsh = '''
-source "${FLOX_ENV_CACHE}/mariadb.config" 2>/dev/null || true
-mariadbstart() { flox services start mariadb; }
-mariadbstop() { flox services stop mariadb; }
-mariadbrestart() { flox services restart mariadb; }
-mariadbconfigure() {
-  flox services stop mariadb
-  source "${FLOX_ENV_CACHE}/mariadb.config" 2>/dev/null || true
-  reconfigure_mariadb
-  flox services start mariadb
-}
-unset -f "debug_log" "initialize_mariadb" "start_mariadb" "stop_mariadb"
-unset -f "set_root_password" "create_database" "check_first_run"
-unset -f "load_config" "prompt_for_config" "display_mariadb_config_ui" "main"
-'''
-
-fish = '''
-source "$FLOX_ENV_CACHE/mariadb.config" 2>/dev/null || true
-
-function mariadbstart
-    flox services start mariadb
-end
-
-function mariadbstop
-    flox services stop mariadb
-end
-
-function mariadbrestart
-    flox services restart mariadb
-end
-
-function mariadbconfigure
-    flox services stop mariadb
-    source "$FLOX_ENV_CACHE/mariadb.config" 2>/dev/null || true
-    reconfigure_mariadb
-    flox services start mariadb
-end
-
-functions -e debug_log initialize_mariadb start_mariadb stop_mariadb
-functions -e set_root_password create_database check_first_run
-functions -e load_config prompt_for_config display_mariadb_config_ui main
+  fi
 '''
 
 [services]
-mariadb.command = "mysqld --datadir=$MARIADB_DATADIR --socket=$MARIADB_SOCKET --bind-address=$MARIADB_BIND_ADDRESS --port=$MARIADB_PORT --log-error=$MARIADB_LOG_ERROR"
+mariadb.command = '''
+# Ensure socket directory exists
+mkdir -p "$MARIADB_SOCKET_DIR"
+chmod 700 "$MARIADB_SOCKET_DIR"
+
+# Start MariaDB with all runtime configuration
+exec mysqld --datadir="$MARIADB_DATADIR" \
+  --socket="$MARIADB_SOCKET" \
+  --bind-address="$MARIADB_BIND_ADDRESS" \
+  --port="$MARIADB_PORT" \
+  --character-set-server="$MARIADB_CHARSET" \
+  --collation-server="$MARIADB_COLLATION" \
+  --log-error="$MARIADB_LOG_ERROR" \
+  --max-connections="$MARIADB_MAX_CONNECTIONS" \
+  --innodb-buffer-pool-size="$MARIADB_INNODB_BUFFER_POOL_SIZE" \
+  --tmp-table-size="$MARIADB_TMP_TABLE_SIZE" \
+  --max-heap-table-size="$MARIADB_MAX_HEAP_TABLE_SIZE" \
+  --thread-cache-size="$MARIADB_THREAD_CACHE_SIZE" \
+  --sort-buffer-size="$MARIADB_SORT_BUFFER_SIZE" \
+  --join-buffer-size="$MARIADB_JOIN_BUFFER_SIZE" \
+  --innodb-log-file-size="$MARIADB_INNODB_LOG_FILE_SIZE" \
+  --innodb-flush-log-at-trx-commit="$MARIADB_INNODB_FLUSH_LOG_AT_TRX_COMMIT" \
+  $([ -n "$MARIADB_INNODB_FLUSH_METHOD" ] && echo "--innodb-flush-method=$MARIADB_INNODB_FLUSH_METHOD") \
+  --innodb-file-per-table="$MARIADB_INNODB_FILE_PER_TABLE" \
+  --thread-pool-size="$MARIADB_THREAD_POOL_SIZE" \
+  --slow-query-log="$MARIADB_SLOW_QUERY_LOG" \
+  --long-query-time="$MARIADB_LONG_QUERY_TIME" \
+  $([ -n "$MARIADB_LOG_BIN" ] && echo "--log-bin=$MARIADB_LOG_BIN") \
+  --binlog-format="$MARIADB_BINLOG_FORMAT" \
+  --max-binlog-size="$MARIADB_MAX_BINLOG_SIZE" \
+  --binlog-expire-logs-seconds="$MARIADB_BINLOG_EXPIRE_LOGS_SECONDS" \
+  --sync-binlog="$MARIADB_SYNC_BINLOG" \
+  $MARIADB_EXTRA_OPTS
+'''
+
+[profile]
+bash = '''
+mariadb-info() {
+    echo "MariaDB (Headless Mode) - Configuration"
+    echo ""
+    echo "Connection:"
+    echo "  Bind address: ${MARIADB_BIND_ADDRESS}:${MARIADB_PORT}"
+    echo "  Socket: ${MARIADB_SOCKET}"
+    echo "  Database: ${MARIADB_DATABASE}"
+    echo "  Root user: root"
+    echo ""
+    echo "Performance:"
+    echo "  Max connections: ${MARIADB_MAX_CONNECTIONS}"
+    echo "  InnoDB buffer pool: ${MARIADB_INNODB_BUFFER_POOL_SIZE}"
+    echo "  Tmp table size: ${MARIADB_TMP_TABLE_SIZE}"
+    echo "  Max heap table size: ${MARIADB_MAX_HEAP_TABLE_SIZE}"
+    echo "  Thread cache size: ${MARIADB_THREAD_CACHE_SIZE}"
+    echo "  Thread pool size: ${MARIADB_THREAD_POOL_SIZE}"
+    echo ""
+    echo "InnoDB:"
+    echo "  Log file size: ${MARIADB_INNODB_LOG_FILE_SIZE}"
+    echo "  Flush at commit: ${MARIADB_INNODB_FLUSH_LOG_AT_TRX_COMMIT}"
+    echo "  File per table: ${MARIADB_INNODB_FILE_PER_TABLE}"
+    echo ""
+    echo "Logging:"
+    echo "  Slow query log: ${MARIADB_SLOW_QUERY_LOG}"
+    echo "  Long query time: ${MARIADB_LONG_QUERY_TIME}s"
+    echo ""
+    echo "Data Directory: ${MARIADB_DATADIR}"
+    echo ""
+    echo "Commands:"
+    echo "  mysql -u root -p              Connect (password: $MARIADB_ROOT_PASSWORD)"
+    echo "  flox services status          Check service status"
+    echo "  flox services logs mariadb    View service logs"
+    echo "  flox services restart mariadb Restart with new settings"
+}
+export -f mariadb-info
+
+# View environment documentation
+
+  helpf() {
+    local README_FILE="$FLOX_ENV_PROJECT/README.md"
+    local README_URL="https://raw.githubusercontent.com/barstoolbluz/floxenvs/main/mariadb-headless/README.md"
+
+    if [ "$1" = "--help" ]; then
+      echo "Usage: helpf [OPTIONS]"
+      echo ""
+      echo "View environment documentation"
+      echo ""
+      echo "Options:"
+      echo "  --force    Force download fresh copy from GitHub"
+      echo "  --help     Show this help message"
+      echo ""
+      echo "The README is cached locally and only downloaded if missing."
+      return 0
+    fi
+
+    if [ "$1" = "--force" ]; then
+      echo "Fetching latest README.md from GitHub..."
+      if curl -fsSL "$README_URL" -o "$README_FILE"; then
+        echo "✓ Downloaded README.md"
+      else
+        echo "✗ Failed to download README.md"
+        return 1
+      fi
+    elif [ ! -f "$README_FILE" ]; then
+      echo "README.md not found, downloading..."
+      if curl -fsSL "$README_URL" -o "$README_FILE"; then
+        echo "✓ Downloaded README.md"
+      else
+        echo "✗ Failed to download README.md"
+        return 1
+      fi
+    fi
+
+    if [ -f "$README_FILE" ]; then
+      bat --style=auto --paging=always "$README_FILE"
+    else
+      echo "✗ README.md not found at $README_FILE"
+      return 1
+    fi
+  }
+  export -f helpf
+'''
+
+zsh = '''
+mariadb-info() {
+    echo "MariaDB (Headless Mode) - Configuration"
+    echo ""
+    echo "Connection:"
+    echo "  Bind address: ${MARIADB_BIND_ADDRESS}:${MARIADB_PORT}"
+    echo "  Socket: ${MARIADB_SOCKET}"
+    echo "  Database: ${MARIADB_DATABASE}"
+    echo "  Root user: root"
+    echo ""
+    echo "Performance:"
+    echo "  Max connections: ${MARIADB_MAX_CONNECTIONS}"
+    echo "  InnoDB buffer pool: ${MARIADB_INNODB_BUFFER_POOL_SIZE}"
+    echo "  Tmp table size: ${MARIADB_TMP_TABLE_SIZE}"
+    echo "  Max heap table size: ${MARIADB_MAX_HEAP_TABLE_SIZE}"
+    echo "  Thread cache size: ${MARIADB_THREAD_CACHE_SIZE}"
+    echo "  Thread pool size: ${MARIADB_THREAD_POOL_SIZE}"
+    echo ""
+    echo "InnoDB:"
+    echo "  Log file size: ${MARIADB_INNODB_LOG_FILE_SIZE}"
+    echo "  Flush at commit: ${MARIADB_INNODB_FLUSH_LOG_AT_TRX_COMMIT}"
+    echo "  File per table: ${MARIADB_INNODB_FILE_PER_TABLE}"
+    echo ""
+    echo "Logging:"
+    echo "  Slow query log: ${MARIADB_SLOW_QUERY_LOG}"
+    echo "  Long query time: ${MARIADB_LONG_QUERY_TIME}s"
+    echo ""
+    echo "Data Directory: ${MARIADB_DATADIR}"
+    echo ""
+    echo "Commands:"
+    echo "  mysql -u root -p              Connect (password: $MARIADB_ROOT_PASSWORD)"
+    echo "  flox services status          Check service status"
+    echo "  flox services logs mariadb    View service logs"
+    echo "  flox services restart mariadb Restart with new settings"
+}
+
+# View environment documentation
+
+  helpf() {
+    local README_FILE="$FLOX_ENV_PROJECT/README.md"
+    local README_URL="https://raw.githubusercontent.com/barstoolbluz/floxenvs/main/mariadb-headless/README.md"
+
+    if [ "$1" = "--help" ]; then
+      echo "Usage: helpf [OPTIONS]"
+      echo ""
+      echo "View environment documentation"
+      echo ""
+      echo "Options:"
+      echo "  --force    Force download fresh copy from GitHub"
+      echo "  --help     Show this help message"
+      echo ""
+      echo "The README is cached locally and only downloaded if missing."
+      return 0
+    fi
+
+    if [ "$1" = "--force" ]; then
+      echo "Fetching latest README.md from GitHub..."
+      if curl -fsSL "$README_URL" -o "$README_FILE"; then
+        echo "✓ Downloaded README.md"
+      else
+        echo "✗ Failed to download README.md"
+        return 1
+      fi
+    elif [ ! -f "$README_FILE" ]; then
+      echo "README.md not found, downloading..."
+      if curl -fsSL "$README_URL" -o "$README_FILE"; then
+        echo "✓ Downloaded README.md"
+      else
+        echo "✗ Failed to download README.md"
+        return 1
+      fi
+    fi
+
+    if [ -f "$README_FILE" ]; then
+      bat --style=auto --paging=always "$README_FILE"
+    else
+      echo "✗ README.md not found at $README_FILE"
+      return 1
+    fi
+  }
+'''
+
+fish = '''
+function mariadb-info
+    echo "MariaDB (Headless Mode) - Configuration"
+    echo ""
+    echo "Connection:"
+    echo "  Bind address: $MARIADB_BIND_ADDRESS:$MARIADB_PORT"
+    echo "  Socket: $MARIADB_SOCKET"
+    echo "  Database: $MARIADB_DATABASE"
+    echo "  Root user: root"
+    echo ""
+    echo "Performance:"
+    echo "  Max connections: $MARIADB_MAX_CONNECTIONS"
+    echo "  InnoDB buffer pool: $MARIADB_INNODB_BUFFER_POOL_SIZE"
+    echo "  Tmp table size: $MARIADB_TMP_TABLE_SIZE"
+    echo "  Max heap table size: $MARIADB_MAX_HEAP_TABLE_SIZE"
+    echo "  Thread cache size: $MARIADB_THREAD_CACHE_SIZE"
+    echo "  Thread pool size: $MARIADB_THREAD_POOL_SIZE"
+    echo ""
+    echo "InnoDB:"
+    echo "  Log file size: $MARIADB_INNODB_LOG_FILE_SIZE"
+    echo "  Flush at commit: $MARIADB_INNODB_FLUSH_LOG_AT_TRX_COMMIT"
+    echo "  File per table: $MARIADB_INNODB_FILE_PER_TABLE"
+    echo ""
+    echo "Logging:"
+    echo "  Slow query log: $MARIADB_SLOW_QUERY_LOG"
+    echo "  Long query time: $MARIADB_LONG_QUERY_TIME"s
+    echo ""
+    echo "Data Directory: $MARIADB_DATADIR"
+    echo ""
+    echo "Commands:"
+    echo "  mysql -u root -p              Connect (password: $MARIADB_ROOT_PASSWORD)"
+    echo "  flox services status          Check service status"
+    echo "  flox services logs mariadb    View service logs"
+    echo "  flox services restart mariadb Restart with new settings"
+end
+
+# View environment documentationend
+
+  # Fetch README if missing or --force specified
+  if test "$force_fetch" = true; or test ! -s "$README_FILE"
+    if curl -fsSL "$README_URL" -o "$README_FILE" 2>/dev/null
+      test "$force_fetch" = true; and echo "README refreshed from $README_URL"
+    else
+      echo "Warning: Failed to fetch README from $README_URL"
+      test ! -s "$README_FILE"; and return 1
+    end
+  end
+
+  # Display with bat (if available) or cat
+  if command -v bat >/dev/null 2>&1
+    bat --paging=always "$README_FILE"
+  else
+    cat "$README_FILE"
+  end
+end
+
+function helpf
+    set README_FILE "$FLOX_ENV_PROJECT/README.md"
+    set README_URL "https://raw.githubusercontent.com/barstoolbluz/floxenvs/main/mariadb-headless/README.md"
+
+    if test "$argv[1]" = "--help"
+        echo "Usage: helpf [OPTIONS]"
+        echo ""
+        echo "View environment documentation"
+        echo ""
+        echo "Options:"
+        echo "  --force    Force download fresh copy from GitHub"
+        echo "  --help     Show this help message"
+        echo ""
+        echo "The README is cached locally and only downloaded if missing."
+        return 0
+    end
+
+    if test "$argv[1]" = "--force"
+        echo "Fetching latest README.md from GitHub..."
+        if curl -fsSL "$README_URL" -o "$README_FILE"
+            echo "✓ Downloaded README.md"
+        else
+            echo "✗ Failed to download README.md"
+            return 1
+        end
+    else if not test -f "$README_FILE"
+        echo "README.md not found, downloading..."
+        if curl -fsSL "$README_URL" -o "$README_FILE"
+            echo "✓ Downloaded README.md"
+        else
+            echo "✗ Failed to download README.md"
+            return 1
+        end
+    end
+
+    if test -f "$README_FILE"
+        bat --style=auto --paging=always "$README_FILE"
+    else
+        echo "✗ README.md not found at $README_FILE"
+        return 1
+    end
+end
+'''
 
 [options]
 systems = [

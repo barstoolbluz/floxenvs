@@ -1,0 +1,799 @@
+{
+  "lockfile-version": 1,
+  "manifest": {
+    "version": 1,
+    "install": {
+      "bat": {
+        "pkg-path": "bat"
+      },
+      "curl": {
+        "pkg-path": "curl"
+      },
+      "git": {
+        "pkg-path": "git"
+      },
+      "jenkins": {
+        "pkg-path": "jenkins"
+      },
+      "jq": {
+        "pkg-path": "jq"
+      },
+      "openjdk21": {
+        "pkg-path": "openjdk21"
+      }
+    },
+    "vars": {
+      "JENKINS_DATA_DIR": "$FLOX_ENV_CACHE/data/jenkins-home",
+      "PLUGIN_MGR_DIR": "$FLOX_ENV_CACHE/cache"
+    },
+    "hook": {
+      "on-activate": "# CRITICAL: Use 'return' not 'exit' to keep environment active\n\n# === Directory Structure Setup ===\nsetup_directories() {\n  mkdir -p \"$FLOX_ENV_CACHE/config\"\n  mkdir -p \"$FLOX_ENV_CACHE/data/jenkins-home\"\n  mkdir -p \"$FLOX_ENV_CACHE/logs\"\n  mkdir -p \"$FLOX_ENV_CACHE/cache\"\n}\n\n# === Runtime Configuration (Override with env vars) ===\nconfigure_runtime() {\n  export JENKINS_HOME=\"${JENKINS_HOME:-$FLOX_ENV_CACHE/data/jenkins-home}\"\n  export JENKINS_PORT=\"${JENKINS_PORT:-8080}\"\n  export JENKINS_PREFIX=\"${JENKINS_PREFIX:-/}\"\n  export JENKINS_ADMIN_USER=\"${JENKINS_ADMIN_USER:-admin}\"\n\n  # Admin password from env var or config file\n  CREDS_FILE=\"$HOME/.config/jenkins/credentials\"\n  if [ -z \"$JENKINS_ADMIN_PASSWORD\" ] && [ -f \"$CREDS_FILE\" ]; then\n    source \"$CREDS_FILE\"\n  fi\n\n  # Java options\n  export JENKINS_JAVA_OPTS=\"${JENKINS_JAVA_OPTS:--Xmx1g -Djava.awt.headless=true}\"\n\n  # Plugin selection (space-separated list)\n  export JENKINS_PLUGINS=\"${JENKINS_PLUGINS:-git workflow-aggregator docker-workflow github configuration-as-code}\"\n\n  # JCasC configuration file\n  export JENKINS_CASC_CONFIG=\"${JENKINS_CASC_CONFIG:-$FLOX_ENV_CACHE/config/jenkins.yaml}\"\n}\n\n# === Plugin Installation Manager Setup ===\nsetup_plugin_manager() {\n  PLUGIN_MGR_VERSION=\"2.13.0\"\n  PLUGIN_MGR_JAR=\"$FLOX_ENV_CACHE/cache/jenkins-plugin-manager-${PLUGIN_MGR_VERSION}.jar\"\n  PLUGIN_MGR_URL=\"https://github.com/jenkinsci/plugin-installation-manager-tool/releases/download/${PLUGIN_MGR_VERSION}/jenkins-plugin-manager-${PLUGIN_MGR_VERSION}.jar\"\n\n  if [ ! -f \"$PLUGIN_MGR_JAR\" ]; then\n    echo \"⬇️  Downloading Jenkins Plugin Installation Manager v${PLUGIN_MGR_VERSION}...\"\n    if curl -fsSL \"$PLUGIN_MGR_URL\" -o \"$PLUGIN_MGR_JAR\"; then\n      echo \"✓ Plugin manager downloaded\"\n    else\n      echo \"⚠️  Failed to download plugin manager\"\n      echo \"   Plugins can still be installed manually or via jenkins-cli\"\n      return 1\n    fi\n  fi\n\n  # Export for use in functions\n  export JENKINS_PLUGIN_MGR_JAR=\"$PLUGIN_MGR_JAR\"\n}\n\n# === Find Jenkins WAR File ===\nfind_jenkins_war() {\n  # Find jenkins.war from installed package via jenkins-cli path\n  JENKINS_CLI_PATH=$(which jenkins-cli 2>/dev/null)\n\n  if [ -z \"$JENKINS_CLI_PATH\" ]; then\n    echo \"❌ Could not find jenkins-cli\"\n    echo \"   Make sure jenkins package is installed\"\n    return 1\n  fi\n\n  # Get the package directory and find webapps/jenkins.war\n  JENKINS_PKG_DIR=$(dirname \"$(dirname \"$JENKINS_CLI_PATH\")\")\n  JENKINS_WAR=\"$JENKINS_PKG_DIR/webapps/jenkins.war\"\n\n  if [ ! -f \"$JENKINS_WAR\" ]; then\n    echo \"❌ Could not find jenkins.war at $JENKINS_WAR\"\n    echo \"   Jenkins package structure may have changed\"\n    return 1\n  fi\n\n  export JENKINS_WAR\n}\n\n# === Generate Default JCasC Configuration ===\ngenerate_jcasc_config() {\n  JCASC_FILE=\"$FLOX_ENV_CACHE/config/jenkins.yaml\"\n\n  # Only generate if it doesn't exist\n  if [ ! -f \"$JCASC_FILE\" ]; then\n    cat > \"$JCASC_FILE\" << 'EOF'\njenkins:\n  systemMessage: \"Jenkins Headless Environment (Flox)\"\n  numExecutors: 0  # Best practice: no builds on controller\n  mode: EXCLUSIVE\n\n  securityRealm:\n    local:\n      allowsSignup: false\n      users:\n        - id: \"${JENKINS_ADMIN_USER}\"\n          password: \"${JENKINS_ADMIN_PASSWORD:-changeme}\"\n\n  authorizationStrategy:\n    loggedInUsersCanDoAnything:\n      allowAnonymousRead: false\n\nunclassified:\n  location:\n    url: \"http://localhost:${JENKINS_PORT}${JENKINS_PREFIX}\"\n    adminAddress: \"jenkins@localhost\"\nEOF\n    echo \"✓ Generated default JCasC configuration: $JCASC_FILE\"\n  fi\n}\n\n# === Main Setup Function ===\nmain_setup() {\n  setup_directories\n  configure_runtime\n  find_jenkins_war || return 1\n  setup_plugin_manager\n  generate_jcasc_config\n\n  # Fetch README if missing\n  README_FILE=\"$FLOX_ENV_PROJECT/README.md\"\n  if [ ! -s \"$README_FILE\" ]; then\n      curl -fsSL \"https://raw.githubusercontent.com/barstoolbluz/floxenvs/main/jenkins-headless/README.md\" -o \"$README_FILE\" 2>/dev/null || true\n  fi\n\n  # Display configuration\n  echo \"\"\n  echo \"✅ Jenkins Headless Environment Ready\"\n  echo \"\"\n  echo \"Configuration:\"\n  echo \"  JENKINS_HOME:   $JENKINS_HOME\"\n  echo \"  Port:           $JENKINS_PORT\"\n  echo \"  Prefix:         $JENKINS_PREFIX\"\n  echo \"  Admin User:     $JENKINS_ADMIN_USER\"\n  echo \"  Plugins:        $JENKINS_PLUGINS\"\n  echo \"\"\n  echo \"Commands:\"\n  echo \"  flox activate -s        Start Jenkins service\"\n  echo \"  jenkins-info           Show detailed configuration\"\n  echo \"  jenkins-health         Check Jenkins health\"\n  echo \"  jenkins-logs           Tail Jenkins logs\"\n  echo \"  helpf                  View documentation\"\n  echo \"\"\n  echo \"Runtime Overrides:\"\n  echo \"  JENKINS_PORT=9090 flox activate -s\"\n  echo \"  JENKINS_PLUGINS=\\\"git pipeline\\\" flox activate -s\"\n  echo \"\"\n\n  # Return to project directory\n  cd \"$FLOX_ENV_PROJECT\"\n}\n\n# Execute main setup\nmain_setup\n"
+    },
+    "profile": {
+      "bash": "# Show Jenkins configuration\njenkins-info() {\n  echo \"Jenkins Headless Environment Configuration\"\n  echo \"\"\n  echo \"Version:\"\n  if [ -f \"$JENKINS_WAR\" ]; then\n    java -jar \"$JENKINS_WAR\" --version 2>&1 | head -1 || echo \"  (Jenkins WAR found)\"\n  else\n    echo \"  Jenkins package installed\"\n  fi\n  echo \"\"\n  echo \"Server:\"\n  echo \"  URL:            http://localhost:${JENKINS_PORT}${JENKINS_PREFIX}\"\n  echo \"  JENKINS_HOME:   ${JENKINS_HOME}\"\n  echo \"  Admin User:     ${JENKINS_ADMIN_USER}\"\n  echo \"\"\n  echo \"Configuration:\"\n  echo \"  Java Options:   ${JENKINS_JAVA_OPTS}\"\n  echo \"  JCasC Config:   ${JENKINS_CASC_CONFIG}\"\n  echo \"  Plugins:        ${JENKINS_PLUGINS}\"\n  echo \"\"\n  echo \"Logs:\"\n  echo \"  Service Log:    $FLOX_ENV_CACHE/logs/jenkins.log\"\n  echo \"  Jenkins Logs:   $JENKINS_HOME/logs/\"\n  echo \"\"\n}\nexport -f jenkins-info\n\n# Check Jenkins health\njenkins-health() {\n  local url=\"http://localhost:${JENKINS_PORT}${JENKINS_PREFIX}/login\"\n\n  if curl -sf \"$url\" >/dev/null 2>&1; then\n    echo \"✅ Jenkins is healthy\"\n    echo \"   URL: http://localhost:${JENKINS_PORT}${JENKINS_PREFIX}\"\n    return 0\n  else\n    echo \"❌ Jenkins is not responding\"\n    echo \"   URL: $url\"\n    echo \"\"\n    echo \"Troubleshooting:\"\n    echo \"  1. Check if service is running: flox services status\"\n    echo \"  2. View logs: jenkins-logs\"\n    echo \"  3. Check port: netstat -tlnp | grep ${JENKINS_PORT}\"\n    return 1\n  fi\n}\nexport -f jenkins-health\n\n# Tail Jenkins logs\njenkins-logs() {\n  local logfile=\"$FLOX_ENV_CACHE/logs/jenkins.log\"\n\n  if [ -f \"$logfile\" ]; then\n    tail -f \"$logfile\"\n  else\n    echo \"❌ Log file not found: $logfile\"\n    echo \"   Start Jenkins first: flox activate -s\"\n    return 1\n  fi\n}\nexport -f jenkins-logs\n\n# Install additional plugin\njenkins-plugin-install() {\n  if [ $# -eq 0 ]; then\n    echo \"Usage: jenkins-plugin-install <plugin-name> [plugin-name...]\"\n    echo \"\"\n    echo \"Examples:\"\n    echo \"  jenkins-plugin-install prometheus\"\n    echo \"  jenkins-plugin-install slack role-strategy\"\n    return 1\n  fi\n\n  if [ ! -f \"$JENKINS_PLUGIN_MGR_JAR\" ]; then\n    echo \"❌ Plugin manager not available\"\n    echo \"   Download manually or use jenkins-cli\"\n    return 1\n  fi\n\n  echo \"📦 Installing plugins: $*\"\n\n  java -jar \"$JENKINS_PLUGIN_MGR_JAR\" \\\n    --war \"$JENKINS_WAR\" \\\n    --plugin-download-directory \"$JENKINS_HOME/plugins\" \\\n    --plugins \"$*\" \\\n    --verbose\n\n  echo \"\"\n  echo \"✓ Plugins installed\"\n  echo \"⚠️  Restart Jenkins for changes to take effect:\"\n  echo \"   flox services restart jenkins\"\n}\nexport -f jenkins-plugin-install\n\n# Open Jenkins in browser\njenkins-url() {\n  local url=\"http://localhost:${JENKINS_PORT}${JENKINS_PREFIX}\"\n  echo \"$url\"\n\n  # Try to open in browser (optional)\n  if command -v xdg-open >/dev/null 2>&1; then\n    xdg-open \"$url\" 2>/dev/null || true\n  elif command -v open >/dev/null 2>&1; then\n    open \"$url\" 2>/dev/null || true\n  fi\n}\nexport -f jenkins-url\n\n# View environment documentation\nhelpf() {\n  local README_FILE=\"$FLOX_ENV_PROJECT/README.md\"\n  local README_URL=\"https://raw.githubusercontent.com/barstoolbluz/floxenvs/main/jenkins-headless/README.md\"\n  local force_fetch=false\n\n  # Parse flags\n  for arg in \"$@\"; do\n    case \"$arg\" in\n      --help)\n        echo \"Usage: helpf [--force]\"\n        echo \"\"\n        echo \"Display environment documentation from README.md\"\n        echo \"\"\n        echo \"Options:\"\n        echo \"  --force    Force re-download of README\"\n        echo \"  --help     Show this help message\"\n        return 0\n        ;;\n      --force)\n        force_fetch=true\n        ;;\n    esac\n  done\n\n  # Fetch README if missing or --force specified\n  if [ \"$force_fetch\" = true ] || [ ! -s \"$README_FILE\" ]; then\n    if curl -fsSL \"$README_URL\" -o \"$README_FILE\" 2>/dev/null; then\n      [ \"$force_fetch\" = true ] && echo \"README refreshed from $README_URL\"\n    else\n      echo \"Warning: Failed to fetch README from $README_URL\"\n      [ ! -s \"$README_FILE\" ] && return 1\n    fi\n  fi\n\n  # Display with bat or fallback to cat\n  if command -v bat &>/dev/null; then\n    bat --style=auto --paging=always \"$README_FILE\"\n  else\n    cat \"$README_FILE\"\n  fi\n}\nexport -f helpf\n",
+      "zsh": "# Show Jenkins configuration\njenkins-info() {\n  echo \"Jenkins Headless Environment Configuration\"\n  echo \"\"\n  echo \"Version:\"\n  if [ -f \"$JENKINS_WAR\" ]; then\n    java -jar \"$JENKINS_WAR\" --version 2>&1 | head -1 || echo \"  (Jenkins WAR found)\"\n  else\n    echo \"  Jenkins package installed\"\n  fi\n  echo \"\"\n  echo \"Server:\"\n  echo \"  URL:            http://localhost:${JENKINS_PORT}${JENKINS_PREFIX}\"\n  echo \"  JENKINS_HOME:   ${JENKINS_HOME}\"\n  echo \"  Admin User:     ${JENKINS_ADMIN_USER}\"\n  echo \"\"\n  echo \"Configuration:\"\n  echo \"  Java Options:   ${JENKINS_JAVA_OPTS}\"\n  echo \"  JCasC Config:   ${JENKINS_CASC_CONFIG}\"\n  echo \"  Plugins:        ${JENKINS_PLUGINS}\"\n  echo \"\"\n  echo \"Logs:\"\n  echo \"  Service Log:    $FLOX_ENV_CACHE/logs/jenkins.log\"\n  echo \"  Jenkins Logs:   $JENKINS_HOME/logs/\"\n  echo \"\"\n}\n\n# Check Jenkins health\njenkins-health() {\n  local url=\"http://localhost:${JENKINS_PORT}${JENKINS_PREFIX}/login\"\n\n  if curl -sf \"$url\" >/dev/null 2>&1; then\n    echo \"✅ Jenkins is healthy\"\n    echo \"   URL: http://localhost:${JENKINS_PORT}${JENKINS_PREFIX}\"\n    return 0\n  else\n    echo \"❌ Jenkins is not responding\"\n    echo \"   URL: $url\"\n    echo \"\"\n    echo \"Troubleshooting:\"\n    echo \"  1. Check if service is running: flox services status\"\n    echo \"  2. View logs: jenkins-logs\"\n    echo \"  3. Check port: netstat -tlnp | grep ${JENKINS_PORT}\"\n    return 1\n  fi\n}\n\n# Tail Jenkins logs\njenkins-logs() {\n  local logfile=\"$FLOX_ENV_CACHE/logs/jenkins.log\"\n\n  if [ -f \"$logfile\" ]; then\n    tail -f \"$logfile\"\n  else\n    echo \"❌ Log file not found: $logfile\"\n    echo \"   Start Jenkins first: flox activate -s\"\n    return 1\n  fi\n}\n\n# Install additional plugin\njenkins-plugin-install() {\n  if [ $# -eq 0 ]; then\n    echo \"Usage: jenkins-plugin-install <plugin-name> [plugin-name...]\"\n    echo \"\"\n    echo \"Examples:\"\n    echo \"  jenkins-plugin-install prometheus\"\n    echo \"  jenkins-plugin-install slack role-strategy\"\n    return 1\n  fi\n\n  if [ ! -f \"$JENKINS_PLUGIN_MGR_JAR\" ]; then\n    echo \"❌ Plugin manager not available\"\n    echo \"   Download manually or use jenkins-cli\"\n    return 1\n  fi\n\n  echo \"📦 Installing plugins: $*\"\n\n  java -jar \"$JENKINS_PLUGIN_MGR_JAR\" \\\n    --war \"$JENKINS_WAR\" \\\n    --plugin-download-directory \"$JENKINS_HOME/plugins\" \\\n    --plugins \"$*\" \\\n    --verbose\n\n  echo \"\"\n  echo \"✓ Plugins installed\"\n  echo \"⚠️  Restart Jenkins for changes to take effect:\"\n  echo \"   flox services restart jenkins\"\n}\n\n# Open Jenkins in browser\njenkins-url() {\n  local url=\"http://localhost:${JENKINS_PORT}${JENKINS_PREFIX}\"\n  echo \"$url\"\n\n  # Try to open in browser (optional)\n  if command -v xdg-open >/dev/null 2>&1; then\n    xdg-open \"$url\" 2>/dev/null || true\n  elif command -v open >/dev/null 2>&1; then\n    open \"$url\" 2>/dev/null || true\n  fi\n}\n\n# View environment documentation\nhelpf() {\n  local README_FILE=\"$FLOX_ENV_PROJECT/README.md\"\n  local README_URL=\"https://raw.githubusercontent.com/barstoolbluz/floxenvs/main/jenkins-headless/README.md\"\n  local force_fetch=false\n\n  # Parse flags\n  for arg in \"$@\"; do\n    case \"$arg\" in\n      --help)\n        echo \"Usage: helpf [--force]\"\n        echo \"\"\n        echo \"Display environment documentation from README.md\"\n        echo \"\"\n        echo \"Options:\"\n        echo \"  --force    Force re-download of README\"\n        echo \"  --help     Show this help message\"\n        return 0\n        ;;\n      --force)\n        force_fetch=true\n        ;;\n    esac\n  done\n\n  # Fetch README if missing or --force specified\n  if [ \"$force_fetch\" = true ] || [ ! -s \"$README_FILE\" ]; then\n    if curl -fsSL \"$README_URL\" -o \"$README_FILE\" 2>/dev/null; then\n      [ \"$force_fetch\" = true ] && echo \"README refreshed from $README_URL\"\n    else\n      echo \"Warning: Failed to fetch README from $README_URL\"\n      [ ! -s \"$README_FILE\" ] && return 1\n    fi\n  fi\n\n  # Display with bat or fallback to cat\n  if command -v bat &>/dev/null; then\n    bat --style=auto --paging=always \"$README_FILE\"\n  else\n    cat \"$README_FILE\"\n  fi\n}\n",
+      "fish": "# Show Jenkins configuration\nfunction jenkins-info\n  echo \"Jenkins Headless Environment Configuration\"\n  echo \"\"\n  echo \"Version:\"\n  if test -f \"$JENKINS_WAR\"\n    java -jar \"$JENKINS_WAR\" --version 2>&1 | head -1; or echo \"  (Jenkins WAR found)\"\n  else\n    echo \"  Jenkins package installed\"\n  end\n  echo \"\"\n  echo \"Server:\"\n  echo \"  URL:            http://localhost:$JENKINS_PORT$JENKINS_PREFIX\"\n  echo \"  JENKINS_HOME:   $JENKINS_HOME\"\n  echo \"  Admin User:     $JENKINS_ADMIN_USER\"\n  echo \"\"\n  echo \"Configuration:\"\n  echo \"  Java Options:   $JENKINS_JAVA_OPTS\"\n  echo \"  JCasC Config:   $JENKINS_CASC_CONFIG\"\n  echo \"  Plugins:        $JENKINS_PLUGINS\"\n  echo \"\"\n  echo \"Logs:\"\n  echo \"  Service Log:    $FLOX_ENV_CACHE/logs/jenkins.log\"\n  echo \"  Jenkins Logs:   $JENKINS_HOME/logs/\"\n  echo \"\"\nend\n\n# Check Jenkins health\nfunction jenkins-health\n  set url \"http://localhost:$JENKINS_PORT$JENKINS_PREFIX/login\"\n\n  if curl -sf \"$url\" >/dev/null 2>&1\n    echo \"✅ Jenkins is healthy\"\n    echo \"   URL: http://localhost:$JENKINS_PORT$JENKINS_PREFIX\"\n    return 0\n  else\n    echo \"❌ Jenkins is not responding\"\n    echo \"   URL: $url\"\n    echo \"\"\n    echo \"Troubleshooting:\"\n    echo \"  1. Check if service is running: flox services status\"\n    echo \"  2. View logs: jenkins-logs\"\n    echo \"  3. Check port: netstat -tlnp | grep $JENKINS_PORT\"\n    return 1\n  end\nend\n\n# Tail Jenkins logs\nfunction jenkins-logs\n  set logfile \"$FLOX_ENV_CACHE/logs/jenkins.log\"\n\n  if test -f \"$logfile\"\n    tail -f \"$logfile\"\n  else\n    echo \"❌ Log file not found: $logfile\"\n    echo \"   Start Jenkins first: flox activate -s\"\n    return 1\n  end\nend\n\n# Install additional plugin\nfunction jenkins-plugin-install\n  if test (count $argv) -eq 0\n    echo \"Usage: jenkins-plugin-install <plugin-name> [plugin-name...]\"\n    echo \"\"\n    echo \"Examples:\"\n    echo \"  jenkins-plugin-install prometheus\"\n    echo \"  jenkins-plugin-install slack role-strategy\"\n    return 1\n  end\n\n  if not test -f \"$JENKINS_PLUGIN_MGR_JAR\"\n    echo \"❌ Plugin manager not available\"\n    echo \"   Download manually or use jenkins-cli\"\n    return 1\n  end\n\n  echo \"📦 Installing plugins: $argv\"\n\n  java -jar \"$JENKINS_PLUGIN_MGR_JAR\" \\\n    --war \"$JENKINS_WAR\" \\\n    --plugin-download-directory \"$JENKINS_HOME/plugins\" \\\n    --plugins \"$argv\" \\\n    --verbose\n\n  echo \"\"\n  echo \"✓ Plugins installed\"\n  echo \"⚠️  Restart Jenkins for changes to take effect:\"\n  echo \"   flox services restart jenkins\"\nend\n\n# Open Jenkins in browser\nfunction jenkins-url\n  set url \"http://localhost:$JENKINS_PORT$JENKINS_PREFIX\"\n  echo \"$url\"\n\n  # Try to open in browser (optional)\n  if command -v xdg-open >/dev/null 2>&1\n    xdg-open \"$url\" 2>/dev/null; or true\n  else if command -v open >/dev/null 2>&1\n    open \"$url\" 2>/dev/null; or true\n  end\nend\n\n# View environment documentation\nfunction helpf\n  set README_FILE \"$FLOX_ENV_PROJECT/README.md\"\n  set README_URL \"https://raw.githubusercontent.com/barstoolbluz/floxenvs/main/jenkins-headless/README.md\"\n  set force_fetch false\n\n  # Parse flags\n  for arg in $argv\n    switch $arg\n      case --help\n        echo \"Usage: helpf [--force]\"\n        echo \"\"\n        echo \"Display environment documentation from README.md\"\n        echo \"\"\n        echo \"Options:\"\n        echo \"  --force    Force re-download of README\"\n        echo \"  --help     Show this help message\"\n        return 0\n      case --force\n        set force_fetch true\n    end\n  end\n\n  # Fetch README if missing or --force specified\n  if test \"$force_fetch\" = true; or test ! -s \"$README_FILE\"\n    if curl -fsSL \"$README_URL\" -o \"$README_FILE\" 2>/dev/null\n      test \"$force_fetch\" = true; and echo \"README refreshed from $README_URL\"\n    else\n      echo \"Warning: Failed to fetch README from $README_URL\"\n      test ! -s \"$README_FILE\"; and return 1\n    end\n  end\n\n  # Display with bat or fallback to cat\n  if command -v bat >/dev/null 2>&1\n    bat --style=auto --paging=always \"$README_FILE\"\n  else\n    cat \"$README_FILE\"\n  end\nend\n"
+    },
+    "options": {
+      "systems": [
+        "aarch64-darwin",
+        "aarch64-linux",
+        "x86_64-darwin",
+        "x86_64-linux"
+      ]
+    },
+    "services": {
+      "jenkins": {
+        "command": "# Ensure JENKINS_HOME exists\nmkdir -p \"$JENKINS_HOME\"\nmkdir -p \"$FLOX_ENV_CACHE/logs\"\n\n# Install plugins if JENKINS_PLUGIN_MGR_JAR is available\nif [ -n \"$JENKINS_PLUGIN_MGR_JAR\" ] && [ -f \"$JENKINS_PLUGIN_MGR_JAR\" ] && [ -n \"$JENKINS_PLUGINS\" ]; then\n  echo \"📦 Installing Jenkins plugins...\"\n  echo \"   Plugins: $JENKINS_PLUGINS\"\n\n  java -jar \"$JENKINS_PLUGIN_MGR_JAR\" \\\n    --war \"$JENKINS_WAR\" \\\n    --plugin-download-directory \"$JENKINS_HOME/plugins\" \\\n    --plugins $JENKINS_PLUGINS \\\n    --verbose || echo \"⚠️  Some plugins may have failed to install\"\n\n  echo \"✓ Plugin installation complete\"\nfi\n\n# Start Jenkins\necho \"🚀 Starting Jenkins...\"\necho \"   URL: http://localhost:${JENKINS_PORT}${JENKINS_PREFIX}\"\necho \"   JENKINS_HOME: $JENKINS_HOME\"\necho \"\"\n\nexec java $JENKINS_JAVA_OPTS \\\n  -Djenkins.install.runSetupWizard=false \\\n  -DJENKINS_HOME=\"$JENKINS_HOME\" \\\n  -Dcasc.jenkins.config=\"$JENKINS_CASC_CONFIG\" \\\n  -jar \"$JENKINS_WAR\" \\\n  --httpPort=\"$JENKINS_PORT\" \\\n  --prefix=\"$JENKINS_PREFIX\" \\\n  2>&1 | tee -a \"$FLOX_ENV_CACHE/logs/jenkins.log\"\n"
+      }
+    }
+  },
+  "packages": [
+    {
+      "attr_path": "bat",
+      "broken": false,
+      "derivation": "/nix/store/srvg9lydbqzfrd7wks0kbcd24681whv9-bat-0.26.0.drv",
+      "description": "Cat(1) clone with syntax highlighting and Git integration",
+      "install_id": "bat",
+      "license": "[ Apache-2.0, MIT ]",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=b3d51a0365f6695e7dd5cdf3e180604530ed33b4",
+      "name": "bat-0.26.0",
+      "pname": "bat",
+      "rev": "b3d51a0365f6695e7dd5cdf3e180604530ed33b4",
+      "rev_count": 888552,
+      "rev_date": "2025-11-02T19:18:41Z",
+      "scrape_date": "2025-11-04T00:35:18.119212Z",
+      "stabilities": [
+        "unstable"
+      ],
+      "unfree": false,
+      "version": "0.26.0",
+      "outputs_to_install": [
+        "out"
+      ],
+      "outputs": {
+        "out": "/nix/store/m1s1wqd7nswi7jnlg146g0m3rsvsg9a7-bat-0.26.0"
+      },
+      "system": "aarch64-darwin",
+      "group": "toplevel",
+      "priority": 5
+    },
+    {
+      "attr_path": "bat",
+      "broken": false,
+      "derivation": "/nix/store/qyad5lwriw7xi08g13wb05fmxi5n2dp0-bat-0.26.0.drv",
+      "description": "Cat(1) clone with syntax highlighting and Git integration",
+      "install_id": "bat",
+      "license": "[ Apache-2.0, MIT ]",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=b3d51a0365f6695e7dd5cdf3e180604530ed33b4",
+      "name": "bat-0.26.0",
+      "pname": "bat",
+      "rev": "b3d51a0365f6695e7dd5cdf3e180604530ed33b4",
+      "rev_count": 888552,
+      "rev_date": "2025-11-02T19:18:41Z",
+      "scrape_date": "2025-11-05T16:28:57.331574Z",
+      "stabilities": [
+        "unstable"
+      ],
+      "unfree": false,
+      "version": "0.26.0",
+      "outputs_to_install": [
+        "out"
+      ],
+      "outputs": {
+        "out": "/nix/store/0am602vqa4zyl5m75na8gl47dk66zzid-bat-0.26.0"
+      },
+      "system": "aarch64-linux",
+      "group": "toplevel",
+      "priority": 5
+    },
+    {
+      "attr_path": "bat",
+      "broken": false,
+      "derivation": "/nix/store/w66rdmpxy0kyrwxwakf5xxcr9sqlarva-bat-0.26.0.drv",
+      "description": "Cat(1) clone with syntax highlighting and Git integration",
+      "install_id": "bat",
+      "license": "[ Apache-2.0, MIT ]",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=b3d51a0365f6695e7dd5cdf3e180604530ed33b4",
+      "name": "bat-0.26.0",
+      "pname": "bat",
+      "rev": "b3d51a0365f6695e7dd5cdf3e180604530ed33b4",
+      "rev_count": 888552,
+      "rev_date": "2025-11-02T19:18:41Z",
+      "scrape_date": "2025-11-05T16:54:57.153535Z",
+      "stabilities": [
+        "unstable"
+      ],
+      "unfree": false,
+      "version": "0.26.0",
+      "outputs_to_install": [
+        "out"
+      ],
+      "outputs": {
+        "out": "/nix/store/7f6piwxyq7g8lw0d61bzy9nvmq1lsxv7-bat-0.26.0"
+      },
+      "system": "x86_64-darwin",
+      "group": "toplevel",
+      "priority": 5
+    },
+    {
+      "attr_path": "bat",
+      "broken": false,
+      "derivation": "/nix/store/xnaki7m9rslvjfxabad5jqibsjjhqpgw-bat-0.26.0.drv",
+      "description": "Cat(1) clone with syntax highlighting and Git integration",
+      "install_id": "bat",
+      "license": "[ Apache-2.0, MIT ]",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=b3d51a0365f6695e7dd5cdf3e180604530ed33b4",
+      "name": "bat-0.26.0",
+      "pname": "bat",
+      "rev": "b3d51a0365f6695e7dd5cdf3e180604530ed33b4",
+      "rev_count": 888552,
+      "rev_date": "2025-11-02T19:18:41Z",
+      "scrape_date": "2025-11-05T17:20:46.605748Z",
+      "stabilities": [
+        "unstable"
+      ],
+      "unfree": false,
+      "version": "0.26.0",
+      "outputs_to_install": [
+        "out"
+      ],
+      "outputs": {
+        "out": "/nix/store/vsih714glpw1gdr86yrif87pf0cvj9ha-bat-0.26.0"
+      },
+      "system": "x86_64-linux",
+      "group": "toplevel",
+      "priority": 5
+    },
+    {
+      "attr_path": "curl",
+      "broken": false,
+      "derivation": "/nix/store/cfq3y8vdnkw626yx70f8dd92gxmkbzzb-curl-8.16.0.drv",
+      "description": "Command line tool for transferring files with URL syntax",
+      "install_id": "curl",
+      "license": "curl",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=b3d51a0365f6695e7dd5cdf3e180604530ed33b4",
+      "name": "curl-8.16.0",
+      "pname": "curl",
+      "rev": "b3d51a0365f6695e7dd5cdf3e180604530ed33b4",
+      "rev_count": 888552,
+      "rev_date": "2025-11-02T19:18:41Z",
+      "scrape_date": "2025-11-04T00:35:18.499679Z",
+      "stabilities": [
+        "unstable"
+      ],
+      "unfree": false,
+      "version": "8.16.0",
+      "outputs_to_install": [
+        "bin",
+        "man"
+      ],
+      "outputs": {
+        "bin": "/nix/store/982cq6ga80yn9nghx479fbqqwf7kf8n1-curl-8.16.0-bin",
+        "dev": "/nix/store/qxzi15y4apihsg2infxn66b6hz5lws3h-curl-8.16.0-dev",
+        "devdoc": "/nix/store/bz1ap1ahksz62gz79h8anfhsyz1ir0jw-curl-8.16.0-devdoc",
+        "man": "/nix/store/rsdippinyvz3myz505vi6sgx8vmh30px-curl-8.16.0-man",
+        "out": "/nix/store/8fgfydjv40m1pw8bpwm30kxw24284fvg-curl-8.16.0"
+      },
+      "system": "aarch64-darwin",
+      "group": "toplevel",
+      "priority": 5
+    },
+    {
+      "attr_path": "curl",
+      "broken": false,
+      "derivation": "/nix/store/lf1pb40nkl3lx7ww85r1pbc8gg89yihb-curl-8.16.0.drv",
+      "description": "Command line tool for transferring files with URL syntax",
+      "install_id": "curl",
+      "license": "curl",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=b3d51a0365f6695e7dd5cdf3e180604530ed33b4",
+      "name": "curl-8.16.0",
+      "pname": "curl",
+      "rev": "b3d51a0365f6695e7dd5cdf3e180604530ed33b4",
+      "rev_count": 888552,
+      "rev_date": "2025-11-02T19:18:41Z",
+      "scrape_date": "2025-11-05T16:28:57.869212Z",
+      "stabilities": [
+        "unstable"
+      ],
+      "unfree": false,
+      "version": "8.16.0",
+      "outputs_to_install": [
+        "bin",
+        "man"
+      ],
+      "outputs": {
+        "bin": "/nix/store/qnakzidljavpz27az7gjkyydb7ckjg6r-curl-8.16.0-bin",
+        "debug": "/nix/store/zxlv6n85qw1lzmx4xblgc0lz1vv0hg1f-curl-8.16.0-debug",
+        "dev": "/nix/store/aypq6najvfyhzx4k80a1vy329qmqj9zb-curl-8.16.0-dev",
+        "devdoc": "/nix/store/b7w1516fx1mywmkl9dqsm1rnjmpvz7a3-curl-8.16.0-devdoc",
+        "man": "/nix/store/dfgh660rbbj8s3l3xvy8klmkks4pkg3w-curl-8.16.0-man",
+        "out": "/nix/store/pl917hpmpx64fisdisv2zjmk09grvm4g-curl-8.16.0"
+      },
+      "system": "aarch64-linux",
+      "group": "toplevel",
+      "priority": 5
+    },
+    {
+      "attr_path": "curl",
+      "broken": false,
+      "derivation": "/nix/store/djn6c12nnlc62i4akzdrg0i2gylndr4a-curl-8.16.0.drv",
+      "description": "Command line tool for transferring files with URL syntax",
+      "install_id": "curl",
+      "license": "curl",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=b3d51a0365f6695e7dd5cdf3e180604530ed33b4",
+      "name": "curl-8.16.0",
+      "pname": "curl",
+      "rev": "b3d51a0365f6695e7dd5cdf3e180604530ed33b4",
+      "rev_count": 888552,
+      "rev_date": "2025-11-02T19:18:41Z",
+      "scrape_date": "2025-11-05T16:54:57.545728Z",
+      "stabilities": [
+        "unstable"
+      ],
+      "unfree": false,
+      "version": "8.16.0",
+      "outputs_to_install": [
+        "bin",
+        "man"
+      ],
+      "outputs": {
+        "bin": "/nix/store/irf7vpckgi9128jh7by1438ns3qgvfqz-curl-8.16.0-bin",
+        "dev": "/nix/store/sv8p7spya9zf0163xb454wvl7jbmws57-curl-8.16.0-dev",
+        "devdoc": "/nix/store/85fm556955nskhdr8q66ny2fk4fggzh1-curl-8.16.0-devdoc",
+        "man": "/nix/store/a6znnvphjwyzhxjq8vbkr35ng6xglbfb-curl-8.16.0-man",
+        "out": "/nix/store/sfr307vn71cyfnfmgckhwggq251rnrfr-curl-8.16.0"
+      },
+      "system": "x86_64-darwin",
+      "group": "toplevel",
+      "priority": 5
+    },
+    {
+      "attr_path": "curl",
+      "broken": false,
+      "derivation": "/nix/store/cgjg8cb7pdgsqswv5p5n9pr1sm920d8d-curl-8.16.0.drv",
+      "description": "Command line tool for transferring files with URL syntax",
+      "install_id": "curl",
+      "license": "curl",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=b3d51a0365f6695e7dd5cdf3e180604530ed33b4",
+      "name": "curl-8.16.0",
+      "pname": "curl",
+      "rev": "b3d51a0365f6695e7dd5cdf3e180604530ed33b4",
+      "rev_count": 888552,
+      "rev_date": "2025-11-02T19:18:41Z",
+      "scrape_date": "2025-11-05T17:20:47.204008Z",
+      "stabilities": [
+        "unstable"
+      ],
+      "unfree": false,
+      "version": "8.16.0",
+      "outputs_to_install": [
+        "bin",
+        "man"
+      ],
+      "outputs": {
+        "bin": "/nix/store/xvh4bi0cc2cw18lpn6ax9m4zwnn1s9lj-curl-8.16.0-bin",
+        "debug": "/nix/store/33lwk5v78214pmlnhphbijpvbh8gjbbq-curl-8.16.0-debug",
+        "dev": "/nix/store/b65dj8iryqd1bss2qlg5ipxqndngcl9n-curl-8.16.0-dev",
+        "devdoc": "/nix/store/bz67f9xwj2i7zanwkrxb6dy9bbm2283d-curl-8.16.0-devdoc",
+        "man": "/nix/store/q4jbdyq7f0zks4i9xhfyx2pj6x92g9dj-curl-8.16.0-man",
+        "out": "/nix/store/8np9zvwqmwsnbkbrwm8x7jq4ygdkjz5g-curl-8.16.0"
+      },
+      "system": "x86_64-linux",
+      "group": "toplevel",
+      "priority": 5
+    },
+    {
+      "attr_path": "git",
+      "broken": false,
+      "derivation": "/nix/store/0mw57m2x2xqcik05j8xbgjp40h1792a8-git-2.51.0.drv",
+      "description": "Distributed version control system",
+      "install_id": "git",
+      "license": "GPL-2.0",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=b3d51a0365f6695e7dd5cdf3e180604530ed33b4",
+      "name": "git-2.51.0",
+      "pname": "git",
+      "rev": "b3d51a0365f6695e7dd5cdf3e180604530ed33b4",
+      "rev_count": 888552,
+      "rev_date": "2025-11-02T19:18:41Z",
+      "scrape_date": "2025-11-04T00:35:19.124516Z",
+      "stabilities": [
+        "unstable"
+      ],
+      "unfree": false,
+      "version": "2.51.0",
+      "outputs_to_install": [
+        "out"
+      ],
+      "outputs": {
+        "doc": "/nix/store/fwx23zsz09rirgfp0r5kzsh7nbg6d9ff-git-2.51.0-doc",
+        "out": "/nix/store/1xqc4nc97vwmx6dqrk0zns79xncb5chw-git-2.51.0"
+      },
+      "system": "aarch64-darwin",
+      "group": "toplevel",
+      "priority": 5
+    },
+    {
+      "attr_path": "git",
+      "broken": false,
+      "derivation": "/nix/store/8gg43r4nhx865690q0awrpkayxmhpass-git-2.51.0.drv",
+      "description": "Distributed version control system",
+      "install_id": "git",
+      "license": "GPL-2.0",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=b3d51a0365f6695e7dd5cdf3e180604530ed33b4",
+      "name": "git-2.51.0",
+      "pname": "git",
+      "rev": "b3d51a0365f6695e7dd5cdf3e180604530ed33b4",
+      "rev_count": 888552,
+      "rev_date": "2025-11-02T19:18:41Z",
+      "scrape_date": "2025-11-05T16:28:58.821047Z",
+      "stabilities": [
+        "unstable"
+      ],
+      "unfree": false,
+      "version": "2.51.0",
+      "outputs_to_install": [
+        "out"
+      ],
+      "outputs": {
+        "debug": "/nix/store/h5r9901ms52cxfqvm4pb0d2y24ddc9vv-git-2.51.0-debug",
+        "doc": "/nix/store/0dp21kpx7d2xh0y29y79wwggrhgnjks5-git-2.51.0-doc",
+        "out": "/nix/store/1xrbd5mmc64lx3hwm07kq27f445rs4xh-git-2.51.0"
+      },
+      "system": "aarch64-linux",
+      "group": "toplevel",
+      "priority": 5
+    },
+    {
+      "attr_path": "git",
+      "broken": false,
+      "derivation": "/nix/store/q2yad2kg3vpj0nrni028h99076hhpgr6-git-2.51.0.drv",
+      "description": "Distributed version control system",
+      "install_id": "git",
+      "license": "GPL-2.0",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=b3d51a0365f6695e7dd5cdf3e180604530ed33b4",
+      "name": "git-2.51.0",
+      "pname": "git",
+      "rev": "b3d51a0365f6695e7dd5cdf3e180604530ed33b4",
+      "rev_count": 888552,
+      "rev_date": "2025-11-02T19:18:41Z",
+      "scrape_date": "2025-11-05T16:54:58.153579Z",
+      "stabilities": [
+        "unstable"
+      ],
+      "unfree": false,
+      "version": "2.51.0",
+      "outputs_to_install": [
+        "out"
+      ],
+      "outputs": {
+        "doc": "/nix/store/sl8z2ijj21c8r4dxaa0vi4bv8xyavq26-git-2.51.0-doc",
+        "out": "/nix/store/wcnaxbjl7fkdfy20jgyj4pf6jarc36p8-git-2.51.0"
+      },
+      "system": "x86_64-darwin",
+      "group": "toplevel",
+      "priority": 5
+    },
+    {
+      "attr_path": "git",
+      "broken": false,
+      "derivation": "/nix/store/dxy3pa9y8gbvnmbvggpl84wnd9idfb4r-git-2.51.0.drv",
+      "description": "Distributed version control system",
+      "install_id": "git",
+      "license": "GPL-2.0",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=b3d51a0365f6695e7dd5cdf3e180604530ed33b4",
+      "name": "git-2.51.0",
+      "pname": "git",
+      "rev": "b3d51a0365f6695e7dd5cdf3e180604530ed33b4",
+      "rev_count": 888552,
+      "rev_date": "2025-11-02T19:18:41Z",
+      "scrape_date": "2025-11-05T17:20:48.256092Z",
+      "stabilities": [
+        "unstable"
+      ],
+      "unfree": false,
+      "version": "2.51.0",
+      "outputs_to_install": [
+        "out"
+      ],
+      "outputs": {
+        "debug": "/nix/store/n2qv18fvl3d4jn4y1828mk89zpl83840-git-2.51.0-debug",
+        "doc": "/nix/store/b7382m8mvzm3336f6lj8wdbqwsclc0yx-git-2.51.0-doc",
+        "out": "/nix/store/60440kg5c51rrlpinkk2rkg020q5q6kv-git-2.51.0"
+      },
+      "system": "x86_64-linux",
+      "group": "toplevel",
+      "priority": 5
+    },
+    {
+      "attr_path": "jenkins",
+      "broken": false,
+      "derivation": "/nix/store/50414r6c02qnfa7kdf2v24bdzq6jm5kz-jenkins-2.528.1.drv",
+      "description": "Extendable open source continuous integration server",
+      "install_id": "jenkins",
+      "license": "MIT",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=b3d51a0365f6695e7dd5cdf3e180604530ed33b4",
+      "name": "jenkins-2.528.1",
+      "pname": "jenkins",
+      "rev": "b3d51a0365f6695e7dd5cdf3e180604530ed33b4",
+      "rev_count": 888552,
+      "rev_date": "2025-11-02T19:18:41Z",
+      "scrape_date": "2025-11-04T00:35:33.070843Z",
+      "stabilities": [
+        "unstable"
+      ],
+      "unfree": false,
+      "version": "2.528.1",
+      "outputs_to_install": [
+        "out"
+      ],
+      "outputs": {
+        "out": "/nix/store/g02p0zhm0pxbzrgwl6ajyvajqm7iwbmn-jenkins-2.528.1"
+      },
+      "system": "aarch64-darwin",
+      "group": "toplevel",
+      "priority": 5
+    },
+    {
+      "attr_path": "jenkins",
+      "broken": false,
+      "derivation": "/nix/store/gr24475xfkcsq77ry9qhxpzwxbq73485-jenkins-2.528.1.drv",
+      "description": "Extendable open source continuous integration server",
+      "install_id": "jenkins",
+      "license": "MIT",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=b3d51a0365f6695e7dd5cdf3e180604530ed33b4",
+      "name": "jenkins-2.528.1",
+      "pname": "jenkins",
+      "rev": "b3d51a0365f6695e7dd5cdf3e180604530ed33b4",
+      "rev_count": 888552,
+      "rev_date": "2025-11-02T19:18:41Z",
+      "scrape_date": "2025-11-05T16:29:18.437201Z",
+      "stabilities": [
+        "unstable"
+      ],
+      "unfree": false,
+      "version": "2.528.1",
+      "outputs_to_install": [
+        "out"
+      ],
+      "outputs": {
+        "out": "/nix/store/kl2qpcc03avbg8mql72d08w5iqhbk3zf-jenkins-2.528.1"
+      },
+      "system": "aarch64-linux",
+      "group": "toplevel",
+      "priority": 5
+    },
+    {
+      "attr_path": "jenkins",
+      "broken": false,
+      "derivation": "/nix/store/klpavl2c5rmwcziwwkqkncdnii63xqpc-jenkins-2.528.1.drv",
+      "description": "Extendable open source continuous integration server",
+      "install_id": "jenkins",
+      "license": "MIT",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=b3d51a0365f6695e7dd5cdf3e180604530ed33b4",
+      "name": "jenkins-2.528.1",
+      "pname": "jenkins",
+      "rev": "b3d51a0365f6695e7dd5cdf3e180604530ed33b4",
+      "rev_count": 888552,
+      "rev_date": "2025-11-02T19:18:41Z",
+      "scrape_date": "2025-11-05T16:55:12.935599Z",
+      "stabilities": [
+        "unstable"
+      ],
+      "unfree": false,
+      "version": "2.528.1",
+      "outputs_to_install": [
+        "out"
+      ],
+      "outputs": {
+        "out": "/nix/store/8671bfih53kypdinhh0ml74gnkassiyi-jenkins-2.528.1"
+      },
+      "system": "x86_64-darwin",
+      "group": "toplevel",
+      "priority": 5
+    },
+    {
+      "attr_path": "jenkins",
+      "broken": false,
+      "derivation": "/nix/store/kpl7lhrpj5qbivvmyccnwm83ib04sb5r-jenkins-2.528.1.drv",
+      "description": "Extendable open source continuous integration server",
+      "install_id": "jenkins",
+      "license": "MIT",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=b3d51a0365f6695e7dd5cdf3e180604530ed33b4",
+      "name": "jenkins-2.528.1",
+      "pname": "jenkins",
+      "rev": "b3d51a0365f6695e7dd5cdf3e180604530ed33b4",
+      "rev_count": 888552,
+      "rev_date": "2025-11-02T19:18:41Z",
+      "scrape_date": "2025-11-05T17:21:09.015463Z",
+      "stabilities": [
+        "unstable"
+      ],
+      "unfree": false,
+      "version": "2.528.1",
+      "outputs_to_install": [
+        "out"
+      ],
+      "outputs": {
+        "out": "/nix/store/b0w9rn1z96d9k6ai91aw3pbcb2zmgpr6-jenkins-2.528.1"
+      },
+      "system": "x86_64-linux",
+      "group": "toplevel",
+      "priority": 5
+    },
+    {
+      "attr_path": "jq",
+      "broken": false,
+      "derivation": "/nix/store/a50a7kjf83i6i4n2d1bhmkjf3gvx5kg6-jq-1.8.1.drv",
+      "description": "Lightweight and flexible command-line JSON processor",
+      "install_id": "jq",
+      "license": "MIT",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=b3d51a0365f6695e7dd5cdf3e180604530ed33b4",
+      "name": "jq-1.8.1",
+      "pname": "jq",
+      "rev": "b3d51a0365f6695e7dd5cdf3e180604530ed33b4",
+      "rev_count": 888552,
+      "rev_date": "2025-11-02T19:18:41Z",
+      "scrape_date": "2025-11-04T00:35:33.201623Z",
+      "stabilities": [
+        "unstable"
+      ],
+      "unfree": false,
+      "version": "1.8.1",
+      "outputs_to_install": [
+        "bin",
+        "man"
+      ],
+      "outputs": {
+        "bin": "/nix/store/vh3xibzhaz3nl5m97ka2i5sxivv59sgn-jq-1.8.1-bin",
+        "dev": "/nix/store/ni42jbsfngy5l81p2lz9v5wcl4kwl9nf-jq-1.8.1-dev",
+        "doc": "/nix/store/hy9hxygqscjkz0faz5xlxwkj7sn6v74i-jq-1.8.1-doc",
+        "man": "/nix/store/k9swya8a42jsa59jd2xcw0pvacj0xxyn-jq-1.8.1-man",
+        "out": "/nix/store/qabxprfzl0lygph7yg3kq6b8si410syd-jq-1.8.1"
+      },
+      "system": "aarch64-darwin",
+      "group": "toplevel",
+      "priority": 5
+    },
+    {
+      "attr_path": "jq",
+      "broken": false,
+      "derivation": "/nix/store/f2yda9q3f7miq3md0r47d25cbbwqwacw-jq-1.8.1.drv",
+      "description": "Lightweight and flexible command-line JSON processor",
+      "install_id": "jq",
+      "license": "MIT",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=b3d51a0365f6695e7dd5cdf3e180604530ed33b4",
+      "name": "jq-1.8.1",
+      "pname": "jq",
+      "rev": "b3d51a0365f6695e7dd5cdf3e180604530ed33b4",
+      "rev_count": 888552,
+      "rev_date": "2025-11-02T19:18:41Z",
+      "scrape_date": "2025-11-05T16:29:18.638953Z",
+      "stabilities": [
+        "unstable"
+      ],
+      "unfree": false,
+      "version": "1.8.1",
+      "outputs_to_install": [
+        "bin",
+        "man"
+      ],
+      "outputs": {
+        "bin": "/nix/store/pqr9gww8fksrllfr38k9jvl7k5q5awf7-jq-1.8.1-bin",
+        "dev": "/nix/store/qqcccyr96a1p4j7ywgzhqi06n5y47mk0-jq-1.8.1-dev",
+        "doc": "/nix/store/ankng0jgm40wkgwiz3n8rj6hanmgdsx7-jq-1.8.1-doc",
+        "man": "/nix/store/n0y7a3f5hmglwifndimclg99mpn554bl-jq-1.8.1-man",
+        "out": "/nix/store/6h1mv44dhnq2jb94373cab59yaq5y8wz-jq-1.8.1"
+      },
+      "system": "aarch64-linux",
+      "group": "toplevel",
+      "priority": 5
+    },
+    {
+      "attr_path": "jq",
+      "broken": false,
+      "derivation": "/nix/store/i9y8592ghv69f3djcq8fki41ml5b4a6x-jq-1.8.1.drv",
+      "description": "Lightweight and flexible command-line JSON processor",
+      "install_id": "jq",
+      "license": "MIT",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=b3d51a0365f6695e7dd5cdf3e180604530ed33b4",
+      "name": "jq-1.8.1",
+      "pname": "jq",
+      "rev": "b3d51a0365f6695e7dd5cdf3e180604530ed33b4",
+      "rev_count": 888552,
+      "rev_date": "2025-11-02T19:18:41Z",
+      "scrape_date": "2025-11-05T16:55:13.062148Z",
+      "stabilities": [
+        "unstable"
+      ],
+      "unfree": false,
+      "version": "1.8.1",
+      "outputs_to_install": [
+        "bin",
+        "man"
+      ],
+      "outputs": {
+        "bin": "/nix/store/r52fkpag200agnznp2var2p0f0d0i4ch-jq-1.8.1-bin",
+        "dev": "/nix/store/ijwpwk35g7l8amallvhqymwnnspmxgcy-jq-1.8.1-dev",
+        "doc": "/nix/store/zci6xwc00v98flb0jqhdaac0231pmgvb-jq-1.8.1-doc",
+        "man": "/nix/store/xbvg59a0kdin1fibnqrw4l445a5dh9bc-jq-1.8.1-man",
+        "out": "/nix/store/50fm8yn7mpxfks0cvrjifi58r90q5c6h-jq-1.8.1"
+      },
+      "system": "x86_64-darwin",
+      "group": "toplevel",
+      "priority": 5
+    },
+    {
+      "attr_path": "jq",
+      "broken": false,
+      "derivation": "/nix/store/qk16np2i3ls20ih6n8lc38l6f3y6s7i3-jq-1.8.1.drv",
+      "description": "Lightweight and flexible command-line JSON processor",
+      "install_id": "jq",
+      "license": "MIT",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=b3d51a0365f6695e7dd5cdf3e180604530ed33b4",
+      "name": "jq-1.8.1",
+      "pname": "jq",
+      "rev": "b3d51a0365f6695e7dd5cdf3e180604530ed33b4",
+      "rev_count": 888552,
+      "rev_date": "2025-11-02T19:18:41Z",
+      "scrape_date": "2025-11-05T17:21:09.216301Z",
+      "stabilities": [
+        "unstable"
+      ],
+      "unfree": false,
+      "version": "1.8.1",
+      "outputs_to_install": [
+        "bin",
+        "man"
+      ],
+      "outputs": {
+        "bin": "/nix/store/frzsv47z1mcyrp941zab08mx6kardizi-jq-1.8.1-bin",
+        "dev": "/nix/store/caq8n6m9m5zyhf0by83ksbimqmpggkwr-jq-1.8.1-dev",
+        "doc": "/nix/store/n3wl5jkmnzfg0a1vjxxx8w2n7js1b5sr-jq-1.8.1-doc",
+        "man": "/nix/store/rs84gk428azdd7ca46ki3w60yqp54ksk-jq-1.8.1-man",
+        "out": "/nix/store/zsw99s8nv2qffdg47jf8x8pyml9b0x2r-jq-1.8.1"
+      },
+      "system": "x86_64-linux",
+      "group": "toplevel",
+      "priority": 5
+    },
+    {
+      "attr_path": "openjdk21",
+      "broken": false,
+      "derivation": "/nix/store/g1x8iz2wmxs3x9bbbs0l8df7sphd4c3d-zulu-ca-jdk-21.0.8.drv",
+      "description": "Certified builds of OpenJDK",
+      "install_id": "openjdk21",
+      "license": "GPL-2.0-only",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=b3d51a0365f6695e7dd5cdf3e180604530ed33b4",
+      "name": "zulu-ca-jdk-21.0.8",
+      "pname": "openjdk21",
+      "rev": "b3d51a0365f6695e7dd5cdf3e180604530ed33b4",
+      "rev_count": 888552,
+      "rev_date": "2025-11-02T19:18:41Z",
+      "scrape_date": "2025-11-04T00:35:43.309848Z",
+      "stabilities": [
+        "unstable"
+      ],
+      "unfree": false,
+      "version": "21.0.8",
+      "outputs_to_install": [
+        "out"
+      ],
+      "outputs": {
+        "out": "/nix/store/n3rmmip6djs9s68zkazn1c6gsxbjg7fs-zulu-ca-jdk-21.0.8"
+      },
+      "system": "aarch64-darwin",
+      "group": "toplevel",
+      "priority": 5
+    },
+    {
+      "attr_path": "openjdk21",
+      "broken": false,
+      "derivation": "/nix/store/mcx6s6j926igxsy40cdvsccw6ffs9qix-openjdk-21.0.9+8.drv",
+      "description": "Open-source Java Development Kit",
+      "install_id": "openjdk21",
+      "license": "GPL-2.0-only",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=b3d51a0365f6695e7dd5cdf3e180604530ed33b4",
+      "name": "openjdk-21.0.9+8",
+      "pname": "openjdk21",
+      "rev": "b3d51a0365f6695e7dd5cdf3e180604530ed33b4",
+      "rev_count": 888552,
+      "rev_date": "2025-11-02T19:18:41Z",
+      "scrape_date": "2025-11-05T16:29:39.719047Z",
+      "stabilities": [
+        "unstable"
+      ],
+      "unfree": false,
+      "version": "21.0.9+8",
+      "outputs_to_install": [
+        "out"
+      ],
+      "outputs": {
+        "debug": "/nix/store/sz9izpfkgi9nw3s9fz8vik9qn01vkx4d-openjdk-21.0.9+8-debug",
+        "out": "/nix/store/gxjm3qjq9kyvi5hv7r4s8ngbkg1d94df-openjdk-21.0.9+8"
+      },
+      "system": "aarch64-linux",
+      "group": "toplevel",
+      "priority": 5
+    },
+    {
+      "attr_path": "openjdk21",
+      "broken": false,
+      "derivation": "/nix/store/in9f60zkhchyhjcprf9vihdfnmyq3phx-zulu-ca-jdk-21.0.8.drv",
+      "description": "Certified builds of OpenJDK",
+      "install_id": "openjdk21",
+      "license": "GPL-2.0-only",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=b3d51a0365f6695e7dd5cdf3e180604530ed33b4",
+      "name": "zulu-ca-jdk-21.0.8",
+      "pname": "openjdk21",
+      "rev": "b3d51a0365f6695e7dd5cdf3e180604530ed33b4",
+      "rev_count": 888552,
+      "rev_date": "2025-11-02T19:18:41Z",
+      "scrape_date": "2025-11-05T16:55:22.994252Z",
+      "stabilities": [
+        "unstable"
+      ],
+      "unfree": false,
+      "version": "21.0.8",
+      "outputs_to_install": [
+        "out"
+      ],
+      "outputs": {
+        "out": "/nix/store/zg7ays2h25mcpm6808y3as8ql7c1496g-zulu-ca-jdk-21.0.8"
+      },
+      "system": "x86_64-darwin",
+      "group": "toplevel",
+      "priority": 5
+    },
+    {
+      "attr_path": "openjdk21",
+      "broken": false,
+      "derivation": "/nix/store/7b2hwjgvi4hc4pbyvvnzi05ks1jr49zz-openjdk-21.0.9+8.drv",
+      "description": "Open-source Java Development Kit",
+      "install_id": "openjdk21",
+      "license": "GPL-2.0-only",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=b3d51a0365f6695e7dd5cdf3e180604530ed33b4",
+      "name": "openjdk-21.0.9+8",
+      "pname": "openjdk21",
+      "rev": "b3d51a0365f6695e7dd5cdf3e180604530ed33b4",
+      "rev_count": 888552,
+      "rev_date": "2025-11-02T19:18:41Z",
+      "scrape_date": "2025-11-05T17:21:33.053350Z",
+      "stabilities": [
+        "unstable"
+      ],
+      "unfree": false,
+      "version": "21.0.9+8",
+      "outputs_to_install": [
+        "out"
+      ],
+      "outputs": {
+        "debug": "/nix/store/pgkj2381fcdrbx9w85h162cigdgyn7j2-openjdk-21.0.9+8-debug",
+        "out": "/nix/store/l5z1hqq6l223379w6f25fibniz16g2s9-openjdk-21.0.9+8"
+      },
+      "system": "x86_64-linux",
+      "group": "toplevel",
+      "priority": 5
+    }
+  ]
+}

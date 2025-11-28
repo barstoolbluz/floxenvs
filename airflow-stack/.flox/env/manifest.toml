@@ -1,5 +1,10 @@
 version = 1
 
+[install]
+# For helpf documentation viewer
+bat.pkg-path = "bat"
+curl.pkg-path = "curl"
+
 [include]
 environments = [
   # FloxHub Airflow environments
@@ -66,163 +71,158 @@ echo "  Password: $AIRFLOW_ADMIN_PASSWORD"
 echo ""
 echo "Commands:"
 echo "  flox activate -s        Start all services"
-echo "  enterprise-info         Show detailed configuration"
 echo "  airflow-info            Airflow configuration"
 echo "  postgres-info           PostgreSQL configuration"
 echo "  redis-info              Redis configuration"
 echo "  k8s-airflow-info        Kubernetes configuration"
+echo "  helpf                   View environment documentation"
 echo ""
+
+fi
+
+  # Fetch README.md if not present
+  README_FILE="$FLOX_ENV_PROJECT/README.md"
+  if [ ! -f "$README_FILE" ]; then
+    if curl -fsSL https://raw.githubusercontent.com/barstoolbluz/floxenvs/main/airflow-stack/README.md -o "$README_FILE" 2>/dev/null; then
+      echo "✓ Downloaded README.md (use 'helpf' to view)"
+    fi
+  fi
 '''
 
 [profile]
 bash = '''
-enterprise-info() {
-    echo "╔════════════════════════════════════════════════════════╗"
-    echo "║   Apache Airflow Enterprise Stack                      ║"
-    echo "╚════════════════════════════════════════════════════════╝"
-    echo ""
-    echo "Executor: $AIRFLOW_EXECUTOR"
-    echo "Workers: $AIRFLOW_CELERY_WORKERS (concurrency: $AIRFLOW__CELERY__WORKER_CONCURRENCY)"
-    echo "Webserver Workers: $AIRFLOW_WEBSERVER_WORKERS"
-    echo ""
-    echo "═══ PostgreSQL Configuration ═══"
-    echo "  Host: $AIRFLOW_POSTGRES_HOST:$AIRFLOW_POSTGRES_PORT"
-    echo "  Database: $AIRFLOW_POSTGRES_DB"
-    echo "  Max connections: $POSTGRES_MAX_CONNECTIONS"
-    echo "  Shared buffers: $POSTGRES_SHARED_BUFFERS"
-    echo "  fsync: $POSTGRES_FSYNC (data safety)"
-    echo ""
-    echo "═══ Redis Configuration ═══"
-    echo "  Host: $AIRFLOW_REDIS_HOST:$AIRFLOW_REDIS_PORT"
-    echo "  Max memory: $REDIS_MAXMEMORY"
-    echo "  Persistence: AOF ($REDIS_APPENDFSYNC)"
-    echo ""
-    echo "═══ Kubernetes Configuration ═══"
-    echo "  Namespace: $AIRFLOW_KUBE_NAMESPACE"
-    echo "  ServiceAccount: $AIRFLOW_KUBE_WORKER_SERVICE_ACCOUNT"
-    echo "  Kubeconfig: $AIRFLOW_KUBE_CONFIG"
-    echo ""
-    echo "═══ Airflow Access ═══"
-    echo "  Web UI: http://localhost:$AIRFLOW_WEBSERVER_PORT"
-    echo "  Admin User: $AIRFLOW_ADMIN_USER"
-    echo "  Password: $AIRFLOW_ADMIN_PASSWORD"
-    echo ""
-    echo "═══ Component Info Commands ═══"
-    echo "  airflow-info         Airflow details"
-    echo "  postgres-info        PostgreSQL details"
-    echo "  redis-info           Redis details"
-    echo "  k8s-airflow-info     Kubernetes details"
-    echo ""
-    echo "═══ Service Management ═══"
-    echo "  flox services status                    Check all services"
-    echo "  flox services logs <service>            View logs"
-    echo "  flox services restart <service>         Restart service"
-    echo ""
-    echo "═══ Airflow Commands ═══"
-    echo "  airflow dags list                       List DAGs"
-    echo "  airflow dags trigger <dag_id>           Trigger a DAG"
-    echo "  airflow tasks test <dag> <task> <date>  Test a task"
-}
-export -f enterprise-info
+  helpf() {
+    local README_FILE="$FLOX_ENV_PROJECT/README.md"
+    local README_URL="https://raw.githubusercontent.com/barstoolbluz/floxenvs/main/airflow-stack/README.md"
+
+    if [ "$1" = "--help" ]; then
+      echo "Usage: helpf [OPTIONS]"
+      echo ""
+      echo "View environment documentation"
+      echo ""
+      echo "Options:"
+      echo "  --force    Force download fresh copy from GitHub"
+      echo "  --help     Show this help message"
+      echo ""
+      echo "The README is cached locally and only downloaded if missing."
+      return 0
+    fi
+
+    if [ "$1" = "--force" ]; then
+      echo "Fetching latest README.md from GitHub..."
+      if curl -fsSL "$README_URL" -o "$README_FILE"; then
+        echo "✓ Downloaded README.md"
+      else
+        echo "✗ Failed to download README.md"
+        return 1
+      fi
+    elif [ ! -f "$README_FILE" ]; then
+      echo "README.md not found, downloading..."
+      if curl -fsSL "$README_URL" -o "$README_FILE"; then
+        echo "✓ Downloaded README.md"
+      else
+        echo "✗ Failed to download README.md"
+        return 1
+      fi
+    fi
+
+    if [ -f "$README_FILE" ]; then
+      bat --style=auto --paging=always "$README_FILE"
+    else
+      echo "✗ README.md not found at $README_FILE"
+      return 1
+    fi
+  }
+  export -f helpf
 '''
 
 zsh = '''
-enterprise-info() {
-    echo "╔════════════════════════════════════════════════════════╗"
-    echo "║   Apache Airflow Enterprise Stack                      ║"
-    echo "╚════════════════════════════════════════════════════════╝"
-    echo ""
-    echo "Executor: $AIRFLOW_EXECUTOR"
-    echo "Workers: $AIRFLOW_CELERY_WORKERS (concurrency: $AIRFLOW__CELERY__WORKER_CONCURRENCY)"
-    echo "Webserver Workers: $AIRFLOW_WEBSERVER_WORKERS"
-    echo ""
-    echo "═══ PostgreSQL Configuration ═══"
-    echo "  Host: $AIRFLOW_POSTGRES_HOST:$AIRFLOW_POSTGRES_PORT"
-    echo "  Database: $AIRFLOW_POSTGRES_DB"
-    echo "  Max connections: $POSTGRES_MAX_CONNECTIONS"
-    echo "  Shared buffers: $POSTGRES_SHARED_BUFFERS"
-    echo "  fsync: $POSTGRES_FSYNC (data safety)"
-    echo ""
-    echo "═══ Redis Configuration ═══"
-    echo "  Host: $AIRFLOW_REDIS_HOST:$AIRFLOW_REDIS_PORT"
-    echo "  Max memory: $REDIS_MAXMEMORY"
-    echo "  Persistence: AOF ($REDIS_APPENDFSYNC)"
-    echo ""
-    echo "═══ Kubernetes Configuration ═══"
-    echo "  Namespace: $AIRFLOW_KUBE_NAMESPACE"
-    echo "  ServiceAccount: $AIRFLOW_KUBE_WORKER_SERVICE_ACCOUNT"
-    echo "  Kubeconfig: $AIRFLOW_KUBE_CONFIG"
-    echo ""
-    echo "═══ Airflow Access ═══"
-    echo "  Web UI: http://localhost:$AIRFLOW_WEBSERVER_PORT"
-    echo "  Admin User: $AIRFLOW_ADMIN_USER"
-    echo "  Password: $AIRFLOW_ADMIN_PASSWORD"
-    echo ""
-    echo "═══ Component Info Commands ═══"
-    echo "  airflow-info         Airflow details"
-    echo "  postgres-info        PostgreSQL details"
-    echo "  redis-info           Redis details"
-    echo "  k8s-airflow-info     Kubernetes details"
-    echo ""
-    echo "═══ Service Management ═══"
-    echo "  flox services status                    Check all services"
-    echo "  flox services logs <service>            View logs"
-    echo "  flox services restart <service>         Restart service"
-    echo ""
-    echo "═══ Airflow Commands ═══"
-    echo "  airflow dags list                       List DAGs"
-    echo "  airflow dags trigger <dag_id>           Trigger a DAG"
-    echo "  airflow tasks test <dag> <task> <date>  Test a task"
-}
+  helpf() {
+    local README_FILE="$FLOX_ENV_PROJECT/README.md"
+    local README_URL="https://raw.githubusercontent.com/barstoolbluz/floxenvs/main/airflow-stack/README.md"
+
+    if [ "$1" = "--help" ]; then
+      echo "Usage: helpf [OPTIONS]"
+      echo ""
+      echo "View environment documentation"
+      echo ""
+      echo "Options:"
+      echo "  --force    Force download fresh copy from GitHub"
+      echo "  --help     Show this help message"
+      echo ""
+      echo "The README is cached locally and only downloaded if missing."
+      return 0
+    fi
+
+    if [ "$1" = "--force" ]; then
+      echo "Fetching latest README.md from GitHub..."
+      if curl -fsSL "$README_URL" -o "$README_FILE"; then
+        echo "✓ Downloaded README.md"
+      else
+        echo "✗ Failed to download README.md"
+        return 1
+      fi
+    elif [ ! -f "$README_FILE" ]; then
+      echo "README.md not found, downloading..."
+      if curl -fsSL "$README_URL" -o "$README_FILE"; then
+        echo "✓ Downloaded README.md"
+      else
+        echo "✗ Failed to download README.md"
+        return 1
+      fi
+    fi
+
+    if [ -f "$README_FILE" ]; then
+      bat --style=auto --paging=always "$README_FILE"
+    else
+      echo "✗ README.md not found at $README_FILE"
+      return 1
+    fi
+  }
 '''
 
 fish = '''
-function enterprise-info
-    echo "╔════════════════════════════════════════════════════════╗"
-    echo "║   Apache Airflow Enterprise Stack                      ║"
-    echo "╚════════════════════════════════════════════════════════╝"
-    echo ""
-    echo "Executor: $AIRFLOW_EXECUTOR"
-    echo "Workers: $AIRFLOW_CELERY_WORKERS (concurrency: $AIRFLOW__CELERY__WORKER_CONCURRENCY)"
-    echo "Webserver Workers: $AIRFLOW_WEBSERVER_WORKERS"
-    echo ""
-    echo "═══ PostgreSQL Configuration ═══"
-    echo "  Host: $AIRFLOW_POSTGRES_HOST:$AIRFLOW_POSTGRES_PORT"
-    echo "  Database: $AIRFLOW_POSTGRES_DB"
-    echo "  Max connections: $POSTGRES_MAX_CONNECTIONS"
-    echo "  Shared buffers: $POSTGRES_SHARED_BUFFERS"
-    echo "  fsync: $POSTGRES_FSYNC (data safety)"
-    echo ""
-    echo "═══ Redis Configuration ═══"
-    echo "  Host: $AIRFLOW_REDIS_HOST:$AIRFLOW_REDIS_PORT"
-    echo "  Max memory: $REDIS_MAXMEMORY"
-    echo "  Persistence: AOF ($REDIS_APPENDFSYNC)"
-    echo ""
-    echo "═══ Kubernetes Configuration ═══"
-    echo "  Namespace: $AIRFLOW_KUBE_NAMESPACE"
-    echo "  ServiceAccount: $AIRFLOW_KUBE_WORKER_SERVICE_ACCOUNT"
-    echo "  Kubeconfig: $AIRFLOW_KUBE_CONFIG"
-    echo ""
-    echo "═══ Airflow Access ═══"
-    echo "  Web UI: http://localhost:$AIRFLOW_WEBSERVER_PORT"
-    echo "  Admin User: $AIRFLOW_ADMIN_USER"
-    echo "  Password: $AIRFLOW_ADMIN_PASSWORD"
-    echo ""
-    echo "═══ Component Info Commands ═══"
-    echo "  airflow-info         Airflow details"
-    echo "  postgres-info        PostgreSQL details"
-    echo "  redis-info           Redis details"
-    echo "  k8s-airflow-info     Kubernetes details"
-    echo ""
-    echo "═══ Service Management ═══"
-    echo "  flox services status                    Check all services"
-    echo "  flox services logs <service>            View logs"
-    echo "  flox services restart <service>         Restart service"
-    echo ""
-    echo "═══ Airflow Commands ═══"
-    echo "  airflow dags list                       List DAGs"
-    echo "  airflow dags trigger <dag_id>           Trigger a DAG"
-    echo "  airflow tasks test <dag> <task> <date>  Test a task"
+function helpf
+    set README_FILE "$FLOX_ENV_PROJECT/README.md"
+    set README_URL "https://raw.githubusercontent.com/barstoolbluz/floxenvs/main/airflow-stack/README.md"
+
+    if test "$argv[1]" = "--help"
+        echo "Usage: helpf [OPTIONS]"
+        echo ""
+        echo "View environment documentation"
+        echo ""
+        echo "Options:"
+        echo "  --force    Force download fresh copy from GitHub"
+        echo "  --help     Show this help message"
+        echo ""
+        echo "The README is cached locally and only downloaded if missing."
+        return 0
+    end
+
+    if test "$argv[1]" = "--force"
+        echo "Fetching latest README.md from GitHub..."
+        if curl -fsSL "$README_URL" -o "$README_FILE"
+            echo "✓ Downloaded README.md"
+        else
+            echo "✗ Failed to download README.md"
+            return 1
+        end
+    else if not test -f "$README_FILE"
+        echo "README.md not found, downloading..."
+        if curl -fsSL "$README_URL" -o "$README_FILE"
+            echo "✓ Downloaded README.md"
+        else
+            echo "✗ Failed to download README.md"
+            return 1
+        end
+    end
+
+    if test -f "$README_FILE"
+        bat --style=auto --paging=always "$README_FILE"
+    else
+        echo "✗ README.md not found at $README_FILE"
+        return 1
+    end
 end
 '''
 

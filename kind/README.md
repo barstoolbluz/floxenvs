@@ -1,299 +1,311 @@
-# 🚢 A Flox Environment for KIND Kubernetes Development
+# 🚀 Flox Environment for KIND (Kubernetes in Docker)
 
-This Flox environment provisions a local Kubernetes cluster using KIND (Kubernetes IN Docker), and includes supporting CLI tools for interacting with the cluster. The environment includes a terminal-based bootstrapping wizard. You use this wizard to define a KIND configuration for Kubernetes, as well as to create a K8s cluster.
+This `kind-headless` environment is designed for CI, headless setups, or scripted workflows—i.e., any non-interactive context.
+
+The [`kind`](https://github.com/barstoolbluz/floxenvs/tree/main/kind/) environment is better for local, interactive use—especially when users need help configuring clusters step by step with interactive wizards.
 
 ## ✨ Features
 
-- Interactive wizard for creating a KIND YAML config + creating custom KIND clusters
-- Automatic detection of existing clusters
-- Support for specific Kubernetes versions
-- Helper commands for common KIND operations
-- Cross-platform compatibility (macOS, Linux)
+- Dynamic environment variable configuration for cluster setup
+- Runtime override capabilities for all configuration options
+- Automatic cluster creation and management via Flox services
+- Automatic directory and configuration management
+- Cross-platform compatibility (Linux x86_64 and ARM64, macOS x86_64 and ARM64)
+- Default configurations that "just work" with minimal setup
+- **No interactive wizards or prompts** - perfect for CI/CD pipelines
 
 ## 🧰 Included Tools
 
-The environment packs these essential tools:
+The environment includes these essential tools:
 
-- `kind` - Kubernetes IN Docker for local cluster creation
-- `kubectl` - Official Kubernetes command-line tool
-- `k9s` - Terminal-based UI for Kubernetes
-- `stern` - Multi-pod and container log tailing for Kubernetes
-- `helm` - Kubernetes package manager
-- `gum` - Terminal UI toolkit powering the setup wizard and styling
-- `jq` - Command-line JSON processor for API interactions
-- `coreutils` - GNU core utilities for enhanced file and text operations
-- `bat` - Used to power the environment's built-in `readme` function
-- `curl` - Used to fetch this `README.md` and shell integration scripts
+- `kind` - Kubernetes in Docker for local cluster testing
+- `kubectl` - Kubernetes command-line tool
+- `curl` - HTTP client for downloading this `README.md` + other uses
+- `bat` - Better `cat` for viewing this `README.md`
+- `jq` - JSON processor for Kubernetes resource manipulation
+- `coreutils` - GNU `coreutils` # included for macOS/Darwin compatibility
 
 ## 🏁 Getting Started
 
 ### 📋 Prerequisites
 
 - [Flox](https://flox.dev/get) installed on your system
-- Docker or Podman container runtime
-
-OR
-
-- Colima runtime environment (**`flox activate -r flox/colima`**)
+- Docker installed and running (required by KIND)
+- That's it.
 
 ### 💻 Installation & Activation
 
-Jump in with:
-
-1. Clone this repo or create a new directory
-
-```sh
-git clone https://github.com/barstoolbluz/floxenvs && cd floxenvs/kind
-```
-
-2. Run:
-
-```sh
-flox activate
-```
-
-This command:
-- Pulls in all dependencies
-- Downloads shell integration scripts from GitHub
-- Detects any existing KIND clusters
-- Fires up the cluster creation wizard if no clusters are found
-- Drops you into the Flox env with Kubernetes tools ready to go
-
-### 🧙 Cluster Creation Wizard
-
-The environment includes an interactive wizard (now called `bootstrap`) that:
-
-1. Checks for a container runtime (Docker/Podman/Colima)
-2. Guides you through naming your cluster
-3. Lets you select your Kubernetes version
-4. Configures the number of worker nodes
-5. Creates a KIND configuration file
-6. Optionally creates the cluster immediately
-
-## 📝 Usage
-
-After setup, you have access to these commands:
+Get started with:
 
 ```bash
-# Create a new cluster with the interactive wizard
-bootstrap
+# Pull the environment
+flox pull --copy barstoolbluz/kind-headless
 
-# Create a cluster with an existing config file
-create-cluster my-cluster
+# Activate (without starting services)
+cd kind-headless
+flox activate
 
-# Delete a KIND cluster
-delete-cluster my-cluster
+# Or activate and start the cluster immediately
+flox activate -s
+```
 
-# List all KIND clusters
+### 🎮 Basic Usage
+
+#### Start the Cluster
+
+```bash
+# Start with default configuration
+flox activate -s
+
+# The service will:
+# 1. Create a KIND cluster named "kind" (default)
+# 2. Configure it with 1 control-plane and 1 worker node
+# 3. Wait for the cluster to be ready
+# 4. Keep running to maintain the cluster
+```
+
+#### Check Cluster Status
+
+```bash
+# View service logs
+flox services logs kind
+
+# Check service status
+flox services status
+
+# Use kubectl (inside activated environment)
+kubectl cluster-info
+kubectl get nodes
 kind get clusters
+```
 
-# Manage your Kubernetes cluster
-kubectl ...
+#### Stop the Cluster
 
-# Open the K9s terminal UI
-k9s
+```bash
+# Stop the service (cluster remains)
+flox services stop kind
 
-# Tail logs across multiple pods
-stern ...
+# To delete the cluster completely
+kind delete cluster --name kind
+```
 
-# Manage Kubernetes packages
-helm ...
+## ⚙️ Configuration
 
-# View this README in the terminal
+All configuration is done via environment variables at activation time:
+
+### Runtime Configuration Variables
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `KIND_CLUSTER_NAME` | `kind` | Name of the KIND cluster |
+| `KIND_CONFIG_FILE` | `$FLOX_ENV_CACHE/kind-config/cluster.yaml` | Path to KIND cluster config |
+| `KIND_KUBECONFIG` | `$FLOX_ENV_CACHE/kind-data/kubeconfig` | Path to kubeconfig file |
+| `KIND_IMAGE` | (latest) | KIND node image (e.g., `kindest/node:v1.27.0`) |
+
+### Configuration Examples
+
+#### Custom Cluster Name
+
+```bash
+KIND_CLUSTER_NAME=dev flox activate -s
+```
+
+#### Custom Node Image
+
+```bash
+KIND_IMAGE=kindest/node:v1.27.0 flox activate -s
+```
+
+#### Multiple Clusters
+
+Create a custom config file first:
+
+```bash
+# Activate environment
+flox activate
+
+# Edit the config file at $KIND_CONFIG_FILE
+cat > $KIND_CONFIG_FILE << 'EOF'
+kind: Cluster
+apiVersion: kind.x-k8s.io/v1alpha4
+nodes:
+- role: control-plane
+- role: worker
+- role: worker
+- role: worker
+EOF
+
+# Start with custom config
+flox activate -s
+```
+
+Or use a completely different config:
+
+```bash
+KIND_CONFIG_FILE=/path/to/my/config.yaml flox activate -s
+```
+
+## 🔧 Advanced Usage
+
+### Custom Cluster Configuration
+
+The default cluster config is created at `$KIND_CONFIG_FILE` if it doesn't exist:
+
+```yaml
+kind: Cluster
+apiVersion: kind.x-k8s.io/v1alpha4
+nodes:
+- role: control-plane
+- role: worker
+```
+
+Customize this file before starting the service for:
+- Multiple control-plane nodes (HA setup)
+- Additional worker nodes
+- Port mappings
+- Volume mounts
+- Network configuration
+
+Example multi-node config:
+
+```yaml
+kind: Cluster
+apiVersion: kind.x-k8s.io/v1alpha4
+nodes:
+- role: control-plane
+- role: control-plane
+- role: control-plane
+- role: worker
+- role: worker
+- role: worker
+```
+
+Example with port mappings:
+
+```yaml
+kind: Cluster
+apiVersion: kind.x-k8s.io/v1alpha4
+nodes:
+- role: control-plane
+  extraPortMappings:
+  - containerPort: 80
+    hostPort: 8080
+    protocol: TCP
+- role: worker
+```
+
+### Using in CI/CD
+
+Perfect for testing Kubernetes manifests in CI:
+
+```yaml
+# GitHub Actions example
+- name: Setup KIND cluster
+  run: |
+    flox activate -s -- sleep 5
+    kubectl cluster-info
+    kubectl apply -f ./manifests/
+    kubectl wait --for=condition=Ready pods --all --timeout=300s
+```
+
+### Multiple Environments Pattern
+
+Create different configurations for different use cases:
+
+```bash
+# Development cluster
+KIND_CLUSTER_NAME=dev KIND_CONFIG_FILE=./configs/dev.yaml flox activate -s
+
+# Testing cluster (in another terminal)
+KIND_CLUSTER_NAME=test KIND_CONFIG_FILE=./configs/test.yaml flox activate -s
+
+# Production-like cluster
+KIND_CLUSTER_NAME=prod KIND_CONFIG_FILE=./configs/prod.yaml flox activate -s
+```
+
+## 📝 Common Commands
+
+Inside the activated environment:
+
+```bash
+# Show environment info
+kind-info
+
+# View this README
 readme
 
-# Update and view the README
+# Refresh README from GitHub
 readme --refresh
+
+# Cluster operations
+kind get clusters
+kind get nodes --name kind
+kubectl cluster-info
+kubectl get all -A
+
+# Clean up
+kind delete cluster --name kind
 ```
 
-## 🛠️ Working with the Included Tools
+## 🐛 Troubleshooting
 
-### 🖥️ K9s - Terminal UI for Kubernetes
+### Cluster Creation Fails
 
-K9s provides a terminal UI to interact with your Kubernetes clusters:
+Check Docker is running:
 
 ```bash
-# Launch K9s with the current context
-k9s
-
-# Launch K9s for a specific namespace
-k9s -n kube-system
-
-# Launch K9s for a specific context
-k9s --context my-context
+docker ps
 ```
 
-Common workflows with K9s:
-- Press `:` to enter command mode (like Vim)
-- Type `pod` and press Enter to view pods
-- Type `deploy` to view deployments
-- Type `svc` to view services
-- Type `ns` to switch namespaces
-- Press `/` to filter resources
-- Press `d` to describe the selected resource
-- Press `l` to view logs of the selected pod
-- Press `s` to get a shell into the selected pod
-- Press `ctrl+d` to delete the selected resource
-- Press `?` for help with keyboard shortcuts
-
-### 📊 Stern - Multi-pod Log Tailing
-
-Stern lets you tail logs from multiple pods and containers:
+View service logs:
 
 ```bash
-# Tail logs from all pods with names containing "api"
-stern api
-
-# Tail logs from specific containers across all pods
-stern --container nginx .
-
-# Tail logs with timestamps
-stern --timestamps api
-
-# Tail logs with color-coded output for each pod
-stern --color always api
-
-# Tail logs from specific namespace
-stern --namespace monitoring api
+flox services logs kind
 ```
 
-Common use cases:
-- Debug distributed applications by viewing logs across multiple services
-- Monitor specific components during deployment or testing
-- Trace requests across microservices by matching logs with request IDs
-- Get real-time feedback during development in a Kubernetes environment
+### Kubectl Can't Connect
 
-### 📦 Helm - Kubernetes Package Manager
-
-Helm simplifies the deployment of applications and services:
+Ensure KUBECONFIG is set:
 
 ```bash
-# List available repositories
-helm repo list
-
-# Add a repository
-helm repo add bitnami https://charts.bitnami.com/bitnami
-
-# Update repositories
-helm repo update
-
-# Search for charts
-helm search repo nginx
-
-# Install a chart
-helm install my-release bitnami/nginx
-
-# List installed releases
-helm list
-
-# Upgrade a release
-helm upgrade my-release bitnami/nginx --set replicaCount=3
-
-# Uninstall a release
-helm uninstall my-release
+export KUBECONFIG=$KIND_KUBECONFIG
+kubectl cluster-info
 ```
 
-Common workflows:
-- Setting up development dependencies (databases, message queues, etc.)
-- Deploying applications with consistent configurations
-- Managing application lifecycle through upgrades and rollbacks
-- Creating custom charts for your applications
+### Cluster Already Exists
 
-## 🔍 How It Works
+The service won't recreate an existing cluster. Delete first:
 
-### 🔄 Shell Integration
+```bash
+kind delete cluster --name $KIND_CLUSTER_NAME
+flox services restart kind
+```
 
-The environment dynamically downloads shell integration scripts from GitHub:
-- `kind_wizard.bash` for Bash users
-- `kind_wizard.zsh` for Zsh users
-- `kind_wizard.fish` for Fish users
+### Check Service Logs
 
-These scripts provide the `bootstrap` function (renamed from `kind_wizard`) and are automatically sourced in your shell. The shell scripts are stored in `$FLOX_ENV_CACHE` and only downloaded if they don't exist.
+```bash
+# View logs in real-time
+flox services logs kind
 
-### 🔄 Cluster Management
+# Check log file directly
+cat $KIND_LOG_DIR/service.log
+```
 
-The environment implements a streamlined cluster creation process:
+## 🔗 Related Environments
 
-1. **Config Generation**: Creates a YAML configuration file for your KIND cluster
-2. **Container Runtime Detection**: Automatically checks for Docker or Podman
-3. **Version Selection**: Can fetch the latest Kubernetes version or use a specific version
-4. **Node Configuration**: Supports multi-node clusters with a control-plane and workers
-5. **Cluster Creation**: Launches the cluster with your custom configuration
+- **[kind](https://github.com/barstoolbluz/floxenvs/tree/main/kind/)** - Interactive version with wizards and helpers
+- **[k8s-toolkit](https://github.com/barstoolbluz/floxenvs/)** - Traveling toolkit environment for k8s; includes kubectl, k9s, stern, kubectx, etc.
 
-### 🐚 Shell Support
+## 📚 Resources
 
-The environment includes integration for:
-- Bash
-- Zsh
-- Fish
+- [KIND Documentation](https://kind.sigs.k8s.io/)
+- [Kubernetes Documentation](https://kubernetes.io/docs/)
+- [Flox Documentation](https://flox.dev/docs)
 
-With helper functions that:
-1. Create and manage KIND clusters
-2. Provide access to Kubernetes tools
-3. Display cluster information and status
+## 🤝 Contributing
 
-### 📖 Integrated Documentation
+Found a bug or want to improve this environment? Contributions welcome!
 
-The `readme` function:
-- Downloads this README.md to your environment's cache
-- Displays it using `bat` with syntax highlighting and paging
-- Can be refreshed with the `--refresh` flag to get the latest version
-- Falls back to `cat` if `bat` is not available
+## 📄 License
 
-### 📊 Kubernetes Development Workflow
-
-This environment is ideal for a local Kubernetes development workflow:
-
-1. Create a local cluster with `bootstrap` or `create-cluster`
-2. Deploy applications using `kubectl` or `helm`
-3. Monitor deployments with `k9s`
-4. Watch application logs with `stern`
-5. Iterate on development with fast local feedback cycles
-6. Clean up with `delete-cluster` when done
-
-## 🔧 Troubleshooting
-
-If you encounter issues:
-
-1. **Cluster creation fails**: 
-   - Verify your container runtime (Docker/Podman) is installed and running
-   - Try `docker info` or `podman info` to check
-   - For container runtime issues, you can use Flox's Colima environment: `flox activate -s -r flox/colima`
-   
-2. **Connectivity issues**:
-   - Check your `kubectl` context with `kubectl config get-contexts`
-   - Ensure you're connecting to the correct cluster
-   - Verify network connectivity to your cluster
-
-3. **Resource limitations**: 
-   - KIND runs Kubernetes in containers, so resource usage is limited by your Docker/Podman settings
-   - Consider adjusting container runtime resource limits for larger clusters
-
-4. **Shell integration issues**:
-   - If shell functions aren't available, check internet connectivity
-   - The environment tries to download integration scripts from GitHub
-   - You can manually download them to `$FLOX_ENV_CACHE` if needed
-
-## 💻 System Compatibility
-
-This works on:
-- macOS (ARM64, x86_64)
-- Linux (ARM64, x86_64)
-
-## 🔒 Security Considerations
-
-- KIND clusters are intended for development and testing, not production
-- Cluster configs are stored as YAML files in your working directory
-- Kubernetes credentials are stored in your kubeconfig (typically ~/.kube/config)
-- For proper security, follow Kubernetes security best practices even in development
-- Shell integration scripts are downloaded from GitHub - review them if you have security concerns
-
-## About Flox
-
-[Flox](https://flox.dev/docs) combines package and environment management, building on [Nix](https://github.com/NixOS/nix). It gives you Nix with a `git`-like syntax and an intuitive UX:
-
-- **Declarative environments**. Software packages, variables, services, etc. are defined in simple, human-readable TOML format;
-- **Content-addressed storage**. Multiple versions of packages with conflicting dependencies can coexist in the same environment;
-- **Reproducibility**. The same environment can be reused across development, CI, and production;
-- **Deterministic builds**. The same inputs always produce identical outputs for a given architecture, regardless of when or where builds occur;
-- **World's largest collection of packages**. Access to over 150,000 packages—and millions of package-version combinations—from [Nixpkgs](https://github.com/NixOS/nixpkgs).
+This environment configuration is provided as-is for use with Flox.

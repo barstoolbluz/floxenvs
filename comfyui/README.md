@@ -225,10 +225,13 @@ The service automatically adds `--cpu` flag when no GPU is available, ensuring i
 When a new ComfyUI version is published:
 
 ```bash
-# Edit manifest.toml, update version
+# Force upgrade...
+flox upgrade
+
+# ...and/or edit 'manifest.toml' to define the new version: e.g., 'comfyui.version = "0.3.76"'
 flox edit
 
-# Then restart environment
+# Then restart the environment
 flox activate
 ```
 

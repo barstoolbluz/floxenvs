@@ -4,6 +4,8 @@ version = 1
 [install]
 gum.pkg-path = "gum"
 metabase.pkg-path = "metabase"
+bat.pkg-path = "bat"
+curl.pkg-path = "curl"
 
 # uncomment to select your postgreSQL version:
 postgresql.pkg-path = "postgresql_16"
@@ -32,6 +34,8 @@ MB_JETTY_PORT="3000"
 
 [hook]
 on-activate = '''
+# Auto-fetch README from FloxHub fi
+
 # define env vars available during activation
 export PGDIR="${FLOX_ENV_CACHE}/postgres"
 export CONFIG_FILE="${FLOX_ENV_CACHE}/postgres.config"
@@ -359,7 +363,10 @@ show_postgres_help() {
     PostgreSQL User:     $(gum style --foreground 212 "${PGUSER}")
 
 👉  Metabase Connection Details:
-    Metabase Host:       $(gum style --foreground 212 "${display_host}:3000")"
+    Metabase Host:       $(gum style --foreground 212 "${display_host}:3000")
+
+👉  Documentation:
+    $(gum style --foreground 212 'helpf')                View full environment documentation"
 
     echo ""
 }
@@ -375,6 +382,14 @@ main() {
 
 # runnit all
 main
+
+  # Fetch README.md if not present
+  README_FILE="$FLOX_ENV_PROJECT/README.md"
+  if [ ! -f "$README_FILE" ]; then
+    if curl -fsSL https://raw.githubusercontent.com/barstoolbluz/floxenvs/main/postgres-metabase/README.md -o "$README_FILE" 2>/dev/null; then
+      echo "✓ Downloaded README.md (use 'helpf' to view)"
+    fi
+  fi
 '''
 
 
@@ -383,6 +398,7 @@ common = '''
 '''
 
 bash = '''
+
 source "${FLOX_ENV_CACHE}/postgres.config" 2>/dev/null || true
 pgstart() { flox services start postgres; }
 pgstop() { flox services stop postgres; }
@@ -398,9 +414,54 @@ export -f pgstart pgstop pgrestart pgconfigure
 unset -f toggle_debug debug_log initialize_postgres create_config_file
 unset -f start_postgres stop_postgres create_database check_first_run
 unset -f load_config prompt_for_config display_postgres_config_ui main
+
+  helpf() {
+    local README_FILE="$FLOX_ENV_PROJECT/README.md"
+    local README_URL="https://raw.githubusercontent.com/barstoolbluz/floxenvs/main/postgres-metabase/README.md"
+
+    if [ "$1" = "--help" ]; then
+      echo "Usage: helpf [OPTIONS]"
+      echo ""
+      echo "View environment documentation"
+      echo ""
+      echo "Options:"
+      echo "  --force    Force download fresh copy from GitHub"
+      echo "  --help     Show this help message"
+      echo ""
+      echo "The README is cached locally and only downloaded if missing."
+      return 0
+    fi
+
+    if [ "$1" = "--force" ]; then
+      echo "Fetching latest README.md from GitHub..."
+      if curl -fsSL "$README_URL" -o "$README_FILE"; then
+        echo "✓ Downloaded README.md"
+      else
+        echo "✗ Failed to download README.md"
+        return 1
+      fi
+    elif [ ! -f "$README_FILE" ]; then
+      echo "README.md not found, downloading..."
+      if curl -fsSL "$README_URL" -o "$README_FILE"; then
+        echo "✓ Downloaded README.md"
+      else
+        echo "✗ Failed to download README.md"
+        return 1
+      fi
+    fi
+
+    if [ -f "$README_FILE" ]; then
+      bat --style=auto --paging=always "$README_FILE"
+    else
+      echo "✗ README.md not found at $README_FILE"
+      return 1
+    fi
+  }
+  export -f helpf
 '''
 
 zsh = '''
+
 source "${FLOX_ENV_CACHE}/postgres.config" 2>/dev/null || true
 pgstart() { flox services start postgres; }
 pgstop() { flox services stop postgres; }
@@ -416,9 +477,53 @@ export pgstart pgstop pgrestart pgconfigure
 unset -f "toggle_debug" "debug_log" "initialize_postgres" "create_config_file"
 unset -f "start_postgres" "stop_postgres" "create_database" "check_first_run"
 unset -f "load_config" "prompt_for_config" "display_postgres_config_ui" "main"
+
+  helpf() {
+    local README_FILE="$FLOX_ENV_PROJECT/README.md"
+    local README_URL="https://raw.githubusercontent.com/barstoolbluz/floxenvs/main/postgres-metabase/README.md"
+
+    if [ "$1" = "--help" ]; then
+      echo "Usage: helpf [OPTIONS]"
+      echo ""
+      echo "View environment documentation"
+      echo ""
+      echo "Options:"
+      echo "  --force    Force download fresh copy from GitHub"
+      echo "  --help     Show this help message"
+      echo ""
+      echo "The README is cached locally and only downloaded if missing."
+      return 0
+    fi
+
+    if [ "$1" = "--force" ]; then
+      echo "Fetching latest README.md from GitHub..."
+      if curl -fsSL "$README_URL" -o "$README_FILE"; then
+        echo "✓ Downloaded README.md"
+      else
+        echo "✗ Failed to download README.md"
+        return 1
+      fi
+    elif [ ! -f "$README_FILE" ]; then
+      echo "README.md not found, downloading..."
+      if curl -fsSL "$README_URL" -o "$README_FILE"; then
+        echo "✓ Downloaded README.md"
+      else
+        echo "✗ Failed to download README.md"
+        return 1
+      fi
+    fi
+
+    if [ -f "$README_FILE" ]; then
+      bat --style=auto --paging=always "$README_FILE"
+    else
+      echo "✗ README.md not found at $README_FILE"
+      return 1
+    fi
+  }
 '''
 
 fish = '''
+
 source "$FLOX_ENV_CACHE/postgres.config" 2>/dev/null || true
 
 function pgstart
@@ -447,6 +552,49 @@ end
 functions -e toggle_debug debug_log initialize_postgres create_config_file
 functions -e start_postgres stop_postgres create_database check_first_run
 functions -e load_config prompt_for_config display_postgres_config_ui main
+
+function helpf
+    set README_FILE "$FLOX_ENV_PROJECT/README.md"
+    set README_URL "https://raw.githubusercontent.com/barstoolbluz/floxenvs/main/postgres-metabase/README.md"
+
+    if test "$argv[1]" = "--help"
+        echo "Usage: helpf [OPTIONS]"
+        echo ""
+        echo "View environment documentation"
+        echo ""
+        echo "Options:"
+        echo "  --force    Force download fresh copy from GitHub"
+        echo "  --help     Show this help message"
+        echo ""
+        echo "The README is cached locally and only downloaded if missing."
+        return 0
+    end
+
+    if test "$argv[1]" = "--force"
+        echo "Fetching latest README.md from GitHub..."
+        if curl -fsSL "$README_URL" -o "$README_FILE"
+            echo "✓ Downloaded README.md"
+        else
+            echo "✗ Failed to download README.md"
+            return 1
+        end
+    else if not test -f "$README_FILE"
+        echo "README.md not found, downloading..."
+        if curl -fsSL "$README_URL" -o "$README_FILE"
+            echo "✓ Downloaded README.md"
+        else
+            echo "✗ Failed to download README.md"
+            return 1
+        end
+    end
+
+    if test -f "$README_FILE"
+        bat --style=auto --paging=always "$README_FILE"
+    else
+        echo "✗ README.md not found at $README_FILE"
+        return 1
+    end
+end
 '''
 
 [services]

@@ -1,263 +1,434 @@
-# Redis Interactive Environment
+# Redis Headless Environment
 
-A fully-configured Redis environment for Flox with an interactive setup wizard powered by `gum`.
+A fully-automated Redis environment for Flox configured entirely via environment variables. Perfect for CI/CD, containerization, and reproducible deployments.
 
 ## Features
 
-- **Interactive Configuration**: First-run wizard with customizable settings
-- **Persistent Configuration**: Settings saved and reused across sessions
-- **Service Management**: Built-in service controls via Flox
+- **Zero Interaction**: Fully automated setup with no prompts
+- **Environment Variable Configuration**: All settings via env vars
+- **Production Ready**: Comprehensive configuration options
 - **Multiple Persistence Options**: RDB snapshots and AOF logging
-- **Memory Management**: Configurable memory limits and eviction policies
-- **Multiple Shell Support**: Works with bash, zsh, and fish
+- **Memory Management**: Configurable limits and eviction policies
+- **Performance Tuning**: Connection pooling, timeouts, and more
+- **Monitoring Built-in**: Slow log and latency monitoring
 
 ## Quick Start
 
 ```bash
-# Initialize and activate (triggers configuration wizard on first run)
-cd redis
-flox activate
-
-# Start Redis as a service
+# Default configuration
+cd redis-headless
 flox activate -s
 
-# Connect to Redis
+# Connect
 redis-cli -p 16379
 
-# Reconfigure Redis
-redisconfigure
+# With custom settings
+REDIS_PORT=6380 REDIS_PASSWORD=secret flox activate -s
+
+# Show configuration
+redis-info
 ```
 
-## Configuration Options
+## Configuration Variables
 
-The interactive wizard lets you customize:
+### Connection (3 variables)
 
-### Connection Settings
-- **Host Address**: Bind address (default: `127.0.0.1`)
-- **Port**: Redis port (default: `16379`)
-- **Password**: Optional authentication (default: none)
-- **Data Directory**: Storage location (default: `$FLOX_ENV_CACHE/redis`)
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `REDIS_HOST` | `127.0.0.1` | Bind address (use `0.0.0.0` for all interfaces) |
+| `REDIS_PORT` | `16379` | Port number |
+| `REDIS_PASSWORD` | (none) | Authentication password (empty = no auth) |
 
-### Memory Management
-- **Max Memory**: Memory limit (default: `256mb`)
-- **Eviction Policy**: Strategy when max memory reached
-  - `noeviction`: Return errors when memory limit reached
-  - `allkeys-lru`: Evict least recently used keys
-  - `volatile-lru`: Evict LRU keys with expire set
-  - `allkeys-random`: Evict random keys
-  - `volatile-random`: Evict random keys with expire set
-  - `volatile-ttl`: Evict keys with nearest expire time
-  - `allkeys-lfu`: Evict least frequently used keys
-  - `volatile-lfu`: Evict LFU keys with expire set
+### Memory Management (3 variables)
 
-### Persistence Settings
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `REDIS_MAXMEMORY` | `256mb` | Maximum memory limit |
+| `REDIS_MAXMEMORY_POLICY` | `noeviction` | Eviction policy when max memory reached |
+| `REDIS_MAXMEMORY_SAMPLES` | `5` | Number of samples for LRU/LFU algorithms |
 
-#### RDB Snapshots (Point-in-Time Backups)
-- **Enable/Disable**: Toggle RDB persistence
-- **Save Intervals**: When to create snapshots (default: `900 1 300 10 60 10000`)
-  - Format: `seconds changes` pairs
-  - Example: `900 1` = save after 900s if 1+ keys changed
+**Eviction Policies**:
+- `noeviction`: Return errors when memory limit reached (default)
+- `allkeys-lru`: Evict least recently used keys
+- `allkeys-lfu`: Evict least frequently used keys
+- `volatile-lru`: Evict LRU among keys with expire set
+- `volatile-lfu`: Evict LFU among keys with expire set
+- `volatile-ttl`: Evict keys with nearest expire time
+- `allkeys-random`: Evict random keys
+- `volatile-random`: Evict random keys with expire set
 
-#### AOF (Append Only File)
-- **Enable/Disable**: Toggle AOF persistence
-- **Fsync Policy**: Durability vs performance trade-off
-  - `everysec`: Fsync every second (good balance)
-  - `always`: Fsync after every write (safest, slowest)
-  - `no`: Let OS decide when to fsync (fastest, least safe)
+### Persistence - RDB Snapshots (6 variables)
 
-### Other Settings
-- **Databases**: Number of databases (default: `16`)
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `REDIS_SAVE_RDB` | `yes` | Enable RDB snapshots |
+| `REDIS_SAVE_900` | `1` | Save if 1+ changes in 900s (15min) |
+| `REDIS_SAVE_300` | `10` | Save if 10+ changes in 300s (5min) |
+| `REDIS_SAVE_60` | `10000` | Save if 10000+ changes in 60s |
+| `REDIS_RDB_COMPRESSION` | `yes` | Compress RDB files |
+| `REDIS_RDB_CHECKSUM` | `yes` | Add checksum to RDB files |
+
+### Persistence - AOF (4 variables)
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `REDIS_APPENDONLY` | `no` | Enable append-only file |
+| `REDIS_APPENDFSYNC` | `everysec` | Fsync policy: `always`, `everysec`, `no` |
+| `REDIS_AOF_REWRITE_PERCENTAGE` | `100` | Trigger rewrite at 100% growth |
+| `REDIS_AOF_REWRITE_MIN_SIZE` | `64mb` | Minimum size for rewrite |
+
+### Performance (5 variables)
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `REDIS_DATABASES` | `16` | Number of databases (0-N) |
+| `REDIS_TCP_BACKLOG` | `511` | TCP listen backlog |
+| `REDIS_TIMEOUT` | `0` | Client timeout in seconds (0 = disabled) |
+| `REDIS_TCP_KEEPALIVE` | `300` | TCP keepalive interval in seconds |
+| `REDIS_MAXCLIENTS` | `10000` | Maximum number of clients |
+
+### Monitoring (3 variables)
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `REDIS_SLOWLOG_LOG_SLOWER_THAN` | `10000` | Slow log threshold in microseconds |
+| `REDIS_SLOWLOG_MAX_LEN` | `128` | Max slow log entries |
+| `REDIS_LATENCY_MONITOR_THRESHOLD` | `0` | Latency monitor threshold in ms (0 = disabled) |
+
+### Security (2 variables)
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `REDIS_PROTECTED_MODE` | `yes` | Enable protected mode |
+| `REDIS_RENAME_COMMANDS` | (none) | Comma-separated commands to disable |
+
+### Flexibility (1 variable)
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `REDIS_EXTRA_OPTS` | (none) | Additional redis-server options |
+
+## Total: 27 Configurable Variables
+
+## Usage Examples
+
+### Basic Development
+
+```bash
+flox activate -s
+redis-cli -p 16379
+```
+
+### Production with Authentication
+
+```bash
+REDIS_PASSWORD=strongpassword123 \
+REDIS_MAXMEMORY=2gb \
+REDIS_MAXMEMORY_POLICY=allkeys-lru \
+flox activate -s
+```
+
+### High-Durability Configuration
+
+```bash
+REDIS_APPENDONLY=yes \
+REDIS_APPENDFSYNC=everysec \
+REDIS_SAVE_RDB=yes \
+flox activate -s
+```
+
+### Cache-Only (No Persistence)
+
+```bash
+REDIS_SAVE_RDB=no \
+REDIS_APPENDONLY=no \
+REDIS_MAXMEMORY=1gb \
+REDIS_MAXMEMORY_POLICY=allkeys-lru \
+flox activate -s
+```
+
+### Network-Accessible with Security
+
+```bash
+REDIS_HOST=0.0.0.0 \
+REDIS_PORT=6379 \
+REDIS_PASSWORD=securepass \
+REDIS_PROTECTED_MODE=yes \
+REDIS_MAXCLIENTS=1000 \
+flox activate -s
+```
+
+### Disable Dangerous Commands
+
+```bash
+REDIS_RENAME_COMMANDS=FLUSHDB,FLUSHALL,CONFIG \
+REDIS_PASSWORD=admin123 \
+flox activate -s
+```
+
+### Performance Tuning
+
+```bash
+REDIS_MAXMEMORY=4gb \
+REDIS_MAXMEMORY_POLICY=allkeys-lfu \
+REDIS_MAXMEMORY_SAMPLES=10 \
+REDIS_TCP_BACKLOG=1024 \
+REDIS_MAXCLIENTS=20000 \
+flox activate -s
+```
+
+### Enable Monitoring
+
+```bash
+REDIS_SLOWLOG_LOG_SLOWER_THAN=1000 \
+REDIS_SLOWLOG_MAX_LEN=1000 \
+REDIS_LATENCY_MONITOR_THRESHOLD=100 \
+flox activate -s
+```
 
 ## Service Management
 
 ```bash
-# Start Redis service
+# Start service
 flox activate -s
-# or after activation:
-redisstart
 
-# Stop Redis service
-redisstop
+# Check status
+flox services status
 
-# Restart Redis service
-redisrestart
+# View logs
+flox services logs redis
 
-# Reconfigure (wizard + restart)
-redisconfigure
+# Restart with new settings
+REDIS_MAXMEMORY=1gb flox services restart redis
+
+# Stop service
+flox services stop redis
 ```
 
-## Connecting to Redis
+## Connection
 
 ```bash
-# Basic connection
-redis-cli -h 127.0.0.1 -p 16379
+# Local connection
+redis-cli -p 16379
 
-# With password (if configured)
-redis-cli -h 127.0.0.1 -p 16379 -a yourpassword
+# With password
+redis-cli -p 16379 -a yourpassword
+
+# Remote connection
+redis-cli -h 192.168.1.100 -p 16379 -a yourpassword
 
 # Using environment variables
-redis-cli  # Uses REDIS_HOST and REDIS_PORT from config
+redis-cli -h $REDIS_HOST -p $REDIS_PORT $([ -n "$REDIS_PASSWORD" ] && echo "-a $REDIS_PASSWORD")
 ```
 
-## Configuration File Locations
-
-- **Environment Config**: `$FLOX_ENV_CACHE/redis.config`
-- **Redis Config**: `$REDIS_DIR/redis.conf`
-- **Data Directory**: `$REDIS_DIR/data/`
-- **Log File**: `$REDIS_DIR/redis.log`
-
-## Reconfiguring
-
-To change your Redis configuration after the initial setup:
+## Monitoring and Diagnostics
 
 ```bash
-redisconfigure
+# View configuration
+redis-info
+
+# Check slow queries
+redis-cli SLOWLOG GET 10
+
+# Check latency events (if latency monitor enabled)
+redis-cli LATENCY DOCTOR
+
+# Monitor commands in real-time
+redis-cli MONITOR
+
+# Get server info
+redis-cli INFO
+
+# Check memory usage
+redis-cli INFO MEMORY
+
+# Check persistence status
+redis-cli INFO PERSISTENCE
 ```
 
-This will:
-1. Stop the Redis service
-2. Run the configuration wizard
-3. Regenerate `redis.conf`
-4. Restart the service with new settings
+## File Locations
 
-## Advanced Usage
-
-### Manual Configuration Override
-
-You can manually edit the configuration file:
-
-```bash
-$EDITOR $FLOX_ENV_CACHE/redis.config
-```
-
-Then restart Redis:
-
-```bash
-redisrestart
-```
-
-### Using Different Configurations
-
-The configuration is stored in `$FLOX_ENV_CACHE/redis.config`. To reset:
-
-```bash
-rm $FLOX_ENV_CACHE/redis.config
-flox activate  # Triggers wizard again
-```
+- **Config**: `$REDIS_CONFIG_DIR/redis.conf`
+- **Data**: `$REDIS_DIR/` (customizable via `REDIS_DIR`)
+- **Logs**: `$REDIS_LOG_DIR/redis.log`
+- **RDB Dump**: `$REDIS_DIR/dump.rdb`
+- **AOF**: `$REDIS_DIR/appendonly.aof`
 
 ## Persistence Strategies
 
-### Development (Default)
-- RDB: Enabled with standard intervals
-- AOF: Disabled
-- Good for: Local development, testing
+### Strategy 1: RDB Only (Default)
+- **Use case**: Development, periodic backups
+- **Config**: `REDIS_SAVE_RDB=yes`, `REDIS_APPENDONLY=no`
+- **Pros**: Low overhead, compact backups
+- **Cons**: May lose data between snapshots
 
-### Production (High Durability)
-```
-RDB: Enabled
-AOF: Enabled with 'everysec' or 'always'
-Good for: Production data that must survive crashes
+### Strategy 2: AOF Only
+- **Use case**: Better durability than RDB
+- **Config**: `REDIS_SAVE_RDB=no`, `REDIS_APPENDONLY=yes`
+- **Pros**: Minimal data loss
+- **Cons**: Larger files, slower restarts
+
+### Strategy 3: RDB + AOF (Recommended for Production)
+- **Use case**: Production, critical data
+- **Config**: `REDIS_SAVE_RDB=yes`, `REDIS_APPENDONLY=yes`
+- **Pros**: Best of both worlds
+- **Cons**: Higher overhead
+
+### Strategy 4: No Persistence
+- **Use case**: Pure caching, ephemeral data
+- **Config**: `REDIS_SAVE_RDB=no`, `REDIS_APPENDONLY=no`
+- **Pros**: Maximum performance
+- **Cons**: All data lost on restart
+
+## Memory Eviction Policies Guide
+
+| Policy | Use Case | Description |
+|--------|----------|-------------|
+| `noeviction` | Database | Never evict, return errors when full |
+| `allkeys-lru` | General cache | Evict least recently used keys |
+| `allkeys-lfu` | Frequency-based cache | Evict least frequently used keys |
+| `volatile-lru` | Cache with TTL | Evict LRU among keys with expire |
+| `volatile-lfu` | Cache with TTL | Evict LFU among keys with expire |
+| `volatile-ttl` | TTL-based | Evict keys with nearest expiration |
+| `allkeys-random` | Random eviction | Evict random keys |
+| `volatile-random` | Random with TTL | Evict random keys with expire |
+
+## Security Best Practices
+
+### Development
+```bash
+REDIS_HOST=127.0.0.1 \
+REDIS_PROTECTED_MODE=yes \
+flox activate -s
 ```
 
-### Cache Only (No Persistence)
-```
-RDB: Disabled
-AOF: Disabled
-Good for: Pure caching, ephemeral data
-```
-
-### Maximum Performance
-```
-RDB: Disabled or infrequent intervals
-AOF: Disabled or 'no' fsync
-⚠️ Risk: Potential data loss
+### Production
+```bash
+REDIS_HOST=0.0.0.0 \
+REDIS_PASSWORD=<strong-password> \
+REDIS_PROTECTED_MODE=yes \
+REDIS_RENAME_COMMANDS=FLUSHDB,FLUSHALL,CONFIG,DEBUG \
+REDIS_MAXCLIENTS=1000 \
+flox activate -s
 ```
 
-## Memory Eviction Policies
+**Additional recommendations**:
+- Use firewall rules to restrict access
+- Enable TLS/SSL for remote connections (via `REDIS_EXTRA_OPTS`)
+- Regularly rotate passwords
+- Monitor for unusual activity via slow log
+- Run with minimal OS privileges
 
-Choose based on your use case:
+## Performance Tuning
 
-- **Cache (all keys)**: Use `allkeys-lru` or `allkeys-lfu`
-- **Cache (with TTL)**: Use `volatile-lru` or `volatile-lfu`
-- **Never evict**: Use `noeviction` (will return errors when full)
-- **TTL-based**: Use `volatile-ttl` (evicts soonest-expiring keys)
+### High Throughput
+```bash
+REDIS_MAXCLIENTS=20000 \
+REDIS_TCP_BACKLOG=1024 \
+REDIS_TIMEOUT=0 \
+REDIS_TCP_KEEPALIVE=60
+```
+
+### Memory-Constrained
+```bash
+REDIS_MAXMEMORY=512mb \
+REDIS_MAXMEMORY_POLICY=allkeys-lru \
+REDIS_DATABASES=8
+```
+
+### Low Latency
+```bash
+REDIS_APPENDFSYNC=no \
+REDIS_SAVE_RDB=no \
+REDIS_SLOWLOG_LOG_SLOWER_THAN=100
+```
 
 ## Troubleshooting
 
-### Redis Won't Start
-
-Check the log file:
+### Check logs
 ```bash
-cat $REDIS_DIR/redis.log
+cat $REDIS_LOG_DIR/redis.log
 ```
 
-### Port Already in Use
-
-Change the port during configuration or edit:
+### Verify configuration
 ```bash
-$EDITOR $FLOX_ENV_CACHE/redis.config
+redis-cli CONFIG GET '*'
 ```
 
-### Permission Issues
-
-The data directory should be `chmod 700`. If issues persist:
+### Test connection
 ```bash
-chmod 700 $REDIS_DIR
-chmod 700 $REDIS_DIR/data
+redis-cli -h $REDIS_HOST -p $REDIS_PORT PING
 ```
 
-### Connection Refused
+### Check memory usage
+```bash
+redis-cli INFO MEMORY | grep used_memory_human
+```
 
-Ensure:
-1. Redis service is running: `flox services status`
-2. Using correct host/port
-3. Password is correct (if set)
+### View active clients
+```bash
+redis-cli CLIENT LIST
+```
 
-## Environment Variables
+## Environment Variable Injection
 
-After configuration, these variables are available in your shell:
+Change settings without editing files:
 
-- `REDIS_HOST`: Bind address
-- `REDIS_PORT`: Port number
-- `REDIS_PASSWORD`: Password (if set)
-- `REDIS_DIR`: Data directory
-- `REDIS_CONF_FILE`: Config file path
-- `REDIS_LOG_FILE`: Log file path
-- `REDIS_MAXMEMORY`: Memory limit
-- `REDIS_MAXMEMORY_POLICY`: Eviction policy
-- `REDIS_SAVE_RDB`: RDB enabled/disabled
-- `REDIS_APPENDONLY`: AOF enabled/disabled
-- `REDIS_DATABASES`: Number of databases
+```bash
+# Single session override
+REDIS_PORT=6380 flox activate -s
 
-## Shell Functions
+# Permanent override in shell
+export REDIS_MAXMEMORY=2gb
+export REDIS_PASSWORD=mypass
+flox activate -s
 
-These functions are available in bash, zsh, and fish:
+# CI/CD integration
+env REDIS_APPENDONLY=yes REDIS_SAVE_RDB=yes flox activate -s
+```
 
-- `redisstart`: Start Redis service
-- `redisstop`: Stop Redis service
-- `redisrestart`: Restart Redis service
-- `redisconfigure`: Reconfigure Redis (wizard + restart)
+## Containerization
 
-## Notes
+This environment works well in containers:
 
-- Default port `16379` avoids conflicts with system Redis (6379)
-- All data stored in `$FLOX_ENV_CACHE` for isolation
-- Configuration persists across environment activations
-- Safe to run `flox activate` multiple times (idempotent)
+```dockerfile
+# Example Dockerfile pattern
+FROM nixos/nix
+RUN nix-env -iA nixpkgs.flox
+COPY redis-headless /app/redis-headless
+WORKDIR /app/redis-headless
+ENV REDIS_HOST=0.0.0.0
+ENV REDIS_PORT=6379
+ENV REDIS_PASSWORD=containerpass
+CMD flox activate -s
+```
 
-## Security Considerations
+## Multi-Instance Setup
 
-⚠️ **For production use**:
-- Set a strong password
-- Don't bind to `0.0.0.0` unless necessary
-- Use firewall rules to restrict access
-- Enable protected mode (default)
-- Consider renaming dangerous commands (FLUSHDB, etc.)
-- Use TLS for remote connections
+Run multiple Redis instances:
+
+```bash
+# Instance 1
+REDIS_PORT=6380 REDIS_DIR=/tmp/redis1 flox activate -s
+
+# Instance 2 (separate terminal)
+REDIS_PORT=6381 REDIS_DIR=/tmp/redis2 flox activate -s
+```
 
 ## Learn More
 
 - [Redis Documentation](https://redis.io/documentation)
 - [Redis Configuration](https://redis.io/docs/management/config/)
-- [Persistence Strategies](https://redis.io/docs/management/persistence/)
+- [Persistence](https://redis.io/docs/management/persistence/)
+- [Security](https://redis.io/docs/management/security/)
+- [Replication](https://redis.io/docs/management/replication/)
 - [Memory Optimization](https://redis.io/docs/manual/eviction/)
+
+## Notes
+
+- Default port `16379` avoids conflicts with system Redis (`6379`)
+- All data stored in `$FLOX_ENV_CACHE` for environment isolation
+- Configuration regenerated on each activation
+- All variables have sensible defaults
+- Supports runtime override via environment variable injection
+- Safe to restart service with new settings: `flox services restart redis`

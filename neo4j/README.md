@@ -1,145 +1,304 @@
-# 🔄 A Flox Environment for Neo4j Graph Database Development
+# 🚀 Flox Environment for Neo4j Graph Database
 
-A Flox environment for Neo4j graph database development with automated configuration, service management, and browser integration. The environment automates Neo4j installation and setup.
+This `neo4j-headless` environment is designed for CI, headless setups, or scripted workflows—i.e., any non-interactive context.
 
 ## ✨ Features
 
-- One-step Neo4j config and initialization
-- Automatic service management via Flox services
-- Smart data directory management
-- Persistent configuration across activations
-- Cross-platform support (macOS, Linux)
-- Intuitive TUI-based setup wizard
+- Dynamic environment variable configuration for Neo4j settings
+- Runtime override capabilities for all configuration options
+- Automatic directory and configuration management
+- Cross-platform compatibility (Linux x86_64 and ARM64, macOS x86_64 and ARM64)
+- Flox service management for Neo4j
+- Default configurations that "just work" with minimal setup
+- No interactive wizards or prompts
 
 ## 🧰 Included Tools
 
-The environment packs these essential tools:
+The environment includes:
 
 - `neo4j` - The powerful graph database platform
-- `gum` - Terminal UI toolkit powering the setup wizard
-- `bat` - Better `cat` with syntax highlighting
 
 ## 🏁 Getting Started
 
 ### 📋 Prerequisites
 
 - [Flox](https://flox.dev/get) installed on your system
-- Basic understanding of graph databases
+- That's it.
 
 ### 💻 Installation & Activation
 
-Jump in with:
-
-1. Clone this repo or create a new directory
+Get started with:
 
 ```sh
-git clone https://github.com/youruser/neo4j-env && cd neo4j-env
-```
+# Clone the repo
+git clone https://github.com/barstoolbluz/floxenvs && cd floxenvs/neo4j-headless
 
-2. Run:
-
-```sh
-flox activate
-```
-
-This activates the environment with default settings. To start Neo4j automatically during activation:
-
-```sh
+# Activate the environment with defaults
 flox activate -s
 ```
 
-### 🧙 Setup Wizard
+This will:
+- Create all required Neo4j directories
+- Generate Neo4j configuration file
+- Start Neo4j on localhost:7474 (HTTP) and localhost:7687 (Bolt)
+- Display connection information
 
-First-time activation triggers a wizard that:
+## 📝 Usage Scenarios
 
-1. Offers to customize your Neo4j configuration
-2. Sets up a data directory for your Neo4j instance
-3. Configures network ports for Neo4j's Bolt protocol and HTTP interface
-4. Establishes default authentication credentials
-5. Creates necessary configuration files
+### Basic Activation with Defaults
 
-## 📝 Usage
-
-After setup, you have access to these commands:
+Start Neo4j with sensible defaults:
 
 ```bash
-# Start Neo4j server
-neo4jstart
-
-# Stop Neo4j server
-neo4jstop
-
-# Restart Neo4j server
-neo4jrestart
-
-# Reconfigure Neo4j settings
-neo4jconfigure
+flox activate -s
 ```
 
-The Neo4j browser interface is available at:
-```
-http://localhost:7474
+Defaults:
+- Host: `localhost`
+- Bolt Port: `7687`
+- HTTP Port: `7474`
+- Username: `neo4j`
+- Password: `neo4jpass`
+- Data Directory: `$FLOX_ENV_CACHE/neo4j-data`
+
+### Custom Network Configuration
+
+Configure Neo4j for network access:
+
+```bash
+# Listen on all interfaces with custom ports
+NEO4J_HOST="0.0.0.0" \
+NEO4J_PORT="7688" \
+NEO4J_HTTP_PORT="7475" \
+flox activate -s
 ```
 
-Use the credentials you configured during setup to log in (default: username `neo4j`, password `neo4jpass`).
+One-liner:
+```bash
+NEO4J_HOST=0.0.0.0 NEO4J_PORT=7688 NEO4J_HTTP_PORT=7475 flox activate -s
+```
+
+### Custom Authentication
+
+Specify custom credentials:
+
+```bash
+# Use custom username and password
+NEO4J_USER="admin" \
+NEO4J_PASSWORD="secure-password-123" \
+flox activate -s
+```
+
+One-liner:
+```bash
+NEO4J_USER=admin NEO4J_PASSWORD=secure-password-123 flox activate -s
+```
+
+### Custom Data Directory
+
+Specify where Neo4j data should be stored:
+
+```bash
+# Use a specific directory for Neo4j data
+NEO4J_DIR="/path/to/my/neo4j-data" \
+flox activate -s
+```
+
+One-liner:
+```bash
+NEO4J_DIR=/path/to/my/neo4j-data flox activate -s
+```
+
+### Complete Custom Configuration
+
+Combine multiple settings for full control:
+
+```bash
+# Full custom configuration
+NEO4J_HOST="0.0.0.0" \
+NEO4J_PORT="7688" \
+NEO4J_HTTP_PORT="7475" \
+NEO4J_USER="admin" \
+NEO4J_PASSWORD="secure-password-123" \
+NEO4J_DIR="/home/user/neo4j-data" \
+flox activate -s
+```
+
+One-liner:
+```bash
+NEO4J_HOST=0.0.0.0 NEO4J_PORT=7688 NEO4J_HTTP_PORT=7475 NEO4J_USER=admin NEO4J_PASSWORD=secure-password-123 NEO4J_DIR=/home/user/neo4j-data flox activate -s
+```
+
+### Managing Neo4j Service
+
+```bash
+# Start Neo4j service
+flox services start
+
+# Check service status
+flox services status
+
+# View service logs
+flox services logs neo4j
+
+# Follow logs in real-time
+flox services logs --follow neo4j
+
+# Stop service
+flox services stop
+```
+
+### Using the Helper Function
+
+```bash
+# Activate environment
+flox activate
+
+# Display connection information
+neo4j-info
+```
+
+## 🔍 Configuration Variables
+
+All configuration is done via environment variables:
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `NEO4J_HOST` | `localhost` | Host to bind Neo4j server |
+| `NEO4J_PORT` | `7687` | Port for Bolt protocol |
+| `NEO4J_HTTP_PORT` | `7474` | Port for HTTP/Browser interface |
+| `NEO4J_USER` | `neo4j` | Database username |
+| `NEO4J_PASSWORD` | `neo4jpass` | Database password |
+| `NEO4J_DIR` | `$FLOX_ENV_CACHE/neo4j-data` | Neo4j data directory location |
 
 ## 🔍 How It Works
 
-### 🔄 Configuration Management
+### 🗄️ Directory Management
 
-The environment implements a robust configuration strategy:
+1. **Automatic Creation**:
+   - Creates directories at `$NEO4J_DIR` (default: `$FLOX_ENV_CACHE/neo4j-data`)
+   - Subdirectories: `data/`, `logs/`, `conf/`, `run/`
+   - All directories created with 700 permissions (user-only access)
 
-1. **Default Configuration**: Initial values are provided for quick setup
-2. **Customizable Settings**: Easily modify host, ports, credentials, and data directory
-3. **Persistence**: Configuration is stored in `$FLOX_ENV_CACHE/neo4j.config`
-4. **Directory Structure**: Auto-creates organized data, logs, and configuration directories
+2. **Configuration Generation**:
+   - Automatically creates `neo4j.conf` on activation
+   - Configuration reflects current environment variable values
+   - Re-generates on each activation to pick up changes
 
-### 🚀 Service Integration
+3. **Service Integration**:
+   - Neo4j service uses `NEO4J_HOME` from environment
+   - All settings available to the service process
+   - Logs written to `$NEO4J_DIR/logs`
 
-The environment uses Flox's built-in service management capabilities to:
+### 🌐 Network Modes
 
-1. Run Neo4j as a managed service
-2. Handle startup, shutdown, and restart operations
-3. Maintain the Neo4j process throughout your development session
+1. **Localhost Only** (`NEO4J_HOST=localhost` or `127.0.0.1`):
+   - Only accessible from the local machine
+   - More secure for development work
+   - Access via: `http://localhost:7474`
+
+2. **Network Access** (`NEO4J_HOST=0.0.0.0`):
+   - Accessible from any network interface
+   - Useful for remote work or team collaboration
+   - Access via: `http://<your-ip>:7474`
+   - **Security**: Always use a strong password for network access
+
+### 🔐 Security
+
+- Authentication enabled by default
+- Data directory permissions set to 700 (user-only)
+- Default password should be changed for production use
+- Credentials passed via environment variables (not stored in config files)
+
+### 📂 Directory Structure
+
+The environment organizes data in consistent locations:
+
+- `$NEO4J_DIR/data` - Database data files
+- `$NEO4J_DIR/logs` - Neo4j log files
+- `$NEO4J_DIR/conf` - Neo4j configuration
+- `$NEO4J_DIR/run` - Runtime files
 
 ## 🔧 Troubleshooting
 
-If you encounter issues:
+Common issues and solutions:
 
-1. **Startup fails**: 
-   - Check that ports aren't already in use
-   - Ensure data directory has proper permissions
-   - Review logs with `bat $NEO4J_LOGS/neo4j.log`
-   
-2. **Configuration issues**:
-   - Run `neo4jconfigure` to reset and reconfigure Neo4j
-   - Verify paths are set correctly for your system
+1. **Service Won't Start**:
+   - Check if ports are already in use: `netstat -an | grep 7474`
+   - View logs: `flox services logs neo4j`
+   - Verify environment variables: `env | grep NEO4J`
 
-3. **Browser access problems**: 
-   - Ensure the HTTP port (default 7474) is not blocked by your system's firewall
-   - Verify Neo4j is running with `flox services status`
-   - Try accessing via IP address if localhost doesn't work
+2. **Can't Access Neo4j Browser**:
+   - Verify service is running: `flox services status`
+   - Check firewall settings for network access
+   - Ensure correct URL: `http://localhost:7474`
+   - Try IP address instead of hostname
+
+3. **Authentication Issues**:
+   - Check credentials match environment variables
+   - Default is `neo4j` / `neo4jpass`
+   - Verify with: `echo $NEO4J_USER $NEO4J_PASSWORD`
+
+4. **Data Directory Issues**:
+   - Check permissions: `ls -la $NEO4J_DIR`
+   - Ensure path is writable
+   - Verify no other Neo4j instance is using the directory
+
+5. **Port Conflicts**:
+   - Use custom ports: `NEO4J_PORT=7688 NEO4J_HTTP_PORT=7475 flox activate -s`
+   - Check what's using the port: `lsof -i :7474`
+
+## 🌐 Production Deployment Tips
+
+For production or team use:
+
+1. **Security**:
+   - Always use strong, unique passwords
+   - Restrict network access via firewall rules
+   - Consider HTTPS reverse proxy (nginx, Caddy)
+   - Regularly update Neo4j: monitor for security patches
+
+2. **Performance**:
+   - Allocate sufficient memory for graph operations
+   - Use SSD storage for data directory
+   - Monitor resource usage and logs
+   - Consider dedicated data directory per project
+
+3. **Backup**:
+   - Regularly backup `$NEO4J_DIR/data`
+   - Use Neo4j's built-in backup tools
+   - Test restore procedures
+   - Document environment configurations
+
+4. **Monitoring**:
+   - Monitor logs: `flox services logs --follow neo4j`
+   - Check service health via HTTP API
+   - Set up alerts for critical issues
+   - Track query performance
 
 ## 💻 System Compatibility
 
-This works on:
-- macOS (ARM64, x86_64)
+This environment works on:
 - Linux (ARM64, x86_64)
+- macOS (ARM64, x86_64)
 
-## 🔒 Security Considerations
+## 📚 Additional Resources
 
-- Default password should be changed in production environments
-- Data directory permissions are set to 700 (user-only access)
-- Authentication is enabled by default
-- Configuration file includes credentials, so protect `$FLOX_ENV_CACHE` directory
-- Neo4j service binds to all interfaces (0.0.0.0) by default - restrict this in security-sensitive environments
+- [Neo4j Documentation](https://neo4j.com/docs/)
+- [Cypher Query Language](https://neo4j.com/docs/cypher-manual/current/)
+- [Neo4j Browser Guide](https://neo4j.com/docs/browser-manual/current/)
+- [Graph Database Concepts](https://neo4j.com/docs/getting-started/current/graphdb-concepts/)
 
-## About Flox
+## 🔗 Key Features of Flox
 
-[Flox](https://flox.dev/docs) combines package and environment management, building on [Nix](https://github.com/NixOS/nix). It gives you Nix with a `git`-like syntax and an intuitive UX:
+[Flox](https://flox.dev/docs) builds on [Nix](https://github.com/NixOS/nix) to provide:
 
-- **Declarative environments**. Software packages, variables, services, etc. are defined in simple, human-readable TOML format;
-- **Content-addressed storage**. Multiple versions of packages with conflicting dependencies can coexist in the same environment;
-- **Reproducibility**. The same environment can be reused across development, CI, and production;
-- **Deterministic builds**. The same inputs always produce identical outputs for a given architecture, regardless of when or where builds occur;
-- **World's largest collection of packages**. Access to over 150,000 packages—and millions of package-version combinations—from [Nixpkgs](https://github.com/NixOS/nixpkgs).
+- **Declarative environments** - Software, variables, services defined in TOML
+- **Input- and path-addressed storage** - Multiple package versions coexist without conflicts
+- **Reproducibility** - Same environment across dev, CI, and production
+- **Deterministic builds** - Same inputs always produce identical outputs
+- **Huge package collection** - Access to 150,000+ packages from Nixpkgs
+
+## 📝 License
+
+MIT

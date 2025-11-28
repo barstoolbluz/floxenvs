@@ -1,0 +1,907 @@
+version = 1
+
+[install]
+nginx.pkg-path = "nginx"
+curl.pkg-path = "curl"
+bat.pkg-path = "bat"
+gnugrep.pkg-path = "gnugrep"
+gum.pkg-path = "gum"
+
+[vars]
+
+[hook]
+on-activate = '''
+export NGINX_DIR="$FLOX_ENV_CACHE/nginx"
+export NGINX_CONFIG="$NGINX_DIR/nginx.conf"
+export NGINX_ERROR_LOG="$NGINX_DIR/error.log"
+export NGINX_ACCESS_LOG="$NGINX_DIR/access.log"
+export CONFIG_FILE="$FLOX_ENV_CACHE/proxy_config.env"
+
+mkdir -p "$NGINX_DIR"
+
+# Fetch README if missing
+README_FILE="$FLOX_ENV_PROJECT/README.md"
+if [ ! -s "$README_FILE" ]; then
+    curl -fsSL "https://raw.githubusercontent.com/barstoolbluz/floxenvs/main/nginx/README.md" -o "$README_FILE" 2>/dev/null || true
+fi
+
+# sets nginx default values if USE_DEFAULTS=true
+set_nginx_defaults() {
+    [[ -z "${NGINX_PORT}" ]] && export NGINX_PORT="8080"
+    [[ -z "${FORWARDED_PORT}" ]] && export FORWARDED_PORT="3000"
+    [[ -z "${NGINX_WORKER_CONNECTIONS}" ]] && export NGINX_WORKER_CONNECTIONS="1024"
+    [[ -z "${NGINX_WORKER_PROCESSES}" ]] && export NGINX_WORKER_PROCESSES="1"
+}
+
+# detects listening address on linux
+detect_listening_address() {
+    local port=$1 cmd="ss -tnl" binding
+    command -v ss &>/dev/null || cmd="netstat -tnl"
+    binding=$(eval $cmd | awk "\$4 ~ /:$port\$/ {print \$4}" | cut -d: -f1 | head -1)
+    [ -n "$binding" ] && echo "$binding" || echo "127.0.0.1"
+}
+
+# determines localhost address based on OS
+get_localhost_address() {
+    local port=$1
+    if [[ "$(uname)" == "Darwin" ]]; then
+        echo "127.0.0.1"
+    else
+        detect_listening_address "$port"
+    fi
+}
+
+# generates nginx config
+generate_nginx_config() {
+    local port_based_configs=() path_based_configs=() access_control=""
+    
+    if [[ -f "$CONFIG_FILE" ]]; then
+        source "$CONFIG_FILE"
+        
+        if [[ -n "$PORT_PROXIES" ]]; then
+            IFS=',' read -ra port_based_configs <<< "$PORT_PROXIES"
+            echo "found ${#port_based_configs[@]} port-based proxy configurations: $PORT_PROXIES" >> "$NGINX_ERROR_LOG"
+        fi
+        
+        if [[ -n "$PATH_PROXIES" ]]; then
+            IFS=',' read -ra path_based_configs <<< "$PATH_PROXIES"
+            echo "found ${#path_based_configs[@]} path-based proxy configurations: $PATH_PROXIES" >> "$NGINX_ERROR_LOG"
+        fi
+    fi
+
+    # starts writing nginx configuration
+    cat <<EOF > "$NGINX_CONFIG"
+worker_processes ${NGINX_WORKER_PROCESSES:-1};
+
+lock_file $NGINX_DIR/nginx.lock;
+pid $NGINX_DIR/nginx.pid;
+error_log $NGINX_ERROR_LOG;
+
+events {
+  worker_connections ${NGINX_WORKER_CONNECTIONS:-1024};
+}
+
+http {
+  access_log $NGINX_ACCESS_LOG;
+  
+  server_tokens off;
+  
+  include ${NGINX_DIR}/mime.types;
+  default_type application/octet-stream;
+  
+  sendfile on;
+  tcp_nopush on;
+  tcp_nodelay on;
+  keepalive_timeout 65;
+  types_hash_max_size 2048;
+
+EOF
+
+    # creates simple mime.types file if it doesn't exist
+    if [[ ! -f "${NGINX_DIR}/mime.types" ]]; then
+        cat <<EOF > "${NGINX_DIR}/mime.types"
+types {
+    text/html                                        html htm shtml;
+    text/css                                         css;
+    text/xml                                         xml;
+    image/gif                                        gif;
+    image/jpeg                                       jpeg jpg;
+    application/javascript                           js;
+    application/json                                 json;
+    text/plain                                       txt;
+    image/png                                        png;
+    image/svg+xml                                    svg svgz;
+    application/pdf                                  pdf;
+}
+EOF
+    fi
+    
+    # collects all listening ports to detect conflicts
+    local used_ports=()
+    
+    # handles port-based proxies (each on its own server block)
+    if [[ ${#port_based_configs[@]} -gt 0 ]]; then
+        for proxy_config in "${port_based_configs[@]}"; do
+            echo "processing port-based proxy config: $proxy_config" >> "$NGINX_ERROR_LOG"
+            
+            local listening_port="" forward_port=""
+            IFS=':' read -r listening_port forward_port <<< "$proxy_config"
+            
+            if [[ -z "$listening_port" || -z "$forward_port" ]]; then
+                echo "error: invalid port-based proxy config: $proxy_config" >> "$NGINX_ERROR_LOG"
+                continue
+            fi
+            
+            # checks for port conflicts with path-based config
+            if [[ " ${used_ports[@]} " =~ " ${listening_port} " ]] || [[ "$listening_port" == "${PATH_BASED_PORT:-}" ]]; then
+                echo "warning: port conflict detected for $listening_port, skipping port-based proxy" >> "$NGINX_ERROR_LOG"
+                continue
+            fi
+            used_ports+=("$listening_port")
+            
+            local forward_address=$(get_localhost_address "$forward_port")
+            
+cat <<EOF >> "$NGINX_CONFIG"
+  server {
+    listen $listening_port;
+    
+    add_header X-Proxy-Config "port_based:$listening_port->$forward_port" always;
+
+    location / {
+      proxy_pass http://$forward_address:$forward_port;
+      proxy_http_version 1.1;
+      proxy_set_header Host \$host;
+      proxy_set_header X-Real-IP \$remote_addr;
+      proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+      proxy_set_header X-Forwarded-Proto \$scheme;
+
+      proxy_set_header Upgrade \$http_upgrade;
+      proxy_set_header Connection "upgrade";
+      proxy_buffering off;
+
+      add_header Cache-Control "no-cache, no-store, must-revalidate" always;
+      add_header Pragma "no-cache" always;
+      add_header Expires "0" always;
+
+      add_header X-Service-ID "port-$listening_port-to-$forward_port" always;
+EOF
+
+            if [[ -n "$ALLOW_IPS" ]]; then
+                echo "      # access control settings" >> "$NGINX_CONFIG"
+                for ip in $ALLOW_IPS; do
+                    echo "      allow $ip;" >> "$NGINX_CONFIG"
+                done
+                echo "      deny all;" >> "$NGINX_CONFIG"
+            fi
+
+            cat <<EOF >> "$NGINX_CONFIG"
+    }
+  }
+EOF
+        done
+    fi
+    
+    # handles path-based proxies (all on a single server block)
+    if [[ ${#path_based_configs[@]} -gt 0 ]]; then
+        local main_port="${PATH_BASED_PORT:-8080}"
+        
+        cat <<EOF >> "$NGINX_CONFIG"
+  server {
+    listen $main_port;
+    
+    add_header X-Proxy-Config "path_based:$main_port" always;
+    
+EOF
+
+        for proxy_config in "${path_based_configs[@]}"; do
+            echo "processing path-based proxy config: $proxy_config" >> "$NGINX_ERROR_LOG"
+            
+            local path_prefix="" forward_port=""
+            IFS=':' read -r path_prefix forward_port <<< "$proxy_config"
+            
+            if [[ -z "$path_prefix" || -z "$forward_port" ]]; then
+                echo "error: invalid path-based proxy config: $proxy_config" >> "$NGINX_ERROR_LOG"
+                continue
+            fi
+            
+            [[ "$path_prefix" != /* ]] && path_prefix="/$path_prefix"
+            [[ "$path_prefix" != */ ]] && path_prefix="$path_prefix/"
+
+            local forward_address=$(get_localhost_address "$forward_port")
+
+            # escape regex special characters for use in rewrite rule
+            local escaped_prefix=$(echo "$path_prefix" | sed 's/[].$^*+?\[{}()|\\-]/\\&/g')
+
+            cat <<EOF >> "$NGINX_CONFIG"
+    location $path_prefix {
+      rewrite ^$escaped_prefix(.*) /\$1 break;
+
+      proxy_pass http://$forward_address:$forward_port;
+      proxy_http_version 1.1;
+      proxy_set_header Host \$host;
+      proxy_set_header X-Real-IP \$remote_addr;
+      proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+      proxy_set_header X-Forwarded-Proto \$scheme;
+
+      proxy_set_header Upgrade \$http_upgrade;
+      proxy_set_header Connection "upgrade";
+      proxy_buffering off;
+
+      proxy_set_header X-Original-URI \$request_uri;
+      proxy_set_header X-Path-Prefix "$path_prefix";
+EOF
+
+            if [[ -n "$ALLOW_IPS" ]]; then
+                echo "      # access control settings" >> "$NGINX_CONFIG"
+                for ip in $ALLOW_IPS; do
+                    echo "      allow $ip;" >> "$NGINX_CONFIG"
+                done
+                echo "      deny all;" >> "$NGINX_CONFIG"
+            fi
+
+            cat <<EOF >> "$NGINX_CONFIG"
+    }
+EOF
+        done
+        
+        # adds default location block to handle root path
+        if [[ -n "$DEFAULT_PROXY_PORT" ]]; then
+            local default_address=$(get_localhost_address "$DEFAULT_PROXY_PORT")
+            
+            cat <<EOF >> "$NGINX_CONFIG"
+    location / {
+      proxy_pass http://$default_address:$DEFAULT_PROXY_PORT/;
+      proxy_http_version 1.1;
+      proxy_set_header Host \$host;
+      proxy_set_header X-Real-IP \$remote_addr;
+      proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+      proxy_set_header X-Forwarded-Proto \$scheme;
+
+      proxy_set_header Upgrade \$http_upgrade;
+      proxy_set_header Connection "upgrade";
+      proxy_buffering off;
+
+      proxy_set_header X-Default-Target "true";
+EOF
+
+            if [[ -n "$ALLOW_IPS" ]]; then
+                echo "      # access control settings" >> "$NGINX_CONFIG"
+                for ip in $ALLOW_IPS; do
+                    echo "      allow $ip;" >> "$NGINX_CONFIG"
+                done
+                echo "      deny all;" >> "$NGINX_CONFIG"
+            fi
+
+            cat <<EOF >> "$NGINX_CONFIG"
+    }
+EOF
+        else
+            cat <<EOF >> "$NGINX_CONFIG"
+    location / {
+      default_type text/html;
+      return 200 '<!DOCTYPE html>
+<html>
+<head>
+  <title>nginx path-based proxy</title>
+  <style>
+    body { font-family: Arial, sans-serif; margin: 40px; line-height: 1.6; color: #333; }
+    h1 { color: #0066cc; }
+    ul { list-style-type: none; padding: 0; }
+    li { margin-bottom: 10px; padding: 10px; background-color: #f5f5f5; border-left: 5px solid #0066cc; }
+    code { background-color: #f0f0f0; padding: 2px 4px; border-radius: 4px; }
+    .info { background-color: #e6f7ff; border: 1px solid #91d5ff; padding: 15px; border-radius: 5px; }
+  </style>
+</head>
+<body>
+  <h1>nginx path-based proxy configuration</h1>
+  <div class="info">
+    <p>this nginx server is configured with path-based routing on port $main_port.</p>
+    <p>available path prefixes:</p>
+    <ul>
+EOF
+
+            for proxy_config in "${path_based_configs[@]}"; do
+                IFS=':' read -r path_prefix forward_port <<< "$proxy_config"
+                [[ "$path_prefix" != /* ]] && path_prefix="/$path_prefix"
+                [[ "$path_prefix" != */ ]] && path_prefix="$path_prefix/"
+                
+                cat <<EOF >> "$NGINX_CONFIG"
+      <li><code>$path_prefix</code> → port $forward_port</li>
+EOF
+            done
+
+            cat <<EOF >> "$NGINX_CONFIG"
+    </ul>
+    <p>no default handler is configured for the root path (/).</p>
+    <p>to access a service, use one of the path prefixes listed above.</p>
+  </div>
+</body>
+</html>';
+    }
+EOF
+        fi
+        
+        echo "  }" >> "$NGINX_CONFIG"
+    fi
+    
+    # if no configs at all, adds default port-based proxy
+    if [[ ${#port_based_configs[@]} -eq 0 && ${#path_based_configs[@]} -eq 0 ]]; then
+        local listening_port="${NGINX_PORT:-8080}"
+        local forward_port="${FORWARDED_PORT:-3000}"
+        local forward_address=$(get_localhost_address "$forward_port")
+        
+        cat <<EOF >> "$NGINX_CONFIG"
+  server {
+    listen $listening_port;
+
+    location / {
+      proxy_pass http://$forward_address:$forward_port;
+      proxy_http_version 1.1;
+      proxy_set_header Host \$host;
+      proxy_set_header X-Real-IP \$remote_addr;
+      proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+      proxy_set_header X-Forwarded-Proto \$scheme;
+
+      proxy_set_header Upgrade \$http_upgrade;
+      proxy_set_header Connection "upgrade";
+      proxy_buffering off;
+EOF
+
+        if [[ -n "$ALLOW_IPS" ]]; then
+            echo "      # access control settings" >> "$NGINX_CONFIG"
+            for ip in $ALLOW_IPS; do
+                echo "      allow $ip;" >> "$NGINX_CONFIG"
+            done
+            echo "      deny all;" >> "$NGINX_CONFIG"
+        fi
+
+        cat <<EOF >> "$NGINX_CONFIG"
+    }
+  }
+EOF
+    fi
+    
+    echo "}" >> "$NGINX_CONFIG"
+    
+    echo "generated nginx config:" >> "$NGINX_ERROR_LOG"
+    cat "$NGINX_CONFIG" >> "$NGINX_ERROR_LOG"
+}
+
+# displays explanatory text with gum
+show_explanation() {
+    local title="$1" content="$2"
+    
+    gum style \
+        --border normal \
+        --border-foreground 240 \
+        --padding "1 2" \
+        --margin "1 0" \
+        --width 84 \
+        "$(gum style --foreground 33 --bold "$title")
+        
+$(gum style --foreground 240 "$content")"
+}
+
+# runs the configuration wizard
+run_wizard() {
+    clear
+    
+    gum style \
+        --border rounded \
+        --border-foreground 240 \
+        --padding "1 2" \
+        --margin "1 0" \
+        --width 84 \
+        "$(gum style --foreground 27 --bold 'nginx reverse proxy configuration')
+        
+$(gum style --foreground 240 'setup your nginx reverse proxy configuration')"
+    
+    show_explanation "Port vs. Path Proxying: What's the difference?" "
+$(gum style --foreground 33 --bold 'Port-based proxying')
+Each proxy listens on its own port (e.g., 8080→3000, 8081→5000)
+  • Good for: multiple independent services accessible on different ports
+
+$(gum style --foreground 33 --bold 'Path-based proxying')
+All services share a single port but are accessed via different URL paths
+  • Good for: creating a unified entry point (e.g., /api→backend, /app→frontend)
+  • Example: http://localhost:8080/api/ and http://localhost:8080/app/
+
+$(gum style --foreground 33 --bold 'Both')
+Configure both types of proxying in a single setup"
+    
+    gum style --foreground 33 --bold "Select proxy configuration type:"
+    local proxy_type=$(gum choose "Port-based Proxying" "Path-based Proxying" "Both" --cursor.foreground 33 --selected.foreground 15 --selected.background 33)
+    
+    local port_proxies=() path_proxies=() path_based_port="" default_proxy_port=""
+    local used_ports=()
+    
+    # configures port-based proxies
+    if [[ "$proxy_type" == "Port-based Proxying" || "$proxy_type" == "Both" ]]; then
+        gum style --foreground 33 "Configure port-based proxies:"
+        gum style --foreground 240 "These proxies forward traffic from one port to another port"
+        
+        local add_another="Yes"
+        while [[ "$add_another" == "Yes" ]]; do
+            while true; do
+                gum style --foreground 240 "Enter the port you want nginx to listen on:"
+                local listening_port=$(gum input --placeholder "listening port (e.g., 8080)" --value "${NGINX_PORT:-8080}")
+                
+                # checks for port conflicts with existing port-based proxies and path-based port
+                local conflict=false
+                for existing_port in "${used_ports[@]}"; do
+                    if [[ "$listening_port" == "$existing_port" ]]; then
+                        gum style --foreground 196 "Error: port $listening_port is already in use. Please choose a different port."
+                        conflict=true
+                        break
+                    fi
+                done
+                
+                if [[ "$conflict" == false ]]; then
+                    used_ports+=("$listening_port")
+                    break
+                fi
+            done
+            
+            gum style --foreground 240 "Enter the port you want to forward to:"
+            local forward_port=$(gum input --placeholder "target port (e.g., 3000)" --value "${FORWARDED_PORT:-3000}")
+            
+            port_proxies+=("$listening_port:$forward_port")
+            
+            gum style --foreground 240 "Do you want to configure another port-based proxy?"
+            add_another=$(gum choose "Yes" "No" --cursor.foreground 33 --selected.foreground 15 --selected.background 33)
+        done
+    fi
+    
+    # configures path-based proxies
+    if [[ "$proxy_type" == "Path-based Proxying" || "$proxy_type" == "Both" ]]; then
+        gum style --foreground 33 "Configure path-based proxies:"
+        
+        show_explanation "How path-based proxying works" "
+Path-based proxying lets you access multiple services through a single port:
+
+Example configuration:
+• Main listening port: 8080
+• Path /api/ forwards to a backend on port 5000
+• Path /app/ forwards to a frontend on port 3000
+
+With this setup:
+• http://localhost:8080/api/users → backend service (port 5000)
+• http://localhost:8080/app/ → frontend service (port 3000)
+
+The key advantage is having a single entry point for all your services.
+You'll need to decide what happens when users visit just http://localhost:8080/
+This is controlled by the 'default target for root path' setting."
+        
+        gum style --foreground 240 "Enter the main port that nginx should listen on for path-based routing:"
+        while true; do
+            path_based_port=$(gum input --placeholder "main listening port (e.g., 8080)" --value "${PATH_BASED_PORT:-8080}")
+            
+            # checks for port conflicts with existing port-based proxies
+            local conflict=false
+            for existing_port in "${used_ports[@]}"; do
+                if [[ "$path_based_port" == "$existing_port" ]]; then
+                    gum style --foreground 196 "Error: port $path_based_port is already used by a port-based proxy. Please choose a different port."
+                    conflict=true
+                    break
+                fi
+            done
+            
+            if [[ "$conflict" == false ]]; then
+                used_ports+=("$path_based_port")
+                break
+            fi
+        done
+        
+        local add_another="Yes"
+        while [[ "$add_another" == "Yes" ]]; do
+            gum style --foreground 240 "Enter the path prefix to match (e.g., /api, /app):"
+            local path_prefix=$(gum input --placeholder "path prefix")
+            
+            gum style --foreground 240 "Enter the port to forward this path to:"
+            local forward_port=$(gum input --placeholder "target port (e.g., 3000)")
+            
+            path_proxies+=("$path_prefix:$forward_port")
+            
+            gum style --foreground 240 "Do you want to configure another path-based proxy?"
+            add_another=$(gum choose "Yes" "No" --cursor.foreground 33 --selected.foreground 15 --selected.background 33)
+        done
+        
+        gum style --foreground 240 "Do you want to configure a default target for the root path (/)?"
+        show_explanation "What is the default target?" "
+The default target controls what happens when someone visits:
+http://localhost:$path_based_port/ (without any path)
+
+Options:
+• Yes: forward root requests to another port (e.g., your main application)
+• No: show an information page listing all available paths
+
+Example:
+If you set the default target to port 3000, then visiting
+http://localhost:$path_based_port/ will show whatever is running on port 3000,
+while specific paths will still go to their configured destinations."
+        
+        local configure_default=$(gum choose "Yes" "No" --cursor.foreground 33 --selected.foreground 15 --selected.background 33)
+        
+        if [[ "$configure_default" == "Yes" ]]; then
+            gum style --foreground 240 "Enter the port to forward the root path (/) to:"
+            default_proxy_port=$(gum input --placeholder "default target port (e.g., 3000)")
+        fi
+    fi
+    
+    # asks about access control
+    gum style --foreground 33 "Configure access control:"
+    gum style --foreground 240 "Do you want to restrict access by IP address?"
+    local configure_access=$(gum choose "Yes" "No" --cursor.foreground 33 --selected.foreground 15 --selected.background 33)
+    
+    local allow_ips=""
+    if [[ "$configure_access" == "Yes" ]]; then
+        while true; do
+            gum style --foreground 240 "Enter allowed IP addresses/networks (e.g., 192.168.1.0/24, separate multiple entries with spaces):"
+            allow_ips=$(gum input --placeholder "IP addresses/networks")
+            
+            # validates ip format
+            local valid=true
+            for ip in $allow_ips; do
+                # extract IP and CIDR (if present)
+                local ip_part cidr_part
+                if [[ "$ip" =~ ^([0-9.]+)(/([0-9]+))?$ ]]; then
+                    ip_part="${BASH_REMATCH[1]}"
+                    cidr_part="${BASH_REMATCH[3]}"
+
+                    # validate IPv4 format (4 octets)
+                    if [[ "$ip_part" =~ ^([0-9]{1,3})\.([0-9]{1,3})\.([0-9]{1,3})\.([0-9]{1,3})$ ]]; then
+                        # check each octet is 0-255
+                        local octet1="${BASH_REMATCH[1]}" octet2="${BASH_REMATCH[2]}"
+                        local octet3="${BASH_REMATCH[3]}" octet4="${BASH_REMATCH[4]}"
+
+                        if ((octet1 > 255 || octet2 > 255 || octet3 > 255 || octet4 > 255)); then
+                            gum style --foreground 196 "Error: invalid IP '$ip' - octets must be 0-255"
+                            valid=false
+                            break
+                        fi
+
+                        # validate CIDR if present
+                        if [[ -n "$cidr_part" ]] && ((cidr_part > 32)); then
+                            gum style --foreground 196 "Error: invalid CIDR '$ip' - prefix must be 0-32"
+                            valid=false
+                            break
+                        fi
+                    else
+                        gum style --foreground 196 "Error: invalid IP format '$ip'. Example: 192.168.1.0/24 or 10.0.0.1"
+                        valid=false
+                        break
+                    fi
+                else
+                    gum style --foreground 196 "Error: invalid IP format '$ip'. Example: 192.168.1.0/24 or 10.0.0.1"
+                    valid=false
+                    break
+                fi
+            done
+
+            [[ "$valid" == true ]] && break
+        done
+    fi
+    
+    # joins the proxy arrays with commas
+    local port_proxies_str="" path_proxies_str=""
+    
+    [[ ${#port_proxies[@]} -gt 0 ]] && port_proxies_str=$(IFS=,; echo "${port_proxies[*]}")
+    [[ ${#path_proxies[@]} -gt 0 ]] && path_proxies_str=$(IFS=,; echo "${path_proxies[*]}")
+    
+    # saves the configurations to a file
+    > "$CONFIG_FILE"
+    echo "CONFIG_INITIALIZED=true" >> "$CONFIG_FILE"
+    echo "NGINX_WORKER_PROCESSES=\"${NGINX_WORKER_PROCESSES:-1}\"" >> "$CONFIG_FILE"
+    echo "NGINX_WORKER_CONNECTIONS=\"${NGINX_WORKER_CONNECTIONS:-1024}\"" >> "$CONFIG_FILE"
+    
+    [[ -n "$port_proxies_str" ]] && echo "PORT_PROXIES=\"$port_proxies_str\"" >> "$CONFIG_FILE"
+    
+    if [[ -n "$path_proxies_str" ]]; then
+        echo "PATH_PROXIES=\"$path_proxies_str\"" >> "$CONFIG_FILE"
+        echo "PATH_BASED_PORT=\"$path_based_port\"" >> "$CONFIG_FILE"
+        [[ -n "$default_proxy_port" ]] && echo "DEFAULT_PROXY_PORT=\"$default_proxy_port\"" >> "$CONFIG_FILE"
+    fi
+    
+    [[ -n "$allow_ips" ]] && echo "ALLOW_IPS=\"$allow_ips\"" >> "$CONFIG_FILE"
+    
+    gum style \
+        --foreground 32 \
+        --bold \
+        --padding "1" \
+        "Configuration saved successfully!"
+    
+    # shows a summary of the configuration
+    gum style --foreground 33 "Configuration summary:"
+    
+    if [[ -n "$port_proxies_str" ]]; then
+        gum style --foreground 240 "Port-based proxies:"
+        for proxy in "${port_proxies[@]}"; do
+            IFS=':' read -r listen forward <<< "$proxy"
+            gum style "  • Port $listen → port $forward"
+        done
+    fi
+    
+    if [[ -n "$path_proxies_str" ]]; then
+        gum style --foreground 240 "Path-based proxies (listening on port $path_based_port):"
+        for proxy in "${path_proxies[@]}"; do
+            IFS=':' read -r path_prefix forward <<< "$proxy"
+            [[ "$path_prefix" != /* ]] && path_prefix="/$path_prefix"
+            gum style "  • $path_prefix → port $forward"
+        done
+        
+        if [[ -n "$default_proxy_port" ]]; then
+            gum style "  • / (default) → port $default_proxy_port"
+        else
+            gum style "  • / (default) → information page"
+        fi
+    fi
+    
+    if [[ -n "$allow_ips" ]]; then
+        gum style --foreground 240 "Access control:"
+        gum style "  • Allowed IPs: $allow_ips"
+        gum style "  • All other IPs: denied"
+    fi
+    
+    gum style --foreground 240 "To access your services:"
+    
+    if [[ -n "$port_proxies_str" ]]; then
+        for proxy in "${port_proxies[@]}"; do
+            IFS=':' read -r listen forward <<< "$proxy"
+            gum style "  • http://localhost:$listen"
+        done
+    fi
+    
+    if [[ -n "$path_proxies_str" ]]; then
+        for proxy in "${path_proxies[@]}"; do
+            IFS=':' read -r path_prefix forward <<< "$proxy"
+            [[ "$path_prefix" != /* ]] && path_prefix="/$path_prefix"
+            gum style "  • http://localhost:$path_based_port$path_prefix"
+        done
+    fi
+}
+
+# stops any running nginx processes
+stop_nginx() {
+    
+    if [[ -f "$NGINX_DIR/nginx.pid" ]]; then
+        local pid=$(cat "$NGINX_DIR/nginx.pid")
+        if [[ -n "$pid" ]]; then
+            echo "stopping nginx with pid $pid..."
+            kill "$pid" 2>/dev/null || true
+            sleep 1
+        fi
+    fi
+    
+    # collects all configured ports from the config
+    local ports_to_check=() used_ports=()
+    
+    # adds default ports if no config exists
+    if [[ ! -f "$CONFIG_FILE" ]]; then
+        ports_to_check+=("${NGINX_PORT:-8080}")
+    else
+        source "$CONFIG_FILE"
+        
+        # extracts ports from port-based proxies
+        if [[ -n "$PORT_PROXIES" ]]; then
+            IFS=',' read -ra port_configs <<< "$PORT_PROXIES"
+            for config in "${port_configs[@]}"; do
+                IFS=':' read -r listening_port forward_port <<< "$config"
+                [[ -n "$listening_port" ]] && ports_to_check+=("$listening_port")
+            done
+        fi
+        
+        # adds path-based proxy port
+        [[ -n "$PATH_BASED_PORT" ]] && ports_to_check+=("$PATH_BASED_PORT")
+        
+        # adds fallback default port if no specific ports found
+        if [[ ${#ports_to_check[@]} -eq 0 ]]; then
+            ports_to_check+=("${NGINX_PORT:-8080}")
+        fi
+    fi
+    
+    # finds and stops relict nginx processes on configured ports
+    for port in "${ports_to_check[@]}"; do
+        local pids=$(lsof -t -i:"$port" 2>/dev/null || true)
+        if [[ -n "$pids" ]]; then
+            used_ports+=("$port")
+            echo "port $port is in use by nginx, stopping processes..."
+            for pid in $pids; do
+                # checks: is process actually nginx?
+                local process_name=$(ps -p "$pid" -o comm= 2>/dev/null || true)
+                if [[ "$process_name" == "nginx" ]]; then
+                    echo "stopping process $pid on port $port..."
+                    kill "$pid" 2>/dev/null || true
+                fi
+            done
+        fi
+    done
+    
+    if [[ ${#used_ports[@]} -gt 0 ]]; then
+        echo "waiting for ports to be freed..."
+        sleep 2
+        
+        # force kills any relict processes on these ports
+        for port in "${used_ports[@]}"; do
+            local pids=$(lsof -t -i:"$port" 2>/dev/null || true)
+            if [[ -n "$pids" ]]; then
+                echo "port $port still in use, force stopping..."
+                for pid in $pids; do
+                    kill -9 "$pid" 2>/dev/null || true
+                done
+            fi
+        done
+        
+        sleep 1
+    fi
+    
+    rm -f "$NGINX_DIR/nginx.pid" 2>/dev/null || true
+    rm -f "$NGINX_DIR/nginx.lock" 2>/dev/null || true
+}
+
+# checks if we should use defaults
+[[ "$USE_DEFAULTS" == "true" ]] && set_nginx_defaults
+
+# checks if we need to run the wizard
+CONFIG_INITIALIZED="${CONFIG_INITIALIZED:-false}"
+
+[[ -f "$CONFIG_FILE" ]] && source "$CONFIG_FILE"
+
+if [[ "$USE_DEFAULTS" != "true" && ("$CONFIG_INITIALIZED" != "true" || "$FORCE_WIZARD" == "true") ]]; then
+    run_wizard
+fi
+
+# generates nginx configuration
+generate_nginx_config
+
+# kills any relict nginx processes on our listening / binding ports
+stop_nginx
+'''
+
+[profile]
+bash = '''
+helpf() {
+  local README_FILE="$FLOX_ENV_PROJECT/README.md"
+  local README_URL="https://raw.githubusercontent.com/barstoolbluz/floxenvs/main/nginx/README.md"
+
+  if [ "$1" = "--help" ]; then
+    echo "Usage: helpf [OPTIONS]"
+    echo ""
+    echo "View environment documentation"
+    echo ""
+    echo "Options:"
+    echo "  --force    Force download fresh copy from GitHub"
+    echo "  --help     Show this help message"
+    echo ""
+    echo "The README is cached locally and only downloaded if missing."
+    return 0
+  fi
+
+  if [ "$1" = "--force" ]; then
+    echo "Fetching latest README.md from GitHub..."
+    if curl -fsSL "$README_URL" -o "$README_FILE"; then
+      echo "✓ Downloaded README.md"
+    else
+      echo "✗ Failed to download README.md"
+      return 1
+    fi
+  elif [ ! -f "$README_FILE" ]; then
+    echo "README.md not found, downloading..."
+    if curl -fsSL "$README_URL" -o "$README_FILE"; then
+      echo "✓ Downloaded README.md"
+    else
+      echo "✗ Failed to download README.md"
+      return 1
+    fi
+  fi
+
+  if [ -f "$README_FILE" ]; then
+    bat --style=auto --paging=always "$README_FILE"
+  else
+    echo "✗ README.md not found at $README_FILE"
+    return 1
+  fi
+}
+'''
+
+zsh = '''
+helpf() {
+  local README_FILE="$FLOX_ENV_PROJECT/README.md"
+  local README_URL="https://raw.githubusercontent.com/barstoolbluz/floxenvs/main/nginx/README.md"
+
+  if [ "$1" = "--help" ]; then
+    echo "Usage: helpf [OPTIONS]"
+    echo ""
+    echo "View environment documentation"
+    echo ""
+    echo "Options:"
+    echo "  --force    Force download fresh copy from GitHub"
+    echo "  --help     Show this help message"
+    echo ""
+    echo "The README is cached locally and only downloaded if missing."
+    return 0
+  fi
+
+  if [ "$1" = "--force" ]; then
+    echo "Fetching latest README.md from GitHub..."
+    if curl -fsSL "$README_URL" -o "$README_FILE"; then
+      echo "✓ Downloaded README.md"
+    else
+      echo "✗ Failed to download README.md"
+      return 1
+    fi
+  elif [ ! -f "$README_FILE" ]; then
+    echo "README.md not found, downloading..."
+    if curl -fsSL "$README_URL" -o "$README_FILE"; then
+      echo "✓ Downloaded README.md"
+    else
+      echo "✗ Failed to download README.md"
+      return 1
+    fi
+  fi
+
+  if [ -f "$README_FILE" ]; then
+    bat --style=auto --paging=always "$README_FILE"
+  else
+    echo "✗ README.md not found at $README_FILE"
+    return 1
+  fi
+}
+'''
+
+fish = '''
+function helpf
+  set README_FILE "$FLOX_ENV_PROJECT/README.md"
+  set README_URL "https://raw.githubusercontent.com/barstoolbluz/floxenvs/main/nginx/README.md"
+
+  if test "$argv[1]" = "--help"
+    echo "Usage: helpf [OPTIONS]"
+    echo ""
+    echo "View environment documentation"
+    echo ""
+    echo "Options:"
+    echo "  --force    Force download fresh copy from GitHub"
+    echo "  --help     Show this help message"
+    echo ""
+    echo "The README is cached locally and only downloaded if missing."
+    return 0
+  end
+
+  if test "$argv[1]" = "--force"
+    echo "Fetching latest README.md from GitHub..."
+    if curl -fsSL "$README_URL" -o "$README_FILE"
+      echo "✓ Downloaded README.md"
+    else
+      echo "✗ Failed to download README.md"
+      return 1
+    end
+  else if not test -f "$README_FILE"
+    echo "README.md not found, downloading..."
+    if curl -fsSL "$README_URL" -o "$README_FILE"
+      echo "✓ Downloaded README.md"
+    else
+      echo "✗ Failed to download README.md"
+      return 1
+    end
+  end
+
+  if test -f "$README_FILE"
+    bat --style=auto --paging=always "$README_FILE"
+  else
+    echo "✗ README.md not found at $README_FILE"
+    return 1
+  end
+end
+'''
+
+[services]
+nginx.command = '''
+nginx -c "$NGINX_CONFIG" -e "$NGINX_ERROR_LOG" -g 'daemon off;'
+'''
+
+[options]
+systems = [
+    "aarch64-darwin",
+    "aarch64-linux",
+    "x86_64-darwin",
+    "x86_64-linux",
+]

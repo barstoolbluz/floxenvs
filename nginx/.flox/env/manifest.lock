@@ -3,21 +3,20 @@
   "manifest": {
     "version": 1,
     "install": {
-      "curl": {
-        "pkg-path": "curl"
-      },
-      "gnugrep": {
-        "pkg-path": "gnugrep"
-      },
-      "gum": {
-        "pkg-path": "gum"
+      "gettext": {
+        "pkg-path": "gettext"
       },
       "nginx": {
         "pkg-path": "nginx"
       }
     },
+    "vars": {
+      "NGINX_CONFIG_DIR": "$FLOX_ENV_CACHE/config",
+      "NGINX_LOG_DIR": "$FLOX_ENV_CACHE/logs",
+      "NGINX_WWW_DIR": "$FLOX_ENV_CACHE/www"
+    },
     "hook": {
-      "on-activate": "export NGINX_DIR=\"$FLOX_ENV_CACHE/nginx\"\nexport NGINX_CONFIG=\"$NGINX_DIR/nginx.conf\"\nexport NGINX_ERROR_LOG=\"$NGINX_DIR/error.log\"\nexport NGINX_ACCESS_LOG=\"$NGINX_DIR/access.log\"\nexport CONFIG_FILE=\"$FLOX_ENV_CACHE/proxy_config.env\"\n\nmkdir -p \"$NGINX_DIR\"\n\n# sets nginx default values if USE_DEFAULTS=true\nset_nginx_defaults() {\n    [[ -z \"${NGINX_PORT}\" ]] && export NGINX_PORT=\"8080\"\n    [[ -z \"${FORWARDED_PORT}\" ]] && export FORWARDED_PORT=\"3000\"\n    [[ -z \"${NGINX_WORKER_CONNECTIONS}\" ]] && export NGINX_WORKER_CONNECTIONS=\"1024\"\n    [[ -z \"${NGINX_WORKER_PROCESSES}\" ]] && export NGINX_WORKER_PROCESSES=\"1\"\n}\n\n# detects listening address on linux\ndetect_listening_address() {\n    local port=$1 cmd=\"ss -tnl\" binding\n    command -v ss &>/dev/null || cmd=\"netstat -tnl\"\n    binding=$(eval $cmd | awk \"\\$4 ~ /:$port\\$/ {print \\$4}\" | cut -d: -f1 | head -1)\n    [ -n \"$binding\" ] && echo \"$binding\" || echo \"127.0.0.1\"\n}\n\n# determines localhost address based on OS\nget_localhost_address() {\n    local port=$1\n    if [[ \"$(uname)\" == \"Darwin\" ]]; then\n        echo \"127.0.0.1\"\n    else\n        detect_listening_address \"$port\"\n    fi\n}\n\n# generates nginx config\ngenerate_nginx_config() {\n    local port_based_configs=() path_based_configs=() access_control=\"\"\n    \n    if [[ -f \"$CONFIG_FILE\" ]]; then\n        source \"$CONFIG_FILE\"\n        \n        if [[ -n \"$PORT_PROXIES\" ]]; then\n            IFS=',' read -ra port_based_configs <<< \"$PORT_PROXIES\"\n            echo \"found ${#port_based_configs[@]} port-based proxy configurations: $PORT_PROXIES\" >> \"$NGINX_ERROR_LOG\"\n        fi\n        \n        if [[ -n \"$PATH_PROXIES\" ]]; then\n            IFS=',' read -ra path_based_configs <<< \"$PATH_PROXIES\"\n            echo \"found ${#path_based_configs[@]} path-based proxy configurations: $PATH_PROXIES\" >> \"$NGINX_ERROR_LOG\"\n        fi\n    fi\n\n    # starts writing nginx configuration\n    cat <<EOF > \"$NGINX_CONFIG\"\nworker_processes ${NGINX_WORKER_PROCESSES:-1};\n\nlock_file $NGINX_DIR/nginx.lock;\npid $NGINX_DIR/nginx.pid;\nerror_log $NGINX_ERROR_LOG;\n\nevents {\n  worker_connections ${NGINX_WORKER_CONNECTIONS:-1024};\n}\n\nhttp {\n  access_log $NGINX_ACCESS_LOG;\n  \n  server_tokens off;\n  \n  include ${NGINX_DIR}/mime.types;\n  default_type application/octet-stream;\n  \n  sendfile on;\n  tcp_nopush on;\n  tcp_nodelay on;\n  keepalive_timeout 65;\n  types_hash_max_size 2048;\n\nEOF\n\n    # creates simple mime.types file if it doesn't exist\n    if [[ ! -f \"${NGINX_DIR}/mime.types\" ]]; then\n        cat <<EOF > \"${NGINX_DIR}/mime.types\"\ntypes {\n    text/html                                        html htm shtml;\n    text/css                                         css;\n    text/xml                                         xml;\n    image/gif                                        gif;\n    image/jpeg                                       jpeg jpg;\n    application/javascript                           js;\n    application/json                                 json;\n    text/plain                                       txt;\n    image/png                                        png;\n    image/svg+xml                                    svg svgz;\n    application/pdf                                  pdf;\n}\nEOF\n    fi\n    \n    # collects all listening ports to detect conflicts\n    local used_ports=()\n    \n    # handles port-based proxies (each on its own server block)\n    if [[ ${#port_based_configs[@]} -gt 0 ]]; then\n        for proxy_config in \"${port_based_configs[@]}\"; do\n            echo \"processing port-based proxy config: $proxy_config\" >> \"$NGINX_ERROR_LOG\"\n            \n            local listening_port=\"\" forward_port=\"\"\n            IFS=':' read -r listening_port forward_port <<< \"$proxy_config\"\n            \n            if [[ -z \"$listening_port\" || -z \"$forward_port\" ]]; then\n                echo \"error: invalid port-based proxy config: $proxy_config\" >> \"$NGINX_ERROR_LOG\"\n                continue\n            fi\n            \n            # checks for port conflicts with path-based config\n            if [[ \" ${used_ports[@]} \" =~ \" ${listening_port} \" ]] || [[ \"$listening_port\" == \"${PATH_BASED_PORT:-}\" ]]; then\n                echo \"warning: port conflict detected for $listening_port, skipping port-based proxy\" >> \"$NGINX_ERROR_LOG\"\n                continue\n            fi\n            used_ports+=(\"$listening_port\")\n            \n            local forward_address=$(get_localhost_address \"$forward_port\")\n            \ncat <<EOF >> \"$NGINX_CONFIG\"\n  server {\n    listen $listening_port;\n    \n    add_header X-Proxy-Config \"port_based:$listening_port->$forward_port\" always;\n\n    location / {\n      proxy_pass http://$forward_address:$forward_port;\n      proxy_http_version 1.1;\n      proxy_set_header Host \\$proxy_host;\n      proxy_set_header X-Real-IP \\$remote_addr;\n      proxy_set_header X-Forwarded-For \\$proxy_add_x_forwarded_for;\n      proxy_set_header X-Forwarded-Proto \\$scheme;\n\n      proxy_set_header Upgrade \\$http_upgrade;\n      proxy_set_header Connection \"upgrade\";\n      proxy_buffering off;\n\n      add_header Cache-Control \"no-cache, no-store, must-revalidate\" always;\n      add_header Pragma \"no-cache\" always;\n      add_header Expires \"0\" always;\n\n      add_header X-Service-ID \"port-$listening_port-to-$forward_port\" always;\nEOF\n\n            if [[ -n \"$ALLOW_IPS\" ]]; then\n                echo \"      # access control settings\" >> \"$NGINX_CONFIG\"\n                # fixes ip format validation\n                for ip in $ALLOW_IPS; do\n                    # removes any invalid characters and fixes common mistakes\n                    ip=$(echo \"$ip\" | sed 's/\\.\\./\\./g' | sed 's/\\.$//g')\n                    echo \"      allow $ip;\" >> \"$NGINX_CONFIG\"\n                done\n                echo \"      deny all;\" >> \"$NGINX_CONFIG\"\n            fi\n\n            cat <<EOF >> \"$NGINX_CONFIG\"\n    }\n  }\nEOF\n        done\n    fi\n    \n    # handles path-based proxies (all on a single server block)\n    if [[ ${#path_based_configs[@]} -gt 0 ]]; then\n        local main_port=\"${PATH_BASED_PORT:-8080}\"\n        \n        cat <<EOF >> \"$NGINX_CONFIG\"\n  server {\n    listen $main_port;\n    \n    add_header X-Proxy-Config \"path_based:$main_port\" always;\n    \nEOF\n\n        for proxy_config in \"${path_based_configs[@]}\"; do\n            echo \"processing path-based proxy config: $proxy_config\" >> \"$NGINX_ERROR_LOG\"\n            \n            local path_prefix=\"\" forward_port=\"\"\n            IFS=':' read -r path_prefix forward_port <<< \"$proxy_config\"\n            \n            if [[ -z \"$path_prefix\" || -z \"$forward_port\" ]]; then\n                echo \"error: invalid path-based proxy config: $proxy_config\" >> \"$NGINX_ERROR_LOG\"\n                continue\n            fi\n            \n            [[ \"$path_prefix\" != /* ]] && path_prefix=\"/$path_prefix\"\n            [[ \"$path_prefix\" != */ ]] && path_prefix=\"$path_prefix/\"\n            \n            local forward_address=$(get_localhost_address \"$forward_port\")\n            \n            cat <<EOF >> \"$NGINX_CONFIG\"\n    location $path_prefix {\n      rewrite ^$path_prefix(.*) /\\$1 break;\n      \n      proxy_pass http://$forward_address:$forward_port;\n      proxy_http_version 1.1;\n      proxy_set_header Host \\$proxy_host;\n      proxy_set_header X-Real-IP \\$remote_addr;\n      proxy_set_header X-Forwarded-For \\$proxy_add_x_forwarded_for;\n      proxy_set_header X-Forwarded-Proto \\$scheme;\n      \n      proxy_set_header Upgrade \\$http_upgrade;\n      proxy_set_header Connection \"upgrade\";\n      proxy_buffering off;\n      \n      proxy_set_header X-Original-URI \\$request_uri;\n      proxy_set_header X-Path-Prefix \"$path_prefix\";\nEOF\n\n            if [[ -n \"$ALLOW_IPS\" ]]; then\n                echo \"      # access control settings\" >> \"$NGINX_CONFIG\"\n                for ip in $ALLOW_IPS; do\n                    # fixes ip format validation\n                    ip=$(echo \"$ip\" | sed 's/\\.\\./\\./g' | sed 's/\\.$//g')\n                    echo \"      allow $ip;\" >> \"$NGINX_CONFIG\"\n                done\n                echo \"      deny all;\" >> \"$NGINX_CONFIG\"\n            fi\n\n            cat <<EOF >> \"$NGINX_CONFIG\"\n    }\nEOF\n        done\n        \n        # adds default location block to handle root path\n        if [[ -n \"$DEFAULT_PROXY_PORT\" ]]; then\n            local default_address=$(get_localhost_address \"$DEFAULT_PROXY_PORT\")\n            \n            cat <<EOF >> \"$NGINX_CONFIG\"\n    location / {\n      proxy_pass http://$default_address:$DEFAULT_PROXY_PORT/;\n      proxy_http_version 1.1;\n      proxy_set_header Host \\$proxy_host;\n      proxy_set_header X-Real-IP \\$remote_addr;\n      proxy_set_header X-Forwarded-For \\$proxy_add_x_forwarded_for;\n      proxy_set_header X-Forwarded-Proto \\$scheme;\n      \n      proxy_set_header Upgrade \\$http_upgrade;\n      proxy_set_header Connection \"upgrade\";\n      proxy_buffering off;\n      \n      proxy_set_header X-Default-Target \"true\";\nEOF\n\n            if [[ -n \"$ALLOW_IPS\" ]]; then\n                echo \"      # access control settings\" >> \"$NGINX_CONFIG\"\n                for ip in $ALLOW_IPS; do\n                    # fixes ip format validation\n                    ip=$(echo \"$ip\" | sed 's/\\.\\./\\./g' | sed 's/\\.$//g')\n                    echo \"      allow $ip;\" >> \"$NGINX_CONFIG\"\n                done\n                echo \"      deny all;\" >> \"$NGINX_CONFIG\"\n            fi\n\n            cat <<EOF >> \"$NGINX_CONFIG\"\n    }\nEOF\n        else\n            cat <<EOF >> \"$NGINX_CONFIG\"\n    location / {\n      default_type text/html;\n      return 200 '<!DOCTYPE html>\n<html>\n<head>\n  <title>nginx path-based proxy</title>\n  <style>\n    body { font-family: Arial, sans-serif; margin: 40px; line-height: 1.6; color: #333; }\n    h1 { color: #0066cc; }\n    ul { list-style-type: none; padding: 0; }\n    li { margin-bottom: 10px; padding: 10px; background-color: #f5f5f5; border-left: 5px solid #0066cc; }\n    code { background-color: #f0f0f0; padding: 2px 4px; border-radius: 4px; }\n    .info { background-color: #e6f7ff; border: 1px solid #91d5ff; padding: 15px; border-radius: 5px; }\n  </style>\n</head>\n<body>\n  <h1>nginx path-based proxy configuration</h1>\n  <div class=\"info\">\n    <p>this nginx server is configured with path-based routing on port $main_port.</p>\n    <p>available path prefixes:</p>\n    <ul>\nEOF\n\n            for proxy_config in \"${path_based_configs[@]}\"; do\n                IFS=':' read -r path_prefix forward_port <<< \"$proxy_config\"\n                [[ \"$path_prefix\" != /* ]] && path_prefix=\"/$path_prefix\"\n                [[ \"$path_prefix\" != */ ]] && path_prefix=\"$path_prefix/\"\n                \n                cat <<EOF >> \"$NGINX_CONFIG\"\n      <li><code>$path_prefix</code> → port $forward_port</li>\nEOF\n            done\n\n            cat <<EOF >> \"$NGINX_CONFIG\"\n    </ul>\n    <p>no default handler is configured for the root path (/).</p>\n    <p>to access a service, use one of the path prefixes listed above.</p>\n  </div>\n</body>\n</html>';\n    }\nEOF\n        fi\n        \n        echo \"  }\" >> \"$NGINX_CONFIG\"\n    fi\n    \n    # if no configs at all, adds default port-based proxy\n    if [[ ${#port_based_configs[@]} -eq 0 && ${#path_based_configs[@]} -eq 0 ]]; then\n        local listening_port=\"${NGINX_PORT:-8080}\"\n        local forward_port=\"${FORWARDED_PORT:-3000}\"\n        local forward_address=$(get_localhost_address \"$forward_port\")\n        \n        cat <<EOF >> \"$NGINX_CONFIG\"\n  server {\n    listen $listening_port;\n    \n    location / {\n      proxy_pass http://$forward_address:$forward_port;\n      proxy_http_version 1.1;\n      proxy_set_header Host \\$proxy_host;\n      proxy_set_header X-Real-IP \\$remote_addr;\n      proxy_set_header X-Forwarded-For \\$proxy_add_x_forwarded_for;\n      proxy_set_header X-Forwarded-Proto \\$scheme;\n      \n      proxy_set_header Upgrade \\$http_upgrade;\n      proxy_set_header Connection \"upgrade\";\n      proxy_buffering off;\nEOF\n\n        if [[ -n \"$ALLOW_IPS\" ]]; then\n            echo \"      # access control settings\" >> \"$NGINX_CONFIG\"\n            for ip in $ALLOW_IPS; do\n                # fixes ip format validation\n                ip=$(echo \"$ip\" | sed 's/\\.\\./\\./g' | sed 's/\\.$//g')\n                echo \"      allow $ip;\" >> \"$NGINX_CONFIG\"\n            done\n            echo \"      deny all;\" >> \"$NGINX_CONFIG\"\n        fi\n\n        cat <<EOF >> \"$NGINX_CONFIG\"\n    }\n  }\nEOF\n    fi\n    \n    echo \"}\" >> \"$NGINX_CONFIG\"\n    \n    echo \"generated nginx config:\" >> \"$NGINX_ERROR_LOG\"\n    cat \"$NGINX_CONFIG\" >> \"$NGINX_ERROR_LOG\"\n}\n\n# displays explanatory text with gum\nshow_explanation() {\n    local title=\"$1\" content=\"$2\"\n    \n    gum style \\\n        --border normal \\\n        --border-foreground 240 \\\n        --padding \"1 2\" \\\n        --margin \"1 0\" \\\n        --width 84 \\\n        \"$(gum style --foreground 33 --bold \"$title\")\n        \n$(gum style --foreground 240 \"$content\")\"\n}\n\n# runs the configuration wizard\nrun_wizard() {\n    clear\n    \n    gum style \\\n        --border rounded \\\n        --border-foreground 240 \\\n        --padding \"1 2\" \\\n        --margin \"1 0\" \\\n        --width 84 \\\n        \"$(gum style --foreground 27 --bold 'nginx reverse proxy configuration')\n        \n$(gum style --foreground 240 'setup your nginx reverse proxy configuration')\"\n    \n    show_explanation \"Port vs. Path Proxying: What's the difference?\" \"\n$(gum style --foreground 33 --bold 'Port-based proxying')\nEach proxy listens on its own port (e.g., 8080→3000, 8081→5000)\n  • Good for: multiple independent services accessible on different ports\n\n$(gum style --foreground 33 --bold 'Path-based proxying')\nAll services share a single port but are accessed via different URL paths\n  • Good for: creating a unified entry point (e.g., /api→backend, /app→frontend)\n  • Example: http://localhost:8080/api/ and http://localhost:8080/app/\n\n$(gum style --foreground 33 --bold 'Both')\nConfigure both types of proxying in a single setup\"\n    \n    gum style --foreground 33 --bold \"Select proxy configuration type:\"\n    local proxy_type=$(gum choose \"Port-based Proxying\" \"Path-based Proxying\" \"Both\" --cursor.foreground 33 --selected.foreground 15 --selected.background 33)\n    \n    local port_proxies=() path_proxies=() path_based_port=\"\" default_proxy_port=\"\"\n    local used_ports=()\n    \n    # configures port-based proxies\n    if [[ \"$proxy_type\" == \"Port-based Proxying\" || \"$proxy_type\" == \"Both\" ]]; then\n        gum style --foreground 33 \"Configure port-based proxies:\"\n        gum style --foreground 240 \"These proxies forward traffic from one port to another port\"\n        \n        local add_another=\"Yes\"\n        while [[ \"$add_another\" == \"Yes\" ]]; do\n            while true; do\n                gum style --foreground 240 \"Enter the port you want nginx to listen on:\"\n                local listening_port=$(gum input --placeholder \"listening port (e.g., 8080)\" --value \"${NGINX_PORT:-8080}\")\n                \n                # checks for port conflicts with existing port-based proxies and path-based port\n                local conflict=false\n                for existing_port in \"${used_ports[@]}\"; do\n                    if [[ \"$listening_port\" == \"$existing_port\" ]]; then\n                        gum style --foreground 196 \"Error: port $listening_port is already in use. Please choose a different port.\"\n                        conflict=true\n                        break\n                    fi\n                done\n                \n                if [[ \"$conflict\" == false ]]; then\n                    used_ports+=(\"$listening_port\")\n                    break\n                fi\n            done\n            \n            gum style --foreground 240 \"Enter the port you want to forward to:\"\n            local forward_port=$(gum input --placeholder \"target port (e.g., 3000)\" --value \"${FORWARDED_PORT:-3000}\")\n            \n            port_proxies+=(\"$listening_port:$forward_port\")\n            \n            gum style --foreground 240 \"Do you want to configure another port-based proxy?\"\n            add_another=$(gum choose \"Yes\" \"No\" --cursor.foreground 33 --selected.foreground 15 --selected.background 33)\n        done\n    fi\n    \n    # configures path-based proxies\n    if [[ \"$proxy_type\" == \"Path-based Proxying\" || \"$proxy_type\" == \"Both\" ]]; then\n        gum style --foreground 33 \"Configure path-based proxies:\"\n        \n        show_explanation \"How path-based proxying works\" \"\nPath-based proxying lets you access multiple services through a single port:\n\nExample configuration:\n• Main listening port: 8080\n• Path /api/ forwards to a backend on port 5000\n• Path /app/ forwards to a frontend on port 3000\n\nWith this setup:\n• http://localhost:8080/api/users → backend service (port 5000)\n• http://localhost:8080/app/ → frontend service (port 3000)\n\nThe key advantage is having a single entry point for all your services.\nYou'll need to decide what happens when users visit just http://localhost:8080/\nThis is controlled by the 'default target for root path' setting.\"\n        \n        gum style --foreground 240 \"Enter the main port that nginx should listen on for path-based routing:\"\n        while true; do\n            path_based_port=$(gum input --placeholder \"main listening port (e.g., 8080)\" --value \"${PATH_BASED_PORT:-8080}\")\n            \n            # checks for port conflicts with existing port-based proxies\n            local conflict=false\n            for existing_port in \"${used_ports[@]}\"; do\n                if [[ \"$path_based_port\" == \"$existing_port\" ]]; then\n                    gum style --foreground 196 \"Error: port $path_based_port is already used by a port-based proxy. Please choose a different port.\"\n                    conflict=true\n                    break\n                fi\n            done\n            \n            if [[ \"$conflict\" == false ]]; then\n                used_ports+=(\"$path_based_port\")\n                break\n            fi\n        done\n        \n        local add_another=\"Yes\"\n        while [[ \"$add_another\" == \"Yes\" ]]; do\n            gum style --foreground 240 \"Enter the path prefix to match (e.g., /api, /app):\"\n            local path_prefix=$(gum input --placeholder \"path prefix\")\n            \n            gum style --foreground 240 \"Enter the port to forward this path to:\"\n            local forward_port=$(gum input --placeholder \"target port (e.g., 3000)\")\n            \n            path_proxies+=(\"$path_prefix:$forward_port\")\n            \n            gum style --foreground 240 \"Do you want to configure another path-based proxy?\"\n            add_another=$(gum choose \"Yes\" \"No\" --cursor.foreground 33 --selected.foreground 15 --selected.background 33)\n        done\n        \n        gum style --foreground 240 \"Do you want to configure a default target for the root path (/)?\"\n        show_explanation \"What is the default target?\" \"\nThe default target controls what happens when someone visits:\nhttp://localhost:$path_based_port/ (without any path)\n\nOptions:\n• Yes: forward root requests to another port (e.g., your main application)\n• No: show an information page listing all available paths\n\nExample:\nIf you set the default target to port 3000, then visiting\nhttp://localhost:$path_based_port/ will show whatever is running on port 3000,\nwhile specific paths will still go to their configured destinations.\"\n        \n        local configure_default=$(gum choose \"Yes\" \"No\" --cursor.foreground 33 --selected.foreground 15 --selected.background 33)\n        \n        if [[ \"$configure_default\" == \"Yes\" ]]; then\n            gum style --foreground 240 \"Enter the port to forward the root path (/) to:\"\n            default_proxy_port=$(gum input --placeholder \"default target port (e.g., 3000)\")\n        fi\n    fi\n    \n    # asks about access control\n    gum style --foreground 33 \"Configure access control:\"\n    gum style --foreground 240 \"Do you want to restrict access by IP address?\"\n    local configure_access=$(gum choose \"Yes\" \"No\" --cursor.foreground 33 --selected.foreground 15 --selected.background 33)\n    \n    local allow_ips=\"\"\n    if [[ \"$configure_access\" == \"Yes\" ]]; then\n        while true; do\n            gum style --foreground 240 \"Enter allowed IP addresses/networks (e.g., 192.168.1.0/24, separate multiple entries with spaces):\"\n            allow_ips=$(gum input --placeholder \"IP addresses/networks\")\n            \n            # validates ip format\n            local valid=true\n            for ip in $allow_ips; do\n                # checks for common format issues\n                if [[ \"$ip\" =~ \\.\\./|\\.$ ]]; then\n                    gum style --foreground 196 \"Error: invalid IP format '$ip'. Example: 192.168.1.0/24 or 10.0.0.1\"\n                    valid=false\n                    break\n                fi\n            done\n            \n            [[ \"$valid\" == true ]] && break\n        done\n    fi\n    \n    # joins the proxy arrays with commas\n    local port_proxies_str=\"\" path_proxies_str=\"\"\n    \n    [[ ${#port_proxies[@]} -gt 0 ]] && port_proxies_str=$(IFS=,; echo \"${port_proxies[*]}\")\n    [[ ${#path_proxies[@]} -gt 0 ]] && path_proxies_str=$(IFS=,; echo \"${path_proxies[*]}\")\n    \n    # saves the configurations to a file\n    > \"$CONFIG_FILE\"\n    echo \"CONFIG_INITIALIZED=true\" >> \"$CONFIG_FILE\"\n    echo \"NGINX_WORKER_PROCESSES=\\\"${NGINX_WORKER_PROCESSES:-1}\\\"\" >> \"$CONFIG_FILE\"\n    echo \"NGINX_WORKER_CONNECTIONS=\\\"${NGINX_WORKER_CONNECTIONS:-1024}\\\"\" >> \"$CONFIG_FILE\"\n    \n    [[ -n \"$port_proxies_str\" ]] && echo \"PORT_PROXIES=\\\"$port_proxies_str\\\"\" >> \"$CONFIG_FILE\"\n    \n    if [[ -n \"$path_proxies_str\" ]]; then\n        echo \"PATH_PROXIES=\\\"$path_proxies_str\\\"\" >> \"$CONFIG_FILE\"\n        echo \"PATH_BASED_PORT=\\\"$path_based_port\\\"\" >> \"$CONFIG_FILE\"\n        [[ -n \"$default_proxy_port\" ]] && echo \"DEFAULT_PROXY_PORT=\\\"$default_proxy_port\\\"\" >> \"$CONFIG_FILE\"\n    fi\n    \n    [[ -n \"$allow_ips\" ]] && echo \"ALLOW_IPS=\\\"$allow_ips\\\"\" >> \"$CONFIG_FILE\"\n    \n    gum style \\\n        --foreground 32 \\\n        --bold \\\n        --padding \"1\" \\\n        \"Configuration saved successfully!\"\n    \n    # shows a summary of the configuration\n    gum style --foreground 33 \"Configuration summary:\"\n    \n    if [[ -n \"$port_proxies_str\" ]]; then\n        gum style --foreground 240 \"Port-based proxies:\"\n        for proxy in \"${port_proxies[@]}\"; do\n            IFS=':' read -r listen forward <<< \"$proxy\"\n            gum style \"  • Port $listen → port $forward\"\n        done\n    fi\n    \n    if [[ -n \"$path_proxies_str\" ]]; then\n        gum style --foreground 240 \"Path-based proxies (listening on port $path_based_port):\"\n        for proxy in \"${path_proxies[@]}\"; do\n            IFS=':' read -r path_prefix forward <<< \"$proxy\"\n            [[ \"$path_prefix\" != /* ]] && path_prefix=\"/$path_prefix\"\n            gum style \"  • $path_prefix → port $forward\"\n        done\n        \n        if [[ -n \"$default_proxy_port\" ]]; then\n            gum style \"  • / (default) → port $default_proxy_port\"\n        else\n            gum style \"  • / (default) → information page\"\n        fi\n    fi\n    \n    if [[ -n \"$allow_ips\" ]]; then\n        gum style --foreground 240 \"Access control:\"\n        gum style \"  • Allowed IPs: $allow_ips\"\n        gum style \"  • All other IPs: denied\"\n    fi\n    \n    gum style --foreground 240 \"To access your services:\"\n    \n    if [[ -n \"$port_proxies_str\" ]]; then\n        for proxy in \"${port_proxies[@]}\"; do\n            IFS=':' read -r listen forward <<< \"$proxy\"\n            gum style \"  • http://localhost:$listen\"\n        done\n    fi\n    \n    if [[ -n \"$path_proxies_str\" ]]; then\n        for proxy in \"${path_proxies[@]}\"; do\n            IFS=':' read -r path_prefix forward <<< \"$proxy\"\n            [[ \"$path_prefix\" != /* ]] && path_prefix=\"/$path_prefix\"\n            gum style \"  • http://localhost:$path_based_port$path_prefix\"\n        done\n    fi\n}\n\n# stops any running nginx processes\nstop_nginx() {\n    \n    if [[ -f \"$NGINX_DIR/nginx.pid\" ]]; then\n        local pid=$(cat \"$NGINX_DIR/nginx.pid\")\n        if [[ -n \"$pid\" ]]; then\n            echo \"stopping nginx with pid $pid...\"\n            kill \"$pid\" 2>/dev/null || true\n            sleep 1\n        fi\n    fi\n    \n    # collects all configured ports from the config\n    local ports_to_check=() used_ports=()\n    \n    # adds default ports if no config exists\n    if [[ ! -f \"$CONFIG_FILE\" ]]; then\n        ports_to_check+=(\"${NGINX_PORT:-8080}\")\n    else\n        source \"$CONFIG_FILE\"\n        \n        # extracts ports from port-based proxies\n        if [[ -n \"$PORT_PROXIES\" ]]; then\n            IFS=',' read -ra port_configs <<< \"$PORT_PROXIES\"\n            for config in \"${port_configs[@]}\"; do\n                IFS=':' read -r listening_port forward_port <<< \"$config\"\n                [[ -n \"$listening_port\" ]] && ports_to_check+=(\"$listening_port\")\n            done\n        fi\n        \n        # adds path-based proxy port\n        [[ -n \"$PATH_BASED_PORT\" ]] && ports_to_check+=(\"$PATH_BASED_PORT\")\n        \n        # adds fallback default port if no specific ports found\n        if [[ ${#ports_to_check[@]} -eq 0 ]]; then\n            ports_to_check+=(\"${NGINX_PORT:-8080}\")\n        fi\n    fi\n    \n    # finds and stops relict nginx processes on configured ports\n    for port in \"${ports_to_check[@]}\"; do\n        local pids=$(lsof -t -i:\"$port\" 2>/dev/null || true)\n        if [[ -n \"$pids\" ]]; then\n            used_ports+=(\"$port\")\n            echo \"port $port is in use by nginx, stopping processes...\"\n            for pid in $pids; do\n                # checks: is process actually nginx?\n                local process_name=$(ps -p \"$pid\" -o comm= 2>/dev/null || true)\n                if [[ \"$process_name\" == \"nginx\" ]] || [[ -z \"$process_name\" ]]; then\n                    echo \"stopping process $pid on port $port...\"\n                    kill \"$pid\" 2>/dev/null || true\n                fi\n            done\n        fi\n    done\n    \n    if [[ ${#used_ports[@]} -gt 0 ]]; then\n        echo \"waiting for ports to be freed...\"\n        sleep 2\n        \n        # force kills any relict processes on these ports\n        for port in \"${used_ports[@]}\"; do\n            local pids=$(lsof -t -i:\"$port\" 2>/dev/null || true)\n            if [[ -n \"$pids\" ]]; then\n                echo \"port $port still in use, force stopping...\"\n                for pid in $pids; do\n                    kill -9 \"$pid\" 2>/dev/null || true\n                done\n            fi\n        done\n        \n        sleep 1\n    fi\n    \n    rm -f \"$NGINX_DIR/nginx.pid\" 2>/dev/null || true\n    rm -f \"$NGINX_DIR/nginx.lock\" 2>/dev/null || true\n}\n\n# checks if we should use defaults\n[[ \"$USE_DEFAULTS\" == \"true\" ]] && set_nginx_defaults\n\n# checks if we need to run the wizard\nCONFIG_INITIALIZED=\"${CONFIG_INITIALIZED:-false}\"\n\n[[ -f \"$CONFIG_FILE\" ]] && source \"$CONFIG_FILE\"\n\nif [[ \"$USE_DEFAULTS\" != \"true\" && (\"$CONFIG_INITIALIZED\" != \"true\" || \"$FORCE_WIZARD\" == \"true\") ]]; then\n    run_wizard\nfi\n\n# generates nginx configuration\ngenerate_nginx_config\n\n# kills any relict nginx processes on our listening / binding ports\nstop_nginx\n"
+      "on-activate": "mkdir -p \"$FLOX_ENV_CACHE/config\"\nmkdir -p \"$FLOX_ENV_CACHE/logs\"\nmkdir -p \"$FLOX_ENV_CACHE/www\"\n\n# === COMMON CONFIGURATION ===\nexport NGINX_PORT=\"${NGINX_PORT:-80}\"\nexport NGINX_HOST=\"${NGINX_HOST:-0.0.0.0}\"\n\n# === MODE SELECTION ===\nexport NGINX_MODE=\"${NGINX_MODE:-proxy}\"\nexport NGINX_WORKER_PROCESSES=\"${NGINX_WORKER_PROCESSES:-auto}\"\nexport NGINX_WORKER_CONNECTIONS=\"${NGINX_WORKER_CONNECTIONS:-1024}\"\n\n# === PROXY MODE ===\nexport NGINX_BACKEND_HOST=\"${NGINX_BACKEND_HOST:-127.0.0.1}\"\nexport NGINX_BACKEND_PORT=\"${NGINX_BACKEND_PORT:-8080}\"\nexport NGINX_PROXY_TIMEOUT=\"${NGINX_PROXY_TIMEOUT:-60s}\"\n\n# === STATIC MODE ===\nexport NGINX_ROOT=\"${NGINX_ROOT:-$FLOX_ENV_CACHE/www}\"\nexport NGINX_INDEX=\"${NGINX_INDEX:-index.html index.htm}\"\n\n# === LOAD BALANCER MODE ===\nexport NGINX_UPSTREAM_SERVERS=\"${NGINX_UPSTREAM_SERVERS:-}\"\nexport NGINX_LB_METHOD=\"${NGINX_LB_METHOD:-round_robin}\"\n\n# === SSL/TLS FEATURE ===\nexport NGINX_SSL_ENABLED=\"${NGINX_SSL_ENABLED:-false}\"\nexport NGINX_SSL_CERT=\"${NGINX_SSL_CERT:-}\"\nexport NGINX_SSL_KEY=\"${NGINX_SSL_KEY:-}\"\nexport NGINX_SSL_PROTOCOLS=\"${NGINX_SSL_PROTOCOLS:-TLSv1.2 TLSv1.3}\"\n\n# === RATE LIMITING FEATURE ===\nexport NGINX_RATE_LIMIT_ENABLED=\"${NGINX_RATE_LIMIT_ENABLED:-false}\"\nexport NGINX_RATE_LIMIT_RATE=\"${NGINX_RATE_LIMIT_RATE:-10r/s}\"\nexport NGINX_RATE_LIMIT_BURST=\"${NGINX_RATE_LIMIT_BURST:-20}\"\n\n# === GZIP COMPRESSION FEATURE ===\nexport NGINX_GZIP_ENABLED=\"${NGINX_GZIP_ENABLED:-false}\"\nexport NGINX_GZIP_LEVEL=\"${NGINX_GZIP_LEVEL:-6}\"\nexport NGINX_GZIP_MIN_LENGTH=\"${NGINX_GZIP_MIN_LENGTH:-1000}\"\nexport NGINX_GZIP_TYPES=\"${NGINX_GZIP_TYPES:-text/plain text/css application/json application/javascript text/xml application/xml application/xml+rss text/javascript}\"\n\n# === SECURITY HEADERS FEATURE ===\nexport NGINX_SECURITY_HEADERS_ENABLED=\"${NGINX_SECURITY_HEADERS_ENABLED:-false}\"\n\n# === CACHING FEATURE ===\nexport NGINX_CACHE_ENABLED=\"${NGINX_CACHE_ENABLED:-false}\"\nexport NGINX_CACHE_STATIC_EXPIRE=\"${NGINX_CACHE_STATIC_EXPIRE:-7d}\"\nexport NGINX_CACHE_HTML_EXPIRE=\"${NGINX_CACHE_HTML_EXPIRE:-1h}\"\n\n# === WEBSOCKET FEATURE ===\nexport NGINX_WEBSOCKET_ENABLED=\"${NGINX_WEBSOCKET_ENABLED:-false}\"\n\n# === URL REWRITING FEATURE ===\nexport NGINX_FORCE_HTTPS=\"${NGINX_FORCE_HTTPS:-false}\"\nexport NGINX_FORCE_WWW=\"${NGINX_FORCE_WWW:-none}\"\n\n# Create templates (one-time)\ncreate_templates() {\n  local CONFIG_DIR=\"$FLOX_ENV_CACHE/config\"\n\n  # Proxy mode template\n  if [ ! -f \"$CONFIG_DIR/nginx-proxy.template\" ]; then\n    cat > \"$CONFIG_DIR/nginx-proxy.template\" << 'TEMPLATE'\nworker_processes ${NGINX_WORKER_PROCESSES};\nerror_log ${NGINX_LOG_DIR}/error.log;\npid ${NGINX_LOG_DIR}/nginx.pid;\n\nevents {\n    worker_connections ${NGINX_WORKER_CONNECTIONS};\n}\n\nhttp {\n    access_log ${NGINX_LOG_DIR}/access.log;\n\n    ${GZIP_CONFIG}\n\n    ${RATE_LIMIT_ZONE}\n\n    server {\n        listen ${NGINX_HOST}:${NGINX_PORT}${SSL_LISTEN};\n\n        ${SSL_CONFIG}\n\n        ${SECURITY_HEADERS}\n\n        ${REWRITE_RULES}\n\n        location / {\n            ${RATE_LIMIT_REQ}\n\n            proxy_pass http://${NGINX_BACKEND_HOST}:${NGINX_BACKEND_PORT};\n            proxy_set_header Host $host;\n            proxy_set_header X-Real-IP $remote_addr;\n            proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;\n            proxy_set_header X-Forwarded-Proto $scheme;\n            proxy_connect_timeout ${NGINX_PROXY_TIMEOUT};\n            proxy_send_timeout ${NGINX_PROXY_TIMEOUT};\n            proxy_read_timeout ${NGINX_PROXY_TIMEOUT};\n            ${WEBSOCKET_CONFIG}\n        }\n    }\n}\nTEMPLATE\n  fi\n\n  # Static mode template\n  if [ ! -f \"$CONFIG_DIR/nginx-static.template\" ]; then\n    cat > \"$CONFIG_DIR/nginx-static.template\" << 'TEMPLATE'\nworker_processes ${NGINX_WORKER_PROCESSES};\nerror_log ${NGINX_LOG_DIR}/error.log;\npid ${NGINX_LOG_DIR}/nginx.pid;\n\nevents {\n    worker_connections ${NGINX_WORKER_CONNECTIONS};\n}\n\nhttp {\n    include ${NGINX_MIME_TYPES};\n    default_type application/octet-stream;\n\n    access_log ${NGINX_LOG_DIR}/access.log;\n\n    sendfile on;\n    tcp_nopush on;\n    tcp_nodelay on;\n    keepalive_timeout 65;\n\n    ${GZIP_CONFIG}\n\n    ${RATE_LIMIT_ZONE}\n\n    server {\n        listen ${NGINX_HOST}:${NGINX_PORT}${SSL_LISTEN};\n\n        ${SSL_CONFIG}\n\n        ${SECURITY_HEADERS}\n\n        ${REWRITE_RULES}\n\n        root ${NGINX_ROOT};\n        index ${NGINX_INDEX};\n\n        location / {\n            ${RATE_LIMIT_REQ}\n            ${CACHE_HTML}\n            try_files $uri $uri/ =404;\n        }\n\n        ${CACHE_STATIC}\n    }\n}\nTEMPLATE\n  fi\n\n  # Load balancer mode template\n  if [ ! -f \"$CONFIG_DIR/nginx-loadbalancer.template\" ]; then\n    cat > \"$CONFIG_DIR/nginx-loadbalancer.template\" << 'TEMPLATE'\nworker_processes ${NGINX_WORKER_PROCESSES};\nerror_log ${NGINX_LOG_DIR}/error.log;\npid ${NGINX_LOG_DIR}/nginx.pid;\n\nevents {\n    worker_connections ${NGINX_WORKER_CONNECTIONS};\n}\n\nhttp {\n    access_log ${NGINX_LOG_DIR}/access.log;\n\n    ${GZIP_CONFIG}\n\n    ${RATE_LIMIT_ZONE}\n\n    ${UPSTREAM_BLOCK}\n\n    server {\n        listen ${NGINX_HOST}:${NGINX_PORT}${SSL_LISTEN};\n\n        ${SSL_CONFIG}\n\n        ${SECURITY_HEADERS}\n\n        ${REWRITE_RULES}\n\n        location / {\n            ${RATE_LIMIT_REQ}\n\n            proxy_pass http://backend;\n            proxy_set_header Host $host;\n            proxy_set_header X-Real-IP $remote_addr;\n            proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;\n            proxy_set_header X-Forwarded-Proto $scheme;\n            ${WEBSOCKET_CONFIG}\n        }\n    }\n}\nTEMPLATE\n  fi\n\n  # Create sample index.html for static mode\n  if [ ! -f \"$FLOX_ENV_CACHE/www/index.html\" ]; then\n    cat > \"$FLOX_ENV_CACHE/www/index.html\" << 'HTML'\n<!DOCTYPE html>\n<html>\n<head>\n    <title>nginx-headless</title>\n</head>\n<body>\n    <h1>nginx-headless</h1>\n    <p>Static file serving is working!</p>\n</body>\n</html>\nHTML\n  fi\n}\n\ncreate_templates\n\ncd \"$FLOX_ENV_PROJECT\"\n"
     },
     "options": {
       "systems": [
@@ -29,392 +28,138 @@
     },
     "services": {
       "nginx": {
-        "command": "nginx -c \"$NGINX_CONFIG\" -e \"$NGINX_ERROR_LOG\" -g 'daemon off;'\n"
+        "command": "set -e\nmkdir -p \"$FLOX_ENV_CACHE/logs\"\n\nCONFIG_DIR=\"$FLOX_ENV_CACHE/config\"\nFINAL_CONF=\"$CONFIG_DIR/nginx.conf\"\n\n# Compute nginx mime.types path\nNGINX_BIN=$(which nginx)\nNGINX_PREFIX=$(dirname $(dirname \"$NGINX_BIN\"))\nexport NGINX_MIME_TYPES=\"$NGINX_PREFIX/conf/mime.types\"\n\n# Generate feature configuration blocks\ngenerate_features() {\n  # SSL/TLS Configuration\n  if [ \"$NGINX_SSL_ENABLED\" = \"true\" ]; then\n    if [ -z \"$NGINX_SSL_CERT\" ] || [ -z \"$NGINX_SSL_KEY\" ]; then\n      echo \"Error: NGINX_SSL_ENABLED=true but NGINX_SSL_CERT or NGINX_SSL_KEY not set\"\n      return 1\n    fi\n    if [ ! -f \"$NGINX_SSL_CERT\" ]; then\n      echo \"Error: SSL certificate not found: $NGINX_SSL_CERT\"\n      return 1\n    fi\n    if [ ! -f \"$NGINX_SSL_KEY\" ]; then\n      echo \"Error: SSL key not found: $NGINX_SSL_KEY\"\n      return 1\n    fi\n    export SSL_LISTEN=\" ssl\"\n    export SSL_CONFIG=\"ssl_certificate $NGINX_SSL_CERT;\n    ssl_certificate_key $NGINX_SSL_KEY;\n    ssl_protocols $NGINX_SSL_PROTOCOLS;\n    ssl_ciphers HIGH:!aNULL:!MD5;\"\n  else\n    export SSL_LISTEN=\"\"\n    export SSL_CONFIG=\"\"\n  fi\n\n  # Rate Limiting Configuration\n  if [ \"$NGINX_RATE_LIMIT_ENABLED\" = \"true\" ]; then\n    export RATE_LIMIT_ZONE=\"limit_req_zone \"'$binary_remote_addr'\" zone=ratelimit:10m rate=$NGINX_RATE_LIMIT_RATE;\"\n    export RATE_LIMIT_REQ=\"limit_req zone=ratelimit burst=$NGINX_RATE_LIMIT_BURST nodelay;\"\n  else\n    export RATE_LIMIT_ZONE=\"\"\n    export RATE_LIMIT_REQ=\"\"\n  fi\n\n  # Load Balancer Upstream Block\n  if [ \"$NGINX_MODE\" = \"load_balancer\" ]; then\n    if [ -z \"$NGINX_UPSTREAM_SERVERS\" ]; then\n      echo \"Error: NGINX_MODE=load_balancer but NGINX_UPSTREAM_SERVERS not set\"\n      echo \"Example: NGINX_UPSTREAM_SERVERS=\\\"app1:8080,app2:8080,app3:8080\\\"\"\n      return 1\n    fi\n\n    # Determine load balancing directive\n    case \"$NGINX_LB_METHOD\" in\n      round_robin)\n        LB_DIRECTIVE=\"\"\n        ;;\n      least_conn)\n        LB_DIRECTIVE=\"least_conn;\"\n        ;;\n      ip_hash)\n        LB_DIRECTIVE=\"ip_hash;\"\n        ;;\n      *)\n        echo \"Error: Unknown NGINX_LB_METHOD: $NGINX_LB_METHOD\"\n        echo \"Supported: round_robin, least_conn, ip_hash\"\n        return 1\n        ;;\n    esac\n\n    # Generate upstream block\n    UPSTREAM=\"upstream backend {\"$'\\n'\"    $LB_DIRECTIVE\"$'\\n'\n    IFS=',' read -ra SERVERS <<< \"$NGINX_UPSTREAM_SERVERS\"\n    for server in \"${SERVERS[@]}\"; do\n      server=$(echo \"$server\" | xargs)  # Trim whitespace\n      UPSTREAM+=\"    server $server;\"$'\\n'\n    done\n    UPSTREAM+=\"}\"\n    export UPSTREAM_BLOCK=\"$UPSTREAM\"\n  else\n    export UPSTREAM_BLOCK=\"\"\n  fi\n\n  # Gzip Compression Configuration\n  if [ \"$NGINX_GZIP_ENABLED\" = \"true\" ]; then\n    export GZIP_CONFIG=\"gzip on;\n    gzip_vary on;\n    gzip_proxied any;\n    gzip_comp_level $NGINX_GZIP_LEVEL;\n    gzip_min_length $NGINX_GZIP_MIN_LENGTH;\n    gzip_types $NGINX_GZIP_TYPES;\"\n  else\n    export GZIP_CONFIG=\"\"\n  fi\n\n  # Security Headers Configuration\n  if [ \"$NGINX_SECURITY_HEADERS_ENABLED\" = \"true\" ]; then\n    HEADERS=\"add_header X-Frame-Options SAMEORIGIN always;\n    add_header X-Content-Type-Options nosniff always;\n    add_header X-XSS-Protection \\\"1; mode=block\\\" always;\n    add_header Referrer-Policy no-referrer-when-downgrade always;\"\n\n    # Add HSTS if SSL is enabled\n    if [ \"$NGINX_SSL_ENABLED\" = \"true\" ]; then\n      HEADERS+=$'\\n'\"    add_header Strict-Transport-Security \\\"max-age=31536000; includeSubDomains\\\" always;\"\n    fi\n\n    export SECURITY_HEADERS=\"$HEADERS\"\n  else\n    export SECURITY_HEADERS=\"\"\n  fi\n\n  # Caching Configuration (for static mode)\n  if [ \"$NGINX_CACHE_ENABLED\" = \"true\" ]; then\n    export CACHE_HTML=\"add_header Cache-Control \\\"public, max-age=3600\\\";\n            expires $NGINX_CACHE_HTML_EXPIRE;\"\n\n    export CACHE_STATIC=\"location ~* \\.(jpg|jpeg|png|gif|ico|css|js|svg|woff|woff2|ttf|eot)$ {\n            expires $NGINX_CACHE_STATIC_EXPIRE;\n            add_header Cache-Control \\\"public, immutable\\\";\n        }\"\n  else\n    export CACHE_HTML=\"\"\n    export CACHE_STATIC=\"\"\n  fi\n\n  # WebSocket Configuration (for proxy and load_balancer modes)\n  if [ \"$NGINX_WEBSOCKET_ENABLED\" = \"true\" ]; then\n    export WEBSOCKET_CONFIG=\"proxy_http_version 1.1;\n            proxy_set_header Upgrade \\$http_upgrade;\n            proxy_set_header Connection \\\"upgrade\\\";\"\n  else\n    export WEBSOCKET_CONFIG=\"\"\n  fi\n\n  # URL Rewriting Configuration\n  REWRITE=\"\"\n\n  # Force HTTPS redirect\n  if [ \"$NGINX_FORCE_HTTPS\" = \"true\" ]; then\n    REWRITE+=\"if (\\$scheme != \\\"https\\\") {\"$'\\n'\n    REWRITE+=\"            return 301 https://\\$host\\$request_uri;\"$'\\n'\n    REWRITE+=\"        }\"$'\\n'\n  fi\n\n  # Force WWW or non-WWW\n  if [ \"$NGINX_FORCE_WWW\" = \"add_www\" ]; then\n    REWRITE+=\"if (\\$host !~* ^www\\\\.) {\"$'\\n'\n    REWRITE+=\"            return 301 \\$scheme://www.\\$host\\$request_uri;\"$'\\n'\n    REWRITE+=\"        }\"$'\\n'\n  elif [ \"$NGINX_FORCE_WWW\" = \"remove_www\" ]; then\n    REWRITE+=\"if (\\$host ~* ^www\\\\.(.*)) {\"$'\\n'\n    REWRITE+=\"            return 301 \\$scheme://\\$1\\$request_uri;\"$'\\n'\n    REWRITE+=\"        }\"$'\\n'\n  fi\n\n  export REWRITE_RULES=\"$REWRITE\"\n}\n\n# Select mode template\ncase \"$NGINX_MODE\" in\n  proxy)\n    TEMPLATE=\"$CONFIG_DIR/nginx-proxy.template\"\n    ;;\n  static)\n    TEMPLATE=\"$CONFIG_DIR/nginx-static.template\"\n    ;;\n  load_balancer)\n    TEMPLATE=\"$CONFIG_DIR/nginx-loadbalancer.template\"\n    ;;\n  *)\n    echo \"Error: Unknown NGINX_MODE: $NGINX_MODE\"\n    echo \"Supported modes: proxy, static, load_balancer\"\n    exit 1\n    ;;\nesac\n\nif [ ! -f \"$TEMPLATE\" ]; then\n  echo \"Error: Template not found: $TEMPLATE\"\n  exit 1\nfi\n\n# Generate feature configurations\ngenerate_features || exit 1\n\n# Apply envsubst with explicit variable list (preserves nginx variables)\nenvsubst '${NGINX_WORKER_PROCESSES} ${NGINX_LOG_DIR} ${NGINX_WORKER_CONNECTIONS} ${NGINX_MIME_TYPES} ${GZIP_CONFIG} ${RATE_LIMIT_ZONE} ${NGINX_HOST} ${NGINX_PORT} ${SSL_LISTEN} ${SSL_CONFIG} ${SECURITY_HEADERS} ${RATE_LIMIT_REQ} ${NGINX_BACKEND_HOST} ${NGINX_BACKEND_PORT} ${NGINX_PROXY_TIMEOUT} ${NGINX_ROOT} ${NGINX_INDEX} ${UPSTREAM_BLOCK} ${CACHE_HTML} ${CACHE_STATIC} ${WEBSOCKET_CONFIG} ${REWRITE_RULES}' < \"$TEMPLATE\" > \"$FINAL_CONF\"\n\n# Validate configuration\nif ! nginx -t -c \"$FINAL_CONF\"; then\n  echo \"Error: nginx configuration validation failed\"\n  echo \"Configuration file: $FINAL_CONF\"\n  exit 1\nfi\n\n# Start nginx\nexec nginx -c \"$FINAL_CONF\" -g \"daemon off;\" 2>&1 | tee -a \"$FLOX_ENV_CACHE/logs/nginx.log\"\n"
       }
     }
   },
   "packages": [
     {
-      "attr_path": "curl",
+      "attr_path": "gettext",
       "broken": false,
-      "derivation": "/nix/store/vdyh7cx27q7mga5i15cqlkj3rl4q1zm7-curl-8.12.1.drv",
-      "description": "Command line tool for transferring files with URL syntax",
-      "install_id": "curl",
-      "license": "curl",
-      "locked_url": "https://github.com/flox/nixpkgs?rev=979daf34c8cacebcd917d540070b52a3c2b9b16e",
-      "name": "curl-8.12.1",
-      "pname": "curl",
-      "rev": "979daf34c8cacebcd917d540070b52a3c2b9b16e",
-      "rev_count": 793735,
-      "rev_date": "2025-05-04T03:14:55Z",
-      "scrape_date": "2025-05-05T04:19:28.723054Z",
+      "derivation": "/nix/store/fw7fp2y0adydhq2k7b79hvpc3za1dpiv-gettext-0.25.1.drv",
+      "description": "Well integrated set of translation tools and documentation",
+      "install_id": "gettext",
+      "license": "GPL-2.0-or-later",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=6a08e6bb4e46ff7fcbb53d409b253f6bad8a28ce",
+      "name": "gettext-0.25.1",
+      "pname": "gettext",
+      "rev": "6a08e6bb4e46ff7fcbb53d409b253f6bad8a28ce",
+      "rev_count": 883951,
+      "rev_date": "2025-10-25T06:24:58Z",
+      "scrape_date": "2025-10-27T02:08:16.415332Z",
       "stabilities": [
-        "staging",
         "unstable"
       ],
       "unfree": false,
-      "version": "8.12.1",
+      "version": "0.25.1",
       "outputs_to_install": [
-        "bin",
-        "man"
+        "man",
+        "out"
       ],
       "outputs": {
-        "bin": "/nix/store/krgqarvv8y1xr2f7z5vxxva3nn7d1x8l-curl-8.12.1-bin",
-        "dev": "/nix/store/8rsm3wrn90wm3h9bcr44j2z5g3qlnq8w-curl-8.12.1-dev",
-        "devdoc": "/nix/store/mcxbd00pvp9z2p3baqjypiirrnxyqn1i-curl-8.12.1-devdoc",
-        "man": "/nix/store/nxxww0dn65fw7aky9zvghsykr0syb8lg-curl-8.12.1-man",
-        "out": "/nix/store/r011ii30b9gphcrwppszgv9bnd6d605r-curl-8.12.1"
+        "doc": "/nix/store/xmal1m0kq50a4zbcpskzicmz5vm5fmzc-gettext-0.25.1-doc",
+        "info": "/nix/store/1xf1baaxdd3gnnadz5bw35r84mdr2fm8-gettext-0.25.1-info",
+        "man": "/nix/store/vr5sj38sp1h35l3wn04hb90si0bx8skk-gettext-0.25.1-man",
+        "out": "/nix/store/jl1421wiawqdgasrqqwd4d4jznvimfma-gettext-0.25.1"
       },
       "system": "aarch64-darwin",
       "group": "toplevel",
       "priority": 5
     },
     {
-      "attr_path": "curl",
+      "attr_path": "gettext",
       "broken": false,
-      "derivation": "/nix/store/yq3cgczhqmmrwclib223sw30cv5bjnsp-curl-8.12.1.drv",
-      "description": "Command line tool for transferring files with URL syntax",
-      "install_id": "curl",
-      "license": "curl",
-      "locked_url": "https://github.com/flox/nixpkgs?rev=979daf34c8cacebcd917d540070b52a3c2b9b16e",
-      "name": "curl-8.12.1",
-      "pname": "curl",
-      "rev": "979daf34c8cacebcd917d540070b52a3c2b9b16e",
-      "rev_count": 793735,
-      "rev_date": "2025-05-04T03:14:55Z",
-      "scrape_date": "2025-05-05T04:37:19.728134Z",
+      "derivation": "/nix/store/83ck901079gq26vr61lsjr09s8p9ydc6-gettext-0.25.1.drv",
+      "description": "Well integrated set of translation tools and documentation",
+      "install_id": "gettext",
+      "license": "GPL-2.0-or-later",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=6a08e6bb4e46ff7fcbb53d409b253f6bad8a28ce",
+      "name": "gettext-0.25.1",
+      "pname": "gettext",
+      "rev": "6a08e6bb4e46ff7fcbb53d409b253f6bad8a28ce",
+      "rev_count": 883951,
+      "rev_date": "2025-10-25T06:24:58Z",
+      "scrape_date": "2025-10-27T02:18:27.321807Z",
       "stabilities": [
-        "staging",
         "unstable"
       ],
       "unfree": false,
-      "version": "8.12.1",
+      "version": "0.25.1",
       "outputs_to_install": [
-        "bin",
-        "man"
+        "man",
+        "out"
       ],
       "outputs": {
-        "bin": "/nix/store/hvlljyxp5xzrv719f5j7m7gnyb87mx41-curl-8.12.1-bin",
-        "debug": "/nix/store/z8lpvdvih1mspz5j1lsbgagsjpl2wizw-curl-8.12.1-debug",
-        "dev": "/nix/store/npbpw2121z4akxngf176q1mdlxfkwv0j-curl-8.12.1-dev",
-        "devdoc": "/nix/store/r6kp2rzlm8vfflnzrhsf21b20ixgmpfp-curl-8.12.1-devdoc",
-        "man": "/nix/store/cb83qlmflk1w18ndysbbm9hvg053w3f6-curl-8.12.1-man",
-        "out": "/nix/store/gy6v84p7iy8p2wy7w0qh56vbqwz446kk-curl-8.12.1"
+        "doc": "/nix/store/iz7xzdddv7m1flkya2dlzm26lb371sxp-gettext-0.25.1-doc",
+        "info": "/nix/store/qd5w10l4g86jzxzs861smqzba67zbn5x-gettext-0.25.1-info",
+        "man": "/nix/store/0gr8ah7z6qhypspsp3bjv8ld2pa5b59i-gettext-0.25.1-man",
+        "out": "/nix/store/zzn5w3wi2gw15h59vpylmkl8b64lmbxr-gettext-0.25.1"
       },
       "system": "aarch64-linux",
       "group": "toplevel",
       "priority": 5
     },
     {
-      "attr_path": "curl",
+      "attr_path": "gettext",
       "broken": false,
-      "derivation": "/nix/store/fq1birpdcm24zlsq0hnhq7sbaalyjzj1-curl-8.12.1.drv",
-      "description": "Command line tool for transferring files with URL syntax",
-      "install_id": "curl",
-      "license": "curl",
-      "locked_url": "https://github.com/flox/nixpkgs?rev=979daf34c8cacebcd917d540070b52a3c2b9b16e",
-      "name": "curl-8.12.1",
-      "pname": "curl",
-      "rev": "979daf34c8cacebcd917d540070b52a3c2b9b16e",
-      "rev_count": 793735,
-      "rev_date": "2025-05-04T03:14:55Z",
-      "scrape_date": "2025-05-05T04:54:29.343462Z",
+      "derivation": "/nix/store/glkcn72kprb8j2iicmmi30yldlsd1cwy-gettext-0.25.1.drv",
+      "description": "Well integrated set of translation tools and documentation",
+      "install_id": "gettext",
+      "license": "GPL-2.0-or-later",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=6a08e6bb4e46ff7fcbb53d409b253f6bad8a28ce",
+      "name": "gettext-0.25.1",
+      "pname": "gettext",
+      "rev": "6a08e6bb4e46ff7fcbb53d409b253f6bad8a28ce",
+      "rev_count": 883951,
+      "rev_date": "2025-10-25T06:24:58Z",
+      "scrape_date": "2025-10-27T02:29:22.264420Z",
       "stabilities": [
-        "staging",
         "unstable"
       ],
       "unfree": false,
-      "version": "8.12.1",
+      "version": "0.25.1",
       "outputs_to_install": [
-        "bin",
-        "man"
+        "man",
+        "out"
       ],
       "outputs": {
-        "bin": "/nix/store/3nm8cgv7xg1qadvgcshmvspmsr7frvp2-curl-8.12.1-bin",
-        "dev": "/nix/store/vij71byxpyrpxsyvb6z4vh75hj51la5f-curl-8.12.1-dev",
-        "devdoc": "/nix/store/6zf74b4kalqx1653vwsv7vpng113igi7-curl-8.12.1-devdoc",
-        "man": "/nix/store/4aphz90jsdfzx5cfzl5nfnml7czswg09-curl-8.12.1-man",
-        "out": "/nix/store/fswhs12ddagbw24a1gr0rv7sm7aqj7c1-curl-8.12.1"
+        "doc": "/nix/store/il9rgrblzzgim9fgy15m7jadigg90gc9-gettext-0.25.1-doc",
+        "info": "/nix/store/20pmnjr88f748mnfjvz3c3bksjff5pvl-gettext-0.25.1-info",
+        "man": "/nix/store/2xrbyji0c3z2cha1r95w07432nh5hzfb-gettext-0.25.1-man",
+        "out": "/nix/store/08l09pgc582k9fkrrjxdhpyl5qmgrahj-gettext-0.25.1"
       },
       "system": "x86_64-darwin",
       "group": "toplevel",
       "priority": 5
     },
     {
-      "attr_path": "curl",
+      "attr_path": "gettext",
       "broken": false,
-      "derivation": "/nix/store/c7phcbkl7nzja980jnyy0g1dni8qb782-curl-8.12.1.drv",
-      "description": "Command line tool for transferring files with URL syntax",
-      "install_id": "curl",
-      "license": "curl",
-      "locked_url": "https://github.com/flox/nixpkgs?rev=979daf34c8cacebcd917d540070b52a3c2b9b16e",
-      "name": "curl-8.12.1",
-      "pname": "curl",
-      "rev": "979daf34c8cacebcd917d540070b52a3c2b9b16e",
-      "rev_count": 793735,
-      "rev_date": "2025-05-04T03:14:55Z",
-      "scrape_date": "2025-05-05T05:15:54.570484Z",
+      "derivation": "/nix/store/sqa27jrdiki6jdmg47fir9rya3mb3kgb-gettext-0.25.1.drv",
+      "description": "Well integrated set of translation tools and documentation",
+      "install_id": "gettext",
+      "license": "GPL-2.0-or-later",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=6a08e6bb4e46ff7fcbb53d409b253f6bad8a28ce",
+      "name": "gettext-0.25.1",
+      "pname": "gettext",
+      "rev": "6a08e6bb4e46ff7fcbb53d409b253f6bad8a28ce",
+      "rev_count": 883951,
+      "rev_date": "2025-10-25T06:24:58Z",
+      "scrape_date": "2025-10-27T03:00:55.638509Z",
       "stabilities": [
-        "staging",
         "unstable"
       ],
       "unfree": false,
-      "version": "8.12.1",
+      "version": "0.25.1",
       "outputs_to_install": [
-        "bin",
-        "man"
-      ],
-      "outputs": {
-        "bin": "/nix/store/16g6gyg131k8vgna13ilb4v9msh5fmi9-curl-8.12.1-bin",
-        "debug": "/nix/store/v7kw0dv1r94d7xjknibh53wl8yqwinh8-curl-8.12.1-debug",
-        "dev": "/nix/store/0rnns5hhxpvx08p0k3j6bhivj70y6wli-curl-8.12.1-dev",
-        "devdoc": "/nix/store/mxjg45wa0ibsyzlilbiiy3hqbpn5zfxw-curl-8.12.1-devdoc",
-        "man": "/nix/store/y8h3k07g8hpbs8ifx6vxlbh2kfpl4m65-curl-8.12.1-man",
-        "out": "/nix/store/kmq714baxkd5yzpnbp09b7dhnks6m74q-curl-8.12.1"
-      },
-      "system": "x86_64-linux",
-      "group": "toplevel",
-      "priority": 5
-    },
-    {
-      "attr_path": "gnugrep",
-      "broken": false,
-      "derivation": "/nix/store/w3vjc0a4z6azmfq946v3dcfqh6xcmdcw-gnugrep-3.11.drv",
-      "description": "GNU implementation of the Unix grep command",
-      "install_id": "gnugrep",
-      "license": "GPL-3.0-or-later",
-      "locked_url": "https://github.com/flox/nixpkgs?rev=979daf34c8cacebcd917d540070b52a3c2b9b16e",
-      "name": "gnugrep-3.11",
-      "pname": "gnugrep",
-      "rev": "979daf34c8cacebcd917d540070b52a3c2b9b16e",
-      "rev_count": 793735,
-      "rev_date": "2025-05-04T03:14:55Z",
-      "scrape_date": "2025-05-05T04:19:29.225369Z",
-      "stabilities": [
-        "staging",
-        "unstable"
-      ],
-      "unfree": false,
-      "version": "3.11",
-      "outputs_to_install": [
+        "man",
         "out"
       ],
       "outputs": {
-        "info": "/nix/store/hcb9ayahnrkjdp19cybanwq5l0jac0kz-gnugrep-3.11-info",
-        "out": "/nix/store/vyfs7l798mabb0kqw5v7xk87mzjn3d3x-gnugrep-3.11"
-      },
-      "system": "aarch64-darwin",
-      "group": "toplevel",
-      "priority": 5
-    },
-    {
-      "attr_path": "gnugrep",
-      "broken": false,
-      "derivation": "/nix/store/hhj7q7s8g2bfczvlbrfi3abkhbnw0d4l-gnugrep-3.11.drv",
-      "description": "GNU implementation of the Unix grep command",
-      "install_id": "gnugrep",
-      "license": "GPL-3.0-or-later",
-      "locked_url": "https://github.com/flox/nixpkgs?rev=979daf34c8cacebcd917d540070b52a3c2b9b16e",
-      "name": "gnugrep-3.11",
-      "pname": "gnugrep",
-      "rev": "979daf34c8cacebcd917d540070b52a3c2b9b16e",
-      "rev_count": 793735,
-      "rev_date": "2025-05-04T03:14:55Z",
-      "scrape_date": "2025-05-05T04:37:20.908702Z",
-      "stabilities": [
-        "staging",
-        "unstable"
-      ],
-      "unfree": false,
-      "version": "3.11",
-      "outputs_to_install": [
-        "out"
-      ],
-      "outputs": {
-        "info": "/nix/store/drdxz5p29n4m01464lm4krn6hb3vh4pn-gnugrep-3.11-info",
-        "out": "/nix/store/g6xzw8ig9afmwl91ql2q06gignjrv67a-gnugrep-3.11"
-      },
-      "system": "aarch64-linux",
-      "group": "toplevel",
-      "priority": 5
-    },
-    {
-      "attr_path": "gnugrep",
-      "broken": false,
-      "derivation": "/nix/store/7g1nkqc5sprn1k97qmbfi2vka8ir1hp8-gnugrep-3.11.drv",
-      "description": "GNU implementation of the Unix grep command",
-      "install_id": "gnugrep",
-      "license": "GPL-3.0-or-later",
-      "locked_url": "https://github.com/flox/nixpkgs?rev=979daf34c8cacebcd917d540070b52a3c2b9b16e",
-      "name": "gnugrep-3.11",
-      "pname": "gnugrep",
-      "rev": "979daf34c8cacebcd917d540070b52a3c2b9b16e",
-      "rev_count": 793735,
-      "rev_date": "2025-05-04T03:14:55Z",
-      "scrape_date": "2025-05-05T04:54:29.884146Z",
-      "stabilities": [
-        "staging",
-        "unstable"
-      ],
-      "unfree": false,
-      "version": "3.11",
-      "outputs_to_install": [
-        "out"
-      ],
-      "outputs": {
-        "info": "/nix/store/h3dyjzs9y34g3mycmifx9rfi35pv75gv-gnugrep-3.11-info",
-        "out": "/nix/store/w006g66vssk3hhgv7vm23fmnazqyd9rl-gnugrep-3.11"
-      },
-      "system": "x86_64-darwin",
-      "group": "toplevel",
-      "priority": 5
-    },
-    {
-      "attr_path": "gnugrep",
-      "broken": false,
-      "derivation": "/nix/store/ijl51lmjqydk0lbhixs7jwcwl892lw63-gnugrep-3.11.drv",
-      "description": "GNU implementation of the Unix grep command",
-      "install_id": "gnugrep",
-      "license": "GPL-3.0-or-later",
-      "locked_url": "https://github.com/flox/nixpkgs?rev=979daf34c8cacebcd917d540070b52a3c2b9b16e",
-      "name": "gnugrep-3.11",
-      "pname": "gnugrep",
-      "rev": "979daf34c8cacebcd917d540070b52a3c2b9b16e",
-      "rev_count": 793735,
-      "rev_date": "2025-05-04T03:14:55Z",
-      "scrape_date": "2025-05-05T05:15:55.896712Z",
-      "stabilities": [
-        "staging",
-        "unstable"
-      ],
-      "unfree": false,
-      "version": "3.11",
-      "outputs_to_install": [
-        "out"
-      ],
-      "outputs": {
-        "info": "/nix/store/z1vq2h25hmb1mwsvpg9cw8zaf73jpx9s-gnugrep-3.11-info",
-        "out": "/nix/store/8i12gp78n1m9z794miwbsclgyyp5nm5s-gnugrep-3.11"
-      },
-      "system": "x86_64-linux",
-      "group": "toplevel",
-      "priority": 5
-    },
-    {
-      "attr_path": "gum",
-      "broken": false,
-      "derivation": "/nix/store/j68sh9zv7wl2183chdjh9lyfgirrf82m-gum-0.16.0.drv",
-      "description": "Tasty Bubble Gum for your shell",
-      "install_id": "gum",
-      "license": "MIT",
-      "locked_url": "https://github.com/flox/nixpkgs?rev=979daf34c8cacebcd917d540070b52a3c2b9b16e",
-      "name": "gum-0.16.0",
-      "pname": "gum",
-      "rev": "979daf34c8cacebcd917d540070b52a3c2b9b16e",
-      "rev_count": 793735,
-      "rev_date": "2025-05-04T03:14:55Z",
-      "scrape_date": "2025-05-05T04:19:29.366850Z",
-      "stabilities": [
-        "staging",
-        "unstable"
-      ],
-      "unfree": false,
-      "version": "0.16.0",
-      "outputs_to_install": [
-        "out"
-      ],
-      "outputs": {
-        "out": "/nix/store/8pyjhiwin98a1bcg2l51lv98bz0jw7wq-gum-0.16.0"
-      },
-      "system": "aarch64-darwin",
-      "group": "toplevel",
-      "priority": 5
-    },
-    {
-      "attr_path": "gum",
-      "broken": false,
-      "derivation": "/nix/store/3czfawlla2cp2pr0wmb151w3s3nniqrc-gum-0.16.0.drv",
-      "description": "Tasty Bubble Gum for your shell",
-      "install_id": "gum",
-      "license": "MIT",
-      "locked_url": "https://github.com/flox/nixpkgs?rev=979daf34c8cacebcd917d540070b52a3c2b9b16e",
-      "name": "gum-0.16.0",
-      "pname": "gum",
-      "rev": "979daf34c8cacebcd917d540070b52a3c2b9b16e",
-      "rev_count": 793735,
-      "rev_date": "2025-05-04T03:14:55Z",
-      "scrape_date": "2025-05-05T04:37:21.167802Z",
-      "stabilities": [
-        "staging",
-        "unstable"
-      ],
-      "unfree": false,
-      "version": "0.16.0",
-      "outputs_to_install": [
-        "out"
-      ],
-      "outputs": {
-        "out": "/nix/store/p7f7gana5d3f4rvlal3sz2x8l4g8s5g4-gum-0.16.0"
-      },
-      "system": "aarch64-linux",
-      "group": "toplevel",
-      "priority": 5
-    },
-    {
-      "attr_path": "gum",
-      "broken": false,
-      "derivation": "/nix/store/sfm0cm6sj219zppa4xngzggqbkk3plki-gum-0.16.0.drv",
-      "description": "Tasty Bubble Gum for your shell",
-      "install_id": "gum",
-      "license": "MIT",
-      "locked_url": "https://github.com/flox/nixpkgs?rev=979daf34c8cacebcd917d540070b52a3c2b9b16e",
-      "name": "gum-0.16.0",
-      "pname": "gum",
-      "rev": "979daf34c8cacebcd917d540070b52a3c2b9b16e",
-      "rev_count": 793735,
-      "rev_date": "2025-05-04T03:14:55Z",
-      "scrape_date": "2025-05-05T04:54:30.030227Z",
-      "stabilities": [
-        "staging",
-        "unstable"
-      ],
-      "unfree": false,
-      "version": "0.16.0",
-      "outputs_to_install": [
-        "out"
-      ],
-      "outputs": {
-        "out": "/nix/store/3hfzhy6kp19x03l360mf5k2k8imjg14a-gum-0.16.0"
-      },
-      "system": "x86_64-darwin",
-      "group": "toplevel",
-      "priority": 5
-    },
-    {
-      "attr_path": "gum",
-      "broken": false,
-      "derivation": "/nix/store/4il6pjc1qhn6mhgxfbfbkygy29ymk3j1-gum-0.16.0.drv",
-      "description": "Tasty Bubble Gum for your shell",
-      "install_id": "gum",
-      "license": "MIT",
-      "locked_url": "https://github.com/flox/nixpkgs?rev=979daf34c8cacebcd917d540070b52a3c2b9b16e",
-      "name": "gum-0.16.0",
-      "pname": "gum",
-      "rev": "979daf34c8cacebcd917d540070b52a3c2b9b16e",
-      "rev_count": 793735,
-      "rev_date": "2025-05-04T03:14:55Z",
-      "scrape_date": "2025-05-05T05:15:56.179632Z",
-      "stabilities": [
-        "staging",
-        "unstable"
-      ],
-      "unfree": false,
-      "version": "0.16.0",
-      "outputs_to_install": [
-        "out"
-      ],
-      "outputs": {
-        "out": "/nix/store/kr0rzsgcv41c3qz5cnj7lyrpipcpnmfb-gum-0.16.0"
+        "doc": "/nix/store/zg1vabkzsk6as7h9wr7riha8x16isghj-gettext-0.25.1-doc",
+        "info": "/nix/store/qaf0zyc1hp2z9zqg0wcfzl4c9pvhn1r8-gettext-0.25.1-info",
+        "man": "/nix/store/5q5xdws2jy4sv40qaqmyar8lblkmlfxv-gettext-0.25.1-man",
+        "out": "/nix/store/m5zldis61kjiylqpxf7jaxs0jsmfq6j4-gettext-0.25.1"
       },
       "system": "x86_64-linux",
       "group": "toplevel",
@@ -423,19 +168,18 @@
     {
       "attr_path": "nginx",
       "broken": false,
-      "derivation": "/nix/store/kbl2dplrv4j1lmyxw358kzzbjmpa9nkr-nginx-1.28.0.drv",
+      "derivation": "/nix/store/p2nzcn18r4ryksyqlc38x1bipq9srd51-nginx-1.28.0.drv",
       "description": "Reverse proxy and lightweight webserver",
       "install_id": "nginx",
       "license": "[ BSD-2-Clause, BSD-2-Clause, BSD-2-Clause, BSD-2-Clause ]",
-      "locked_url": "https://github.com/flox/nixpkgs?rev=979daf34c8cacebcd917d540070b52a3c2b9b16e",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=6a08e6bb4e46ff7fcbb53d409b253f6bad8a28ce",
       "name": "nginx-1.28.0",
       "pname": "nginx",
-      "rev": "979daf34c8cacebcd917d540070b52a3c2b9b16e",
-      "rev_count": 793735,
-      "rev_date": "2025-05-04T03:14:55Z",
-      "scrape_date": "2025-05-05T04:19:31.505916Z",
+      "rev": "6a08e6bb4e46ff7fcbb53d409b253f6bad8a28ce",
+      "rev_count": 883951,
+      "rev_date": "2025-10-25T06:24:58Z",
+      "scrape_date": "2025-10-27T02:08:36.609387Z",
       "stabilities": [
-        "staging",
         "unstable"
       ],
       "unfree": false,
@@ -444,8 +188,8 @@
         "out"
       ],
       "outputs": {
-        "doc": "/nix/store/nq398zmy82ma476b2439rfz7x9d96pjq-nginx-1.28.0-doc",
-        "out": "/nix/store/99cas72k0qbqhqccvmi77y2gkim1r34x-nginx-1.28.0"
+        "doc": "/nix/store/hr3mqr8j5yb9s8vjwsgmjzywnch5cb7y-nginx-1.28.0-doc",
+        "out": "/nix/store/s3f7m4l4pb6baddzax1bk2grr0kg0m97-nginx-1.28.0"
       },
       "system": "aarch64-darwin",
       "group": "toplevel",
@@ -454,19 +198,18 @@
     {
       "attr_path": "nginx",
       "broken": false,
-      "derivation": "/nix/store/jhqz7imzy1g70ims9lypib5n7999ysq3-nginx-1.28.0.drv",
+      "derivation": "/nix/store/2v2a58v2z7kwqffb7pa79b4l8ypx5vkq-nginx-1.28.0.drv",
       "description": "Reverse proxy and lightweight webserver",
       "install_id": "nginx",
       "license": "[ BSD-2-Clause, BSD-2-Clause, BSD-2-Clause, BSD-2-Clause ]",
-      "locked_url": "https://github.com/flox/nixpkgs?rev=979daf34c8cacebcd917d540070b52a3c2b9b16e",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=6a08e6bb4e46ff7fcbb53d409b253f6bad8a28ce",
       "name": "nginx-1.28.0",
       "pname": "nginx",
-      "rev": "979daf34c8cacebcd917d540070b52a3c2b9b16e",
-      "rev_count": 793735,
-      "rev_date": "2025-05-04T03:14:55Z",
-      "scrape_date": "2025-05-05T04:37:30.198039Z",
+      "rev": "6a08e6bb4e46ff7fcbb53d409b253f6bad8a28ce",
+      "rev_count": 883951,
+      "rev_date": "2025-10-25T06:24:58Z",
+      "scrape_date": "2025-10-27T02:19:00.850915Z",
       "stabilities": [
-        "staging",
         "unstable"
       ],
       "unfree": false,
@@ -475,8 +218,8 @@
         "out"
       ],
       "outputs": {
-        "doc": "/nix/store/ayz8qfilqsnwwx4fsr0s0mmklfnpdbv2-nginx-1.28.0-doc",
-        "out": "/nix/store/yzvyw2r57ajviq0x7pr6q4nqp6vgp8j5-nginx-1.28.0"
+        "doc": "/nix/store/s6k46asj3pvw28h871wkzcqkb9k0a2bb-nginx-1.28.0-doc",
+        "out": "/nix/store/2waby6yghzimz36nny9hxckada05d17f-nginx-1.28.0"
       },
       "system": "aarch64-linux",
       "group": "toplevel",
@@ -485,19 +228,18 @@
     {
       "attr_path": "nginx",
       "broken": false,
-      "derivation": "/nix/store/ngjpqvpaqyqpbxjwalvmwk7zhi23iwrc-nginx-1.28.0.drv",
+      "derivation": "/nix/store/96348lsw6amy218jvlk60svzzwdq1g9x-nginx-1.28.0.drv",
       "description": "Reverse proxy and lightweight webserver",
       "install_id": "nginx",
       "license": "[ BSD-2-Clause, BSD-2-Clause, BSD-2-Clause, BSD-2-Clause ]",
-      "locked_url": "https://github.com/flox/nixpkgs?rev=979daf34c8cacebcd917d540070b52a3c2b9b16e",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=6a08e6bb4e46ff7fcbb53d409b253f6bad8a28ce",
       "name": "nginx-1.28.0",
       "pname": "nginx",
-      "rev": "979daf34c8cacebcd917d540070b52a3c2b9b16e",
-      "rev_count": 793735,
-      "rev_date": "2025-05-04T03:14:55Z",
-      "scrape_date": "2025-05-05T04:54:32.206366Z",
+      "rev": "6a08e6bb4e46ff7fcbb53d409b253f6bad8a28ce",
+      "rev_count": 883951,
+      "rev_date": "2025-10-25T06:24:58Z",
+      "scrape_date": "2025-10-27T02:29:42.394674Z",
       "stabilities": [
-        "staging",
         "unstable"
       ],
       "unfree": false,
@@ -506,8 +248,8 @@
         "out"
       ],
       "outputs": {
-        "doc": "/nix/store/2ayfswdab9fid02xsic6ai4gs48fw6bh-nginx-1.28.0-doc",
-        "out": "/nix/store/s0wpichrxz14zm8qbz4il29jm3v5hsmx-nginx-1.28.0"
+        "doc": "/nix/store/3ys3bh567khkwk05dsgq9s7zr2r7alcs-nginx-1.28.0-doc",
+        "out": "/nix/store/d185zjpszlsqj0jnqyav4z2m56l7hh7b-nginx-1.28.0"
       },
       "system": "x86_64-darwin",
       "group": "toplevel",
@@ -516,19 +258,18 @@
     {
       "attr_path": "nginx",
       "broken": false,
-      "derivation": "/nix/store/cw1hi4bxd832brsnq1qf1iibrmqd3rv7-nginx-1.28.0.drv",
+      "derivation": "/nix/store/j2xx0yjfqq189szvcz097qsqqs1ffhn5-nginx-1.28.0.drv",
       "description": "Reverse proxy and lightweight webserver",
       "install_id": "nginx",
       "license": "[ BSD-2-Clause, BSD-2-Clause, BSD-2-Clause, BSD-2-Clause ]",
-      "locked_url": "https://github.com/flox/nixpkgs?rev=979daf34c8cacebcd917d540070b52a3c2b9b16e",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=6a08e6bb4e46ff7fcbb53d409b253f6bad8a28ce",
       "name": "nginx-1.28.0",
       "pname": "nginx",
-      "rev": "979daf34c8cacebcd917d540070b52a3c2b9b16e",
-      "rev_count": 793735,
-      "rev_date": "2025-05-04T03:14:55Z",
-      "scrape_date": "2025-05-05T05:16:06.920099Z",
+      "rev": "6a08e6bb4e46ff7fcbb53d409b253f6bad8a28ce",
+      "rev_count": 883951,
+      "rev_date": "2025-10-25T06:24:58Z",
+      "scrape_date": "2025-10-27T03:01:33.024525Z",
       "stabilities": [
-        "staging",
         "unstable"
       ],
       "unfree": false,
@@ -537,8 +278,8 @@
         "out"
       ],
       "outputs": {
-        "doc": "/nix/store/w9axjybn8c5nridnc08jdxacmd6arrhb-nginx-1.28.0-doc",
-        "out": "/nix/store/x304zzzsgd03d2p44f290yli5x7jbfy6-nginx-1.28.0"
+        "doc": "/nix/store/ppgwgwhpznz66i2inhcn5k2zdbg37iws-nginx-1.28.0-doc",
+        "out": "/nix/store/qn26z61kdr1vja62x2l5iif6xmp3wag9-nginx-1.28.0"
       },
       "system": "x86_64-linux",
       "group": "toplevel",

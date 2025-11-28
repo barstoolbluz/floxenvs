@@ -22,6 +22,8 @@ zlib.pkg-path = "zlib"
 #black.pkg-path = "black"
 #flake8.pkg-path = "python312Packages.flake8"
 #isort.pkg-path = "python312Packages.isort"
+bat.pkg-path = "bat"
+curl.pkg-path = "curl"
 
 
 ## Environment Variables ---------------------------------------------
@@ -36,6 +38,8 @@ PYTHON = "python3"
 ## -------------------------------------------------------------------
 [hook]
 on-activate = '''
+# Auto-fetch README from FloxHub fi
+
 show_venv_help() {
     # Create the help message with Gum styling
     gum style \
@@ -61,6 +65,9 @@ show_venv_help() {
     $(gum style --foreground 212 'lint')           Run code quality checks (black, flake8, isort)
     $(gum style --foreground 212 'run')            Smart-run Python files (auto-finds main.py/app.py)
 
+📖  Documentation:
+    $(gum style --foreground 212 'helpf')          View full environment documentation
+
 💡  Tip: Most functions include interactive prompts to guide you through options."
 
     echo ""
@@ -73,6 +80,14 @@ main() {
 
 ## runnit
 main
+
+  # Fetch README.md if not present
+  README_FILE="$FLOX_ENV_PROJECT/README.md"
+  if [ ! -f "$README_FILE" ]; then
+    if curl -fsSL https://raw.githubusercontent.com/barstoolbluz/floxenvs/main/python310/README.md -o "$README_FILE" 2>/dev/null; then
+      echo "✓ Downloaded README.md (use 'helpf' to view)"
+    fi
+  fi
 '''
 
 
@@ -88,6 +103,7 @@ main
 # '''
 ## Shell specific profiles go here:
 bash = '''
+
 mkvenv() {
     [ -d ".venv" ] && case $(gum choose --header "A virtual environment (.venv) already exists. Choose an action:" "Quit" "Replace .venv" "Create new virtual environment") in
         "Quit") return 0 ;;
@@ -256,9 +272,54 @@ run() {
     
     echo "No runnable Python file found. Specify a file or create main.py/app.py."
 }
+
+  helpf() {
+    local README_FILE="$FLOX_ENV_PROJECT/README.md"
+    local README_URL="https://raw.githubusercontent.com/barstoolbluz/floxenvs/main/python310/README.md"
+
+    if [ "$1" = "--help" ]; then
+      echo "Usage: helpf [OPTIONS]"
+      echo ""
+      echo "View environment documentation"
+      echo ""
+      echo "Options:"
+      echo "  --force    Force download fresh copy from GitHub"
+      echo "  --help     Show this help message"
+      echo ""
+      echo "The README is cached locally and only downloaded if missing."
+      return 0
+    fi
+
+    if [ "$1" = "--force" ]; then
+      echo "Fetching latest README.md from GitHub..."
+      if curl -fsSL "$README_URL" -o "$README_FILE"; then
+        echo "✓ Downloaded README.md"
+      else
+        echo "✗ Failed to download README.md"
+        return 1
+      fi
+    elif [ ! -f "$README_FILE" ]; then
+      echo "README.md not found, downloading..."
+      if curl -fsSL "$README_URL" -o "$README_FILE"; then
+        echo "✓ Downloaded README.md"
+      else
+        echo "✗ Failed to download README.md"
+        return 1
+      fi
+    fi
+
+    if [ -f "$README_FILE" ]; then
+      bat --style=auto --paging=always "$README_FILE"
+    else
+      echo "✗ README.md not found at $README_FILE"
+      return 1
+    fi
+  }
+  export -f helpf
 '''
 
 zsh = '''
+
 mkvenv() {
     [[ -d ".venv" ]] && case $(gum choose --header "A virtual environment (.venv) already exists. Choose an action:" "Quit" "Replace .venv" "Create new virtual environment") in
         "Quit") return 0 ;;
@@ -427,9 +488,53 @@ run() {
     
     echo "No runnable Python file found. Specify a file or create main.py/app.py."
 }
+
+  helpf() {
+    local README_FILE="$FLOX_ENV_PROJECT/README.md"
+    local README_URL="https://raw.githubusercontent.com/barstoolbluz/floxenvs/main/python310/README.md"
+
+    if [ "$1" = "--help" ]; then
+      echo "Usage: helpf [OPTIONS]"
+      echo ""
+      echo "View environment documentation"
+      echo ""
+      echo "Options:"
+      echo "  --force    Force download fresh copy from GitHub"
+      echo "  --help     Show this help message"
+      echo ""
+      echo "The README is cached locally and only downloaded if missing."
+      return 0
+    fi
+
+    if [ "$1" = "--force" ]; then
+      echo "Fetching latest README.md from GitHub..."
+      if curl -fsSL "$README_URL" -o "$README_FILE"; then
+        echo "✓ Downloaded README.md"
+      else
+        echo "✗ Failed to download README.md"
+        return 1
+      fi
+    elif [ ! -f "$README_FILE" ]; then
+      echo "README.md not found, downloading..."
+      if curl -fsSL "$README_URL" -o "$README_FILE"; then
+        echo "✓ Downloaded README.md"
+      else
+        echo "✗ Failed to download README.md"
+        return 1
+      fi
+    fi
+
+    if [ -f "$README_FILE" ]; then
+      bat --style=auto --paging=always "$README_FILE"
+    else
+      echo "✗ README.md not found at $README_FILE"
+      return 1
+    fi
+  }
 '''
 
 fish = '''
+
 function mkvenv
     if test -d ".venv"
         set choice (gum choose --header "A virtual environment (.venv) already exists. Choose an action:" "Quit" "Replace .venv" "Create new virtual environment")
@@ -573,6 +678,49 @@ function run
         end
     end
     echo "No runnable Python file found. Specify a file or create main.py/app.py."
+end
+
+function helpf
+    set README_FILE "$FLOX_ENV_PROJECT/README.md"
+    set README_URL "https://raw.githubusercontent.com/barstoolbluz/floxenvs/main/python310/README.md"
+
+    if test "$argv[1]" = "--help"
+        echo "Usage: helpf [OPTIONS]"
+        echo ""
+        echo "View environment documentation"
+        echo ""
+        echo "Options:"
+        echo "  --force    Force download fresh copy from GitHub"
+        echo "  --help     Show this help message"
+        echo ""
+        echo "The README is cached locally and only downloaded if missing."
+        return 0
+    end
+
+    if test "$argv[1]" = "--force"
+        echo "Fetching latest README.md from GitHub..."
+        if curl -fsSL "$README_URL" -o "$README_FILE"
+            echo "✓ Downloaded README.md"
+        else
+            echo "✗ Failed to download README.md"
+            return 1
+        end
+    else if not test -f "$README_FILE"
+        echo "README.md not found, downloading..."
+        if curl -fsSL "$README_URL" -o "$README_FILE"
+            echo "✓ Downloaded README.md"
+        else
+            echo "✗ Failed to download README.md"
+            return 1
+        end
+    end
+
+    if test -f "$README_FILE"
+        bat --style=auto --paging=always "$README_FILE"
+    else
+        echo "✗ README.md not found at $README_FILE"
+        return 1
+    end
 end
 '''
 ## Services ----------------------------------------------------------

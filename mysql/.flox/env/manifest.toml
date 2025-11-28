@@ -1,429 +1,473 @@
 version = 1
 
 [install]
-gum.pkg-path = "gum"
+bat.pkg-path = "bat"
+curl.pkg-path = "curl"
 mysql.pkg-path = "mysql80"
 
 [vars]
-# define env vars available at runtime
-MYSQL_BIND_ADDRESS = "127.0.0.1"
-MYSQL_PORT = "13306"
-MYSQL_ROOT_PASSWORD = "mysqlpass"
-MYSQL_DATABASE = "mysql"
+# Base configuration paths (invariant)
+MYSQL_CONFIG_DIR = "$FLOX_ENV_CACHE/mysql-config"
+MYSQL_LOG_DIR = "$FLOX_ENV_CACHE/mysql-logs"
+MYSQL_DATA_DIR = "$FLOX_ENV_CACHE/mysql-data"
+MYSQL_RUN_DIR = "$FLOX_ENV_CACHE/mysql-run"
 
 [hook]
 on-activate = '''
-# define env vars available during activation
-export MYSQLDIR="${FLOX_ENV_CACHE}/mysql"
-export CONFIG_FILE="${FLOX_ENV_CACHE}/mysql.config"
-export DEFAULT_MYSQL_BIND_ADDRESS="127.0.0.1"
-export DEFAULT_MYSQL_PORT="13306"
-export DEFAULT_MYSQL_ROOT_PASSWORD="mysqlpass"
-export DEFAULT_MYSQL_DATABASE="mysql"
-export DEFAULT_MYSQLDIR="${FLOX_ENV_CACHE}/mysql"
+# Auto-fetch README from FloxHub # Create required directories
+mkdir -p "$FLOX_ENV_CACHE/mysql-config"
+mkdir -p "$FLOX_ENV_CACHE/mysql-logs"
+mkdir -p "$FLOX_ENV_CACHE/mysql-data"
+mkdir -p "$FLOX_ENV_CACHE/mysql-run"
 
-# enable/disable debugging; set to "true" to enable verbose output
-export MYSQL_DEBUG="false"
+# === INIT-TIME VARIABLES ===
+# These affect mysqld --initialize and cannot change without deleting datadir
+export MYSQL_ROOT_PASSWORD="${MYSQL_ROOT_PASSWORD:-mysqlpass}"
+export MYSQL_USER="${MYSQL_USER:-}"
+export MYSQL_PASSWORD="${MYSQL_PASSWORD:-}"
+export MYSQL_CHARSET="${MYSQL_CHARSET:-utf8mb4}"
+export MYSQL_COLLATION="${MYSQL_COLLATION:-utf8mb4_unicode_ci}"
+export MYSQL_AUTH_PLUGIN="${MYSQL_AUTH_PLUGIN:-mysql_native_password}"
+export MYSQL_INIT_ARGS="${MYSQL_INIT_ARGS:-}"
 
-# this function checks if first run
-check_first_run() {
-    if [[ ! -f "$CONFIG_FILE" ]]; then
-        return 0 # True, this is the first run
-    else
-        return 1 # False, not the first run
-    fi
-}
+# === RUNTIME VARIABLES - Connection ===
+# These can be changed by restarting the service
+export MYSQL_BIND_ADDRESS="${MYSQL_BIND_ADDRESS:-127.0.0.1}"
+export MYSQL_PORT="${MYSQL_PORT:-13306}"
+export MYSQL_DATABASE="${MYSQL_DATABASE:-mysql}"
 
-# this function loads mysql.config if exists
-load_config() {
-    if [[ -f "$CONFIG_FILE" ]]; then
-        source "$CONFIG_FILE"
-    else
-        # set defaults if no mysql.config
-        export MYSQL_BIND_ADDRESS="$DEFAULT_MYSQL_BIND_ADDRESS"
-        export MYSQL_PORT="$DEFAULT_MYSQL_PORT"
-        export MYSQL_ROOT_PASSWORD="$DEFAULT_MYSQL_ROOT_PASSWORD"
-        export MYSQL_DATABASE="$DEFAULT_MYSQL_DATABASE"
-        export MYSQLDIR="$DEFAULT_MYSQLDIR"
-    fi
-}
+# === RUNTIME VARIABLES - Performance Basic ===
+export MYSQL_MAX_CONNECTIONS="${MYSQL_MAX_CONNECTIONS:-151}"
+export MYSQL_INNODB_BUFFER_POOL_SIZE="${MYSQL_INNODB_BUFFER_POOL_SIZE:-128M}"
+export MYSQL_TMP_TABLE_SIZE="${MYSQL_TMP_TABLE_SIZE:-16M}"
+export MYSQL_MAX_HEAP_TABLE_SIZE="${MYSQL_MAX_HEAP_TABLE_SIZE:-16M}"
+export MYSQL_THREAD_CACHE_SIZE="${MYSQL_THREAD_CACHE_SIZE:-9}"
 
-# this function saves mysql.config to file
-save_config() {
-    mkdir -p "$(dirname "$CONFIG_FILE")"
-    cat > "$CONFIG_FILE" << EOF
-# mysql configuration - Generated on $(date)
-export MYSQL_BIND_ADDRESS="$MYSQL_BIND_ADDRESS"
-export MYSQL_PORT="$MYSQL_PORT"
-export MYSQL_ROOT_PASSWORD="$MYSQL_ROOT_PASSWORD"
-export MYSQL_DATABASE="$MYSQL_DATABASE"
-export MYSQLDIR="$MYSQLDIR"
-export MYSQL_DEBUG="$MYSQL_DEBUG"
+# === RUNTIME VARIABLES - Query Memory ===
+export MYSQL_SORT_BUFFER_SIZE="${MYSQL_SORT_BUFFER_SIZE:-256K}"
+export MYSQL_JOIN_BUFFER_SIZE="${MYSQL_JOIN_BUFFER_SIZE:-256K}"
 
-## BEGIN ACTIVATION HOOK ##
-$(declare -f debug_log)
-$(declare -f check_first_run)
-$(declare -f load_config)
-$(declare -f save_config)
-$(declare -f prompt_for_config)
-$(declare -f update_dependent_vars)
-$(declare -f initialize_mysql)
-$(declare -f start_mysql)
-$(declare -f set_root_password)
-$(declare -f create_database)
-$(declare -f stop_mysql)
-$(declare -f reconfigure_mysql)
-$(declare -f first_run_setup)
-$(declare -f display_mysql_config_ui)
-$(declare -f mysql_setup)
-$(declare -f main)
-## END ACTIVATION HOOK ##
-EOF
-    chmod 644 "$CONFIG_FILE"
-}
+# === RUNTIME VARIABLES - InnoDB ===
+export MYSQL_INNODB_LOG_FILE_SIZE="${MYSQL_INNODB_LOG_FILE_SIZE:-48M}"
+export MYSQL_INNODB_FLUSH_LOG_AT_TRX_COMMIT="${MYSQL_INNODB_FLUSH_LOG_AT_TRX_COMMIT:-1}"
+export MYSQL_INNODB_FLUSH_METHOD="${MYSQL_INNODB_FLUSH_METHOD:-}"
+export MYSQL_INNODB_FILE_PER_TABLE="${MYSQL_INNODB_FILE_PER_TABLE:-ON}"
 
-# this function prompts user 'do you want to custom configure mysql vars?'
-prompt_for_config() {
-    echo ""
-    if gum confirm "$(gum style --foreground 240 'Would you like to customize your MySQL configuration?')" --default=false; then
-        MYSQL_BIND_ADDRESS=$(gum input --placeholder "$DEFAULT_MYSQL_BIND_ADDRESS" --value "$DEFAULT_MYSQL_BIND_ADDRESS" --prompt "Bind Address: ")
-        MYSQL_PORT=$(gum input --placeholder "$DEFAULT_MYSQL_PORT" --value "$DEFAULT_MYSQL_PORT" --prompt "Port: ")
-        MYSQL_ROOT_PASSWORD=$(gum input --placeholder "$DEFAULT_MYSQL_ROOT_PASSWORD" --value "$DEFAULT_MYSQL_ROOT_PASSWORD" --prompt "Root Password: " --password)
-        MYSQL_DATABASE=$(gum input --placeholder "$DEFAULT_MYSQL_DATABASE" --value "$DEFAULT_MYSQL_DATABASE" --prompt "Database: ")
+# === RUNTIME VARIABLES - Logging ===
+export MYSQL_SLOW_QUERY_LOG="${MYSQL_SLOW_QUERY_LOG:-OFF}"
+export MYSQL_LONG_QUERY_TIME="${MYSQL_LONG_QUERY_TIME:-10}"
+export MYSQL_LOG_BIN="${MYSQL_LOG_BIN:-}"
 
-        if gum confirm "Use default directory for MySQL data?" --default=true; then
-            MYSQLDIR="$DEFAULT_MYSQLDIR"
-        else
-            MYSQLDIR=$(gum input --placeholder "$DEFAULT_MYSQLDIR" --value "$DEFAULT_MYSQLDIR" --prompt "MySQL Data Directory: ")
-        fi
-    else
-        # defaults for gum prompts
-        MYSQL_BIND_ADDRESS="$DEFAULT_MYSQL_BIND_ADDRESS"
-        MYSQL_PORT="$DEFAULT_MYSQL_PORT"
-        MYSQL_ROOT_PASSWORD="$DEFAULT_MYSQL_ROOT_PASSWORD"
-        MYSQL_DATABASE="$DEFAULT_MYSQL_DATABASE"
-        MYSQLDIR="$DEFAULT_MYSQLDIR"
-    fi
+# === RUNTIME VARIABLES - Binary Log Management ===
+export MYSQL_BINLOG_FORMAT="${MYSQL_BINLOG_FORMAT:-MIXED}"
+export MYSQL_MAX_BINLOG_SIZE="${MYSQL_MAX_BINLOG_SIZE:-1G}"
+export MYSQL_BINLOG_EXPIRE_LOGS_SECONDS="${MYSQL_BINLOG_EXPIRE_LOGS_SECONDS:-2592000}"
+export MYSQL_SYNC_BINLOG="${MYSQL_SYNC_BINLOG:-1}"
 
-    # export user-defined variables
-    export MYSQL_BIND_ADDRESS MYSQL_PORT MYSQL_ROOT_PASSWORD MYSQL_DATABASE MYSQLDIR
+# === FLEXIBILITY ===
+export MYSQL_EXTRA_OPTS="${MYSQL_EXTRA_OPTS:-}"
 
-    # save to mysql.config
-    save_config
-}
+# === DERIVED VARIABLES ===
+export MYSQL_DIR="${MYSQL_DIR:-$FLOX_ENV_CACHE/mysql-data}"
+export MYSQL_DATADIR="$MYSQL_DIR/data"
+export MYSQL_SOCKET_DIR="$MYSQL_DIR/run"
+export MYSQL_SOCKET="$MYSQL_SOCKET_DIR/mysql.sock"
+export MYSQL_LOG_ERROR="$MYSQL_SOCKET_DIR/error.log"
+export DATABASE_URL="mysql://root:$MYSQL_ROOT_PASSWORD@$MYSQL_BIND_ADDRESS:$MYSQL_PORT/$MYSQL_DATABASE"
 
-# this function handles debug logging
-debug_log() {
-    if [[ "$MYSQL_DEBUG" == "true" ]]; then
-        echo "$@"
-    fi
-}
-
-# this function updates dependent vars after loading mysql.config
-update_dependent_vars() {
-    # is $MYSQLDIR an absolute path?
-    if [[ ! "$MYSQLDIR" = /* ]]; then
-        MYSQLDIR="$(pwd)/$MYSQLDIR"
-        export MYSQLDIR
-    fi
-
-    # set dependent vars with absolute paths
-    export MYSQL_DATADIR="$MYSQLDIR/data"
-    export MYSQL_SOCKET="$MYSQLDIR/run/mysql.sock"
-    export MYSQL_SOCKET_DIR="$MYSQLDIR/run"
-    export MYSQL_LOG_ERROR="$MYSQLDIR/run/error.log"
-    export DATABASE_URL="mysql://root:$MYSQL_ROOT_PASSWORD@$MYSQL_BIND_ADDRESS:$MYSQL_PORT/$MYSQL_DATABASE"
-
-    # debug output
-    debug_log "Configuration paths:"
-    debug_log "  MYSQLDIR: $MYSQLDIR"
-    debug_log "  MYSQL_DATADIR: $MYSQL_DATADIR"
-    debug_log "  MYSQL_SOCKET: $MYSQL_SOCKET"
-}
-
-# this function initializes mysql
+# === INITIALIZATION FUNCTION ===
 initialize_mysql() {
-    mkdir -p "$(dirname "$MYSQL_DATADIR")" && chmod 700 "$(dirname "$MYSQL_DATADIR")"
-    rm -rf "$MYSQL_DATADIR" && mkdir -p "$MYSQL_DATADIR" && chmod 700 "$MYSQL_DATADIR"
-    mkdir -p "$MYSQL_SOCKET_DIR" && chmod 700 "$MYSQL_SOCKET_DIR"
-
-    if [[ "$MYSQL_DEBUG" == "true" ]]; then
-        mysqld --initialize-insecure --datadir="$MYSQL_DATADIR" --user="$USER"
-    else
-        mysqld --initialize-insecure --datadir="$MYSQL_DATADIR" --user="$USER" > /dev/null 2>&1
+    # Check if already initialized
+    if [ -d "$MYSQL_DATADIR/mysql" ]; then
+        return 0
     fi
 
-    return $?
-}
+    # Create directories with proper permissions
+    mkdir -p "$MYSQL_DATADIR" "$MYSQL_SOCKET_DIR"
+    chmod 700 "$MYSQL_DATADIR" "$MYSQL_SOCKET_DIR"
 
-# this function starts mysql
-start_mysql() {
-    # is $MYSQL_SOCKET_DIR an absolute path?
-    if [[ ! "$MYSQL_SOCKET_DIR" = /* ]]; then
-        debug_log "Warning: MYSQL_SOCKET_DIR is not an absolute path. Using absolute path instead."
-        MYSQL_SOCKET_DIR="$(pwd)/$MYSQL_SOCKET_DIR"
-        export MYSQL_SOCKET_DIR
-        export MYSQL_SOCKET="$MYSQL_SOCKET_DIR/mysql.sock"
-    fi
+    # Initialize MySQL with direct execution
+    echo "Initializing MySQL database..."
+    mysqld --initialize-insecure \
+        --datadir="$MYSQL_DATADIR" \
+        --user="$USER" \
+        $MYSQL_INIT_ARGS \
+        > /dev/null 2>&1
 
-    # create socket dir
-    debug_log "Creating MySQL socket directory at: $MYSQL_SOCKET_DIR"
-    mkdir -p "$MYSQL_SOCKET_DIR"
-    chmod 700 "$MYSQL_SOCKET_DIR"
-
-    # was / was not socket dir created successfully?
-    if [[ ! -d "$MYSQL_SOCKET_DIR" ]]; then
-        echo "Error: Failed to create MySQL socket directory at $MYSQL_SOCKET_DIR"
+    if [ $? -ne 0 ]; then
+        echo "❌ Failed to initialize MySQL"
         return 1
     fi
 
-    debug_log "Starting MySQL with socket: $MYSQL_SOCKET"
-    debug_log "Data directory: $MYSQL_DATADIR"
+    # Start MySQL temporarily to set password and create database
+    echo "Configuring MySQL..."
+    mysqld --datadir="$MYSQL_DATADIR" \
+        --socket="$MYSQL_SOCKET" \
+        --bind-address=127.0.0.1 \
+        --port="$MYSQL_PORT" \
+        --default-authentication-plugin="$MYSQL_AUTH_PLUGIN" \
+        --mysqlx=0 \
+        --skip-networking \
+        --log-error="$MYSQL_LOG_ERROR" \
+        > /dev/null 2>&1 &
+    MYSQL_PID=$!
 
-    # start mysql with or without debugging
-    if [[ "$MYSQL_DEBUG" == "true" ]]; then
-        mysqld --datadir="$MYSQL_DATADIR" \
-               --socket="$MYSQL_SOCKET" \
-               --bind-address="$MYSQL_BIND_ADDRESS" \
-               --port="$MYSQL_PORT" \
-               --default-authentication-plugin=mysql_native_password \
-               --mysqlx=0 \
-               --log-error="$MYSQL_LOG_ERROR" &
-        MYSQL_PID=$!
-    else
-        mysqld --datadir="$MYSQL_DATADIR" \
-               --socket="$MYSQL_SOCKET" \
-               --bind-address="$MYSQL_BIND_ADDRESS" \
-               --port="$MYSQL_PORT" \
-               --default-authentication-plugin=mysql_native_password \
-               --mysqlx=0 \
-               --log-error="$MYSQL_LOG_ERROR" > /dev/null 2>&1 &
-        MYSQL_PID=$!
-    fi
+    sleep 3  # Wait for startup
 
-    export MYSQL_PID
-    sleep 3  # Wait for MySQL to start
-
-    return 0
-}
-
-# this function sets root password
-set_root_password() {
-    debug_log "Setting root password..."
+    # Set root password
     mysqladmin -u root --socket="$MYSQL_SOCKET" password "$MYSQL_ROOT_PASSWORD" > /dev/null 2>&1
+
+    # Create additional user if specified
+    if [ -n "$MYSQL_USER" ] && [ -n "$MYSQL_PASSWORD" ]; then
+        mysql -u root --password="$MYSQL_ROOT_PASSWORD" --socket="$MYSQL_SOCKET" <<EOF > /dev/null 2>&1
+CREATE USER IF NOT EXISTS '$MYSQL_USER'@'localhost' IDENTIFIED BY '$MYSQL_PASSWORD';
+CREATE USER IF NOT EXISTS '$MYSQL_USER'@'%' IDENTIFIED BY '$MYSQL_PASSWORD';
+GRANT ALL PRIVILEGES ON *.* TO '$MYSQL_USER'@'localhost';
+GRANT ALL PRIVILEGES ON *.* TO '$MYSQL_USER'@'%';
+FLUSH PRIVILEGES;
+EOF
+    fi
+
+    # Create database if not "mysql"
+    if [ "$MYSQL_DATABASE" != "mysql" ]; then
+        mysql -u root --password="$MYSQL_ROOT_PASSWORD" --socket="$MYSQL_SOCKET" \
+            -e "CREATE DATABASE IF NOT EXISTS \`$MYSQL_DATABASE\`;" > /dev/null 2>&1
+    fi
+
+    # Stop MySQL
+    mysqladmin -u root --password="$MYSQL_ROOT_PASSWORD" --socket="$MYSQL_SOCKET" shutdown > /dev/null 2>&1
+    wait $MYSQL_PID 2>/dev/null
+
+    echo "✅ MySQL initialized successfully"
     return 0
 }
 
-# this function creates database if not exist
-create_database() {
-    if [[ "$MYSQL_DATABASE" != "mysql" ]]; then
-        debug_log "Creating database $MYSQL_DATABASE..."
-        mysql -u root --password="$MYSQL_ROOT_PASSWORD" --socket="$MYSQL_SOCKET" -e "CREATE DATABASE IF NOT EXISTS \`$MYSQL_DATABASE\`;" > /dev/null 2>&1
+# Run initialization
+initialize_mysql
+
+# Display info with safety warnings
+echo ""
+echo "✅ MySQL environment ready (headless mode)"
+echo ""
+
+# Safety warnings
+if [ "$MYSQL_BIND_ADDRESS" = "0.0.0.0" ]; then
+    echo "⚠️  WARNING: Listening on all interfaces - NETWORK EXPOSED"
+fi
+if [ "$MYSQL_INNODB_FLUSH_LOG_AT_TRX_COMMIT" = "0" ] || [ "$MYSQL_INNODB_FLUSH_LOG_AT_TRX_COMMIT" = "2" ]; then
+    echo "⚠️  WARNING: innodb_flush_log_at_trx_commit=$MYSQL_INNODB_FLUSH_LOG_AT_TRX_COMMIT - DATA LOSS RISK"
+fi
+[ "$MYSQL_BIND_ADDRESS" = "0.0.0.0" ] || [ "$MYSQL_INNODB_FLUSH_LOG_AT_TRX_COMMIT" = "0" ] || [ "$MYSQL_INNODB_FLUSH_LOG_AT_TRX_COMMIT" = "2" ] && echo ""
+
+echo "Connection:"
+echo "  Bind address: ${MYSQL_BIND_ADDRESS}:${MYSQL_PORT}"
+echo "  Socket: ${MYSQL_SOCKET}"
+echo "  Database: ${MYSQL_DATABASE}"
+echo "  Root password: ${MYSQL_ROOT_PASSWORD}"
+echo ""
+echo "Performance:"
+echo "  Max connections: ${MYSQL_MAX_CONNECTIONS}"
+echo "  InnoDB buffer pool: ${MYSQL_INNODB_BUFFER_POOL_SIZE}"
+echo "  InnoDB flush at commit: ${MYSQL_INNODB_FLUSH_LOG_AT_TRX_COMMIT}"
+echo ""
+echo "Commands:"
+echo "  flox activate -s        Start MySQL"
+echo "  mysql -u root -p        Connect to database"
+echo "  mysql-info              Show configuration"
+echo "  helpf                   View documentation"
+echo ""
+
+  # Fetch README.md if not present
+  README_FILE="$FLOX_ENV_PROJECT/README.md"
+  if [ ! -f "$README_FILE" ]; then
+    if curl -fsSL https://raw.githubusercontent.com/barstoolbluz/floxenvs/main/mysql-headless/README.md -o "$README_FILE" 2>/dev/null; then
+      echo "✓ Downloaded README.md (use 'helpf' to view)"
     fi
-    return 0
-}
-
-# this function stops mysql
-stop_mysql() {
-    if [[ -n "$MYSQL_PID" ]]; then
-        debug_log "Stopping MySQL (PID: $MYSQL_PID)..."
-        mysqladmin -u root --password="$MYSQL_ROOT_PASSWORD" --socket="$MYSQL_SOCKET" shutdown > /dev/null 2>&1
-        wait $MYSQL_PID 2>/dev/null
-    fi
-    return 0
-}
-
-# we call this function from profile if we want/need to reconfigure mysql
-reconfigure_mysql() {
-    rm -f "$CONFIG_FILE"
-    first_run_setup
-    mysql_setup
-}
-
-# it's tautological!
-first_run_setup() {
-    if check_first_run; then
-        display_mysql_config_ui
-    else
-        load_config
-    fi
-
-    update_dependent_vars
-}
-
-# our gum-ified tui (thank you ye good folk at charmbracelet!)
-display_mysql_config_ui() {
-    clear
-
-    # customize header + colors
-    gum style \
-        --border rounded \
-        --border-foreground 240 \
-        --padding "1 2" \
-        --margin "1 0" \
-        --width 70 \
-        "$(gum style --foreground 214 --bold 'MySQL 8.0 Configuration')
-
-$(gum style --foreground 240 'First-time setup for your local development database')"
-
-    prompt_for_config
-}
-
-# mysql setup master function
-mysql_setup() {
-    debug_log "Setting up MySQL..."
-
-    # this is where we init mysql
-    debug_log "Initializing MySQL..."
-    initialize_mysql || { echo "Failed to initialize MySQL"; return 1; }
-
-    if [[ -d "$MYSQL_DATADIR/mysql" ]]; then
-        debug_log "MySQL data directory initialized successfully"
-
-        # this is where we start it up
-        debug_log "Starting MySQL..."
-        start_mysql || { echo "Failed to start MySQL"; return 1; }
-
-        # set root password
-        debug_log "Setting root password..."
-        set_root_password || { echo "Failed to set root password"; return 1; }
-
-        # this is where we create database
-        debug_log "Creating database..."
-        create_database || { echo "Failed to create database"; return 1; }
-
-        # this is where we shut it down
-        debug_log "Stopping MySQL..."
-        stop_mysql || { echo "Failed to stop MySQL"; return 1; }
-
-        debug_log "MySQL setup completed successfully"
-    else
-        echo "Error: MySQL data directory was not initialized correctly"
-        return 1
-    fi
-
-    return 0
-}
-
-# gummified help message
-show_mysql_help() {
-    # Determine display host
-    local display_host
-    if [[ "$MYSQL_BIND_ADDRESS" == "0.0.0.0" ]]; then
-        display_host="localhost"
-    else
-        display_host="$MYSQL_BIND_ADDRESS"
-    fi
-
-    # Create the help message with Gum styling
-    gum style \
-        --border rounded \
-        --border-foreground 240 \
-        --padding "1 2" \
-        --margin "1 0" \
-        --width 96 \
-        "$(gum style --foreground 214 --bold 'This is a  F l o x  MySQL 8.0 Environment')
-
-👉  Service Management:
-    $(gum style --foreground 220 'flox activate -s')    Start MySQL at activation
-    $(gum style --foreground 220 'mysqlstart')          Start MySQL post activation
-    $(gum style --foreground 220 'mysqlstop')           Stop MySQL post activation
-    $(gum style --foreground 220 'mysqlrestart')        Restart MySQL post activation
-
-👉  Configuration:
-    $(gum style --foreground 220 'mysqlconfigure')      Reconfigure MySQL post activation
-
-👉  Connection:
-    $(gum style --foreground 220 'mysql -u root -p')    Connect to MySQL (password: $MYSQL_ROOT_PASSWORD)
-
-👉  Connection Details:
-    Host:     $(gum style --foreground 220 "${display_host}")
-    Port:     $(gum style --foreground 220 "${MYSQL_PORT}")
-    Database: $(gum style --foreground 220 "${MYSQL_DATABASE}")
-    Socket:   $(gum style --foreground 220 "${MYSQL_SOCKET}")"
-
-    echo ""
-}
-
-# it's tautological!
-main() {
-    first_run_setup
-
-    mysql_setup
-
-    show_mysql_help
-}
-
-# runnit all
-main
-'''
-
-[profile]
-common = '''
-'''
-
-bash = '''
-source "${FLOX_ENV_CACHE}/mysql.config" 2>/dev/null || true
-mysqlstart() { flox services start mysql; }
-mysqlstop() { flox services stop mysql; }
-mysqlrestart() { flox services restart mysql; }
-mysqlconfigure() {
-  flox services stop mysql
-  source "${FLOX_ENV_CACHE}/mysql.config" 2>/dev/null || true
-  reconfigure_mysql
-  flox services start mysql
-}
-export -f mysqlstart mysqlstop mysqlrestart mysqlconfigure
-unset -f debug_log initialize_mysql start_mysql stop_mysql
-unset -f set_root_password create_database check_first_run
-unset -f load_config prompt_for_config display_mysql_config_ui main
-'''
-
-zsh = '''
-source "${FLOX_ENV_CACHE}/mysql.config" 2>/dev/null || true
-mysqlstart() { flox services start mysql; }
-mysqlstop() { flox services stop mysql; }
-mysqlrestart() { flox services restart mysql; }
-mysqlconfigure() {
-  flox services stop mysql
-  source "${FLOX_ENV_CACHE}/mysql.config" 2>/dev/null || true
-  reconfigure_mysql
-  flox services start mysql
-}
-unset -f "debug_log" "initialize_mysql" "start_mysql" "stop_mysql"
-unset -f "set_root_password" "create_database" "check_first_run"
-unset -f "load_config" "prompt_for_config" "display_mysql_config_ui" "main"
-'''
-
-fish = '''
-source "$FLOX_ENV_CACHE/mysql.config" 2>/dev/null || true
-
-function mysqlstart
-    flox services start mysql
-end
-
-function mysqlstop
-    flox services stop mysql
-end
-
-function mysqlrestart
-    flox services restart mysql
-end
-
-function mysqlconfigure
-    flox services stop mysql
-    source "$FLOX_ENV_CACHE/mysql.config" 2>/dev/null || true
-    reconfigure_mysql
-    flox services start mysql
-end
-
-functions -e debug_log initialize_mysql start_mysql stop_mysql
-functions -e set_root_password create_database check_first_run
-functions -e load_config prompt_for_config display_mysql_config_ui main
+  fi
 '''
 
 [services]
-mysql.command = "mysqld --datadir=$MYSQL_DATADIR --socket=$MYSQL_SOCKET --bind-address=$MYSQL_BIND_ADDRESS --port=$MYSQL_PORT --default-authentication-plugin=mysql_native_password --mysqlx=0 --log-error=$MYSQL_LOG_ERROR"
+mysql.command = '''
+# Ensure socket directory exists
+mkdir -p "$MYSQL_SOCKET_DIR"
+chmod 700 "$MYSQL_SOCKET_DIR"
+
+# Start MySQL with all runtime configuration
+exec mysqld --datadir="$MYSQL_DATADIR" \
+  --socket="$MYSQL_SOCKET" \
+  --bind-address="$MYSQL_BIND_ADDRESS" \
+  --port="$MYSQL_PORT" \
+  --default-authentication-plugin="$MYSQL_AUTH_PLUGIN" \
+  --character-set-server="$MYSQL_CHARSET" \
+  --collation-server="$MYSQL_COLLATION" \
+  --mysqlx=0 \
+  --log-error="$MYSQL_LOG_ERROR" \
+  --max-connections="$MYSQL_MAX_CONNECTIONS" \
+  --innodb-buffer-pool-size="$MYSQL_INNODB_BUFFER_POOL_SIZE" \
+  --tmp-table-size="$MYSQL_TMP_TABLE_SIZE" \
+  --max-heap-table-size="$MYSQL_MAX_HEAP_TABLE_SIZE" \
+  --thread-cache-size="$MYSQL_THREAD_CACHE_SIZE" \
+  --sort-buffer-size="$MYSQL_SORT_BUFFER_SIZE" \
+  --join-buffer-size="$MYSQL_JOIN_BUFFER_SIZE" \
+  --innodb-log-file-size="$MYSQL_INNODB_LOG_FILE_SIZE" \
+  --innodb-flush-log-at-trx-commit="$MYSQL_INNODB_FLUSH_LOG_AT_TRX_COMMIT" \
+  $([ -n "$MYSQL_INNODB_FLUSH_METHOD" ] && echo "--innodb-flush-method=$MYSQL_INNODB_FLUSH_METHOD") \
+  --innodb-file-per-table="$MYSQL_INNODB_FILE_PER_TABLE" \
+  --slow-query-log="$MYSQL_SLOW_QUERY_LOG" \
+  --long-query-time="$MYSQL_LONG_QUERY_TIME" \
+  $([ -n "$MYSQL_LOG_BIN" ] && echo "--log-bin=$MYSQL_LOG_BIN") \
+  --binlog-format="$MYSQL_BINLOG_FORMAT" \
+  --max-binlog-size="$MYSQL_MAX_BINLOG_SIZE" \
+  --binlog-expire-logs-seconds="$MYSQL_BINLOG_EXPIRE_LOGS_SECONDS" \
+  --sync-binlog="$MYSQL_SYNC_BINLOG" \
+  $MYSQL_EXTRA_OPTS
+'''
+
+[profile]
+bash = '''
+
+mysql-info() {
+    echo "MySQL 8.0 (Headless Mode) - Configuration"
+    echo ""
+    echo "Connection:"
+    echo "  Bind address: ${MYSQL_BIND_ADDRESS}:${MYSQL_PORT}"
+    echo "  Socket: ${MYSQL_SOCKET}"
+    echo "  Database: ${MYSQL_DATABASE}"
+    echo "  Root user: root"
+    echo "  Auth plugin: ${MYSQL_AUTH_PLUGIN}"
+    echo ""
+    echo "Performance:"
+    echo "  Max connections: ${MYSQL_MAX_CONNECTIONS}"
+    echo "  InnoDB buffer pool: ${MYSQL_INNODB_BUFFER_POOL_SIZE}"
+    echo "  Tmp table size: ${MYSQL_TMP_TABLE_SIZE}"
+    echo "  Max heap table size: ${MYSQL_MAX_HEAP_TABLE_SIZE}"
+    echo "  Thread cache size: ${MYSQL_THREAD_CACHE_SIZE}"
+    echo ""
+    echo "InnoDB:"
+    echo "  Log file size: ${MYSQL_INNODB_LOG_FILE_SIZE}"
+    echo "  Flush at commit: ${MYSQL_INNODB_FLUSH_LOG_AT_TRX_COMMIT}"
+    echo "  File per table: ${MYSQL_INNODB_FILE_PER_TABLE}"
+    echo ""
+    echo "Logging:"
+    echo "  Slow query log: ${MYSQL_SLOW_QUERY_LOG}"
+    echo "  Long query time: ${MYSQL_LONG_QUERY_TIME}s"
+    echo ""
+    echo "Data Directory: ${MYSQL_DATADIR}"
+    echo ""
+    echo "Commands:"
+    echo "  mysql -u root -p            Connect (password: $MYSQL_ROOT_PASSWORD)"
+    echo "  flox services status        Check service status"
+    echo "  flox services logs mysql    View service logs"
+    echo "  flox services restart mysql Restart with new settings"
+}
+export -f mysql-info
+
+  helpf() {
+    local README_FILE="$FLOX_ENV_PROJECT/README.md"
+    local README_URL="https://raw.githubusercontent.com/barstoolbluz/floxenvs/main/mysql-headless/README.md"
+
+    if [ "$1" = "--help" ]; then
+      echo "Usage: helpf [OPTIONS]"
+      echo ""
+      echo "View environment documentation"
+      echo ""
+      echo "Options:"
+      echo "  --force    Force download fresh copy from GitHub"
+      echo "  --help     Show this help message"
+      echo ""
+      echo "The README is cached locally and only downloaded if missing."
+      return 0
+    fi
+
+    if [ "$1" = "--force" ]; then
+      echo "Fetching latest README.md from GitHub..."
+      if curl -fsSL "$README_URL" -o "$README_FILE"; then
+        echo "✓ Downloaded README.md"
+      else
+        echo "✗ Failed to download README.md"
+        return 1
+      fi
+    elif [ ! -f "$README_FILE" ]; then
+      echo "README.md not found, downloading..."
+      if curl -fsSL "$README_URL" -o "$README_FILE"; then
+        echo "✓ Downloaded README.md"
+      else
+        echo "✗ Failed to download README.md"
+        return 1
+      fi
+    fi
+
+    if [ -f "$README_FILE" ]; then
+      bat --style=auto --paging=always "$README_FILE"
+    else
+      echo "✗ README.md not found at $README_FILE"
+      return 1
+    fi
+  }
+  export -f helpf
+'''
+
+zsh = '''
+
+mysql-info() {
+    echo "MySQL 8.0 (Headless Mode) - Configuration"
+    echo ""
+    echo "Connection:"
+    echo "  Bind address: ${MYSQL_BIND_ADDRESS}:${MYSQL_PORT}"
+    echo "  Socket: ${MYSQL_SOCKET}"
+    echo "  Database: ${MYSQL_DATABASE}"
+    echo "  Root user: root"
+    echo "  Auth plugin: ${MYSQL_AUTH_PLUGIN}"
+    echo ""
+    echo "Performance:"
+    echo "  Max connections: ${MYSQL_MAX_CONNECTIONS}"
+    echo "  InnoDB buffer pool: ${MYSQL_INNODB_BUFFER_POOL_SIZE}"
+    echo "  Tmp table size: ${MYSQL_TMP_TABLE_SIZE}"
+    echo "  Max heap table size: ${MYSQL_MAX_HEAP_TABLE_SIZE}"
+    echo "  Thread cache size: ${MYSQL_THREAD_CACHE_SIZE}"
+    echo ""
+    echo "InnoDB:"
+    echo "  Log file size: ${MYSQL_INNODB_LOG_FILE_SIZE}"
+    echo "  Flush at commit: ${MYSQL_INNODB_FLUSH_LOG_AT_TRX_COMMIT}"
+    echo "  File per table: ${MYSQL_INNODB_FILE_PER_TABLE}"
+    echo ""
+    echo "Logging:"
+    echo "  Slow query log: ${MYSQL_SLOW_QUERY_LOG}"
+    echo "  Long query time: ${MYSQL_LONG_QUERY_TIME}s"
+    echo ""
+    echo "Data Directory: ${MYSQL_DATADIR}"
+    echo ""
+    echo "Commands:"
+    echo "  mysql -u root -p            Connect (password: $MYSQL_ROOT_PASSWORD)"
+    echo "  flox services status        Check service status"
+    echo "  flox services logs mysql    View service logs"
+    echo "  flox services restart mysql Restart with new settings"
+}
+
+  helpf() {
+    local README_FILE="$FLOX_ENV_PROJECT/README.md"
+    local README_URL="https://raw.githubusercontent.com/barstoolbluz/floxenvs/main/mysql-headless/README.md"
+
+    if [ "$1" = "--help" ]; then
+      echo "Usage: helpf [OPTIONS]"
+      echo ""
+      echo "View environment documentation"
+      echo ""
+      echo "Options:"
+      echo "  --force    Force download fresh copy from GitHub"
+      echo "  --help     Show this help message"
+      echo ""
+      echo "The README is cached locally and only downloaded if missing."
+      return 0
+    fi
+
+    if [ "$1" = "--force" ]; then
+      echo "Fetching latest README.md from GitHub..."
+      if curl -fsSL "$README_URL" -o "$README_FILE"; then
+        echo "✓ Downloaded README.md"
+      else
+        echo "✗ Failed to download README.md"
+        return 1
+      fi
+    elif [ ! -f "$README_FILE" ]; then
+      echo "README.md not found, downloading..."
+      if curl -fsSL "$README_URL" -o "$README_FILE"; then
+        echo "✓ Downloaded README.md"
+      else
+        echo "✗ Failed to download README.md"
+        return 1
+      fi
+    fi
+
+    if [ -f "$README_FILE" ]; then
+      bat --style=auto --paging=always "$README_FILE"
+    else
+      echo "✗ README.md not found at $README_FILE"
+      return 1
+    fi
+  }
+'''
+
+fish = '''
+
+function mysql-info
+    echo "MySQL 8.0 (Headless Mode) - Configuration"
+    echo ""
+    echo "Connection:"
+    echo "  Bind address: $MYSQL_BIND_ADDRESS:$MYSQL_PORT"
+    echo "  Socket: $MYSQL_SOCKET"
+    echo "  Database: $MYSQL_DATABASE"
+    echo "  Root user: root"
+    echo "  Auth plugin: $MYSQL_AUTH_PLUGIN"
+    echo ""
+    echo "Performance:"
+    echo "  Max connections: $MYSQL_MAX_CONNECTIONS"
+    echo "  InnoDB buffer pool: $MYSQL_INNODB_BUFFER_POOL_SIZE"
+    echo "  Tmp table size: $MYSQL_TMP_TABLE_SIZE"
+    echo "  Max heap table size: $MYSQL_MAX_HEAP_TABLE_SIZE"
+    echo "  Thread cache size: $MYSQL_THREAD_CACHE_SIZE"
+    echo ""
+    echo "InnoDB:"
+    echo "  Log file size: $MYSQL_INNODB_LOG_FILE_SIZE"
+    echo "  Flush at commit: $MYSQL_INNODB_FLUSH_LOG_AT_TRX_COMMIT"
+    echo "  File per table: $MYSQL_INNODB_FILE_PER_TABLE"
+    echo ""
+    echo "Logging:"
+    echo "  Slow query log: $MYSQL_SLOW_QUERY_LOG"
+    echo "  Long query time: $MYSQL_LONG_QUERY_TIME"s
+    echo ""
+    echo "Data Directory: $MYSQL_DATADIR"
+    echo ""
+    echo "Commands:"
+    echo "  mysql -u root -p            Connect (password: $MYSQL_ROOT_PASSWORD)"
+    echo "  flox services status        Check service status"
+    echo "  flox services logs mysql    View service logs"
+    echo "  flox services restart mysql Restart with new settings"
+end
+
+function helpf
+    set README_FILE "$FLOX_ENV_PROJECT/README.md"
+    set README_URL "https://raw.githubusercontent.com/barstoolbluz/floxenvs/main/mysql-headless/README.md"
+
+    if test "$argv[1]" = "--help"
+        echo "Usage: helpf [OPTIONS]"
+        echo ""
+        echo "View environment documentation"
+        echo ""
+        echo "Options:"
+        echo "  --force    Force download fresh copy from GitHub"
+        echo "  --help     Show this help message"
+        echo ""
+        echo "The README is cached locally and only downloaded if missing."
+        return 0
+    end
+
+    if test "$argv[1]" = "--force"
+        echo "Fetching latest README.md from GitHub..."
+        if curl -fsSL "$README_URL" -o "$README_FILE"
+            echo "✓ Downloaded README.md"
+        else
+            echo "✗ Failed to download README.md"
+            return 1
+        end
+    else if not test -f "$README_FILE"
+        echo "README.md not found, downloading..."
+        if curl -fsSL "$README_URL" -o "$README_FILE"
+            echo "✓ Downloaded README.md"
+        else
+            echo "✗ Failed to download README.md"
+            return 1
+        end
+    end
+
+    if test -f "$README_FILE"
+        bat --style=auto --paging=always "$README_FILE"
+    else
+        echo "✗ README.md not found at $README_FILE"
+        return 1
+    end
+end
+'''
 
 [options]
 systems = [

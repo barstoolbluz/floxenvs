@@ -1,30 +1,25 @@
-# 📓 A Flox Environment for JupyterLab
+# 🚀 Flox Environment for JupyterLab
 
-The `jupyterlab` environment is designed for local, interactive use—especially when users need help configuring things step by step. It provides a complete data science and notebook environment with an interactive setup wizard.
-
-This environment simplifies JupyterLab deployment by providing an interactive configuration wizard, automatic virtual environment management, and service management through Flox.
+This `jupyterlab-headless` environment is designed for CI, headless setups, or scripted workflows—i.e., any non-interactive context.
 
 ## ✨ Features
 
-- Interactive bootstrapping wizard for configuring JupyterLab settings:
-  - Network host and port configuration
-  - Authentication token setup
-  - Notebook directory selection
-  - Automatic package installation preferences
+- Dynamic environment variable configuration for JupyterLab settings
+- Runtime override capabilities for all configuration options
 - Automatic Python virtual environment management
-- Persistent configuration across sessions
-- Automatic requirements.txt installation
-- Shell integration with helper commands
-- Flox service management for starting / stopping / restarting JupyterLab
+- Support for automatic requirements.txt installation
 - Cross-platform compatibility (Linux x86_64 and ARM64, macOS x86_64 and ARM64)
-- Elegant, friendly terminal UI built with Gum
+- Flox service management for JupyterLab
+- Default configurations that "just work" with minimal setup
+- Automatic token generation for secure access
 
 ## 🧰 Included Tools
 
-The environment packs these essential data science tools:
+The environment includes these essential data science tools:
 
 - `jupyterlab` - Modern web-based interactive development environment
 - `jupyterlab-lsp` - Language Server Protocol integration
+- `jupyterlab-server` - JupyterLab server components
 - `jupyterlab-widgets` - Interactive widgets for notebooks
 - `jupyterlab-pygments` - Syntax highlighting
 - `jupyterlab-execute-time` - Cell execution time display
@@ -35,7 +30,8 @@ The environment packs these essential data science tools:
 - `sympy` - Symbolic mathematics
 - `pydot` - Graph visualization
 - `plotly` - Interactive plotting
-- `gum` - Terminal UI toolkit powering the setup wizard
+- `figlet` - ASCII art for welcome messages
+- `gum` - Terminal UI toolkit
 
 ## 🏁 Getting Started
 
@@ -46,58 +42,161 @@ The environment packs these essential data science tools:
 
 ### 💻 Installation & Activation
 
-Jump in with:
-
-1. Clone this repo
+Get started with:
 
 ```sh
-git clone https://github.com/yourusername/jupyterlab && cd jupyterlab
-```
+# Clone the repo
+git clone https://github.com/barstoolbluz/floxenvs && cd floxenvs/jupyterlab-headless
 
-2. Run:
-
-```sh
+# Activate the environment with defaults
 flox activate -s
 ```
 
-This command:
-- Pulls in all dependencies
-- Fires up the JupyterLab configuration wizard
-- Creates and activates a Python virtual environment
-- Installs packages from requirements.txt (if present and enabled)
-- Drops you into the Flox env with JupyterLab ready to go
+This will:
+- Create a Python virtual environment
+- Start JupyterLab on localhost:8888
+- Generate a secure random token
+- Display connection information
 
-### 🧙 Configuration Wizard
+## 📝 Usage Scenarios
 
-First-time activation triggers a wizard that:
+### Basic Activation with Defaults
 
-1. Asks if you want to customize settings (or use defaults)
-2. Lets you configure:
-   - **Network**: Host address (0.0.0.0 for network access, 127.0.0.1 for local only)
-   - **Port**: Default 8888, customize if needed
-   - **Authentication**: Access token for security
-   - **Notebook Directory**: Where to store your notebooks
-   - **Package Management**: Auto-install from requirements.txt on activation
-3. Saves your configuration for future activations
-4. Makes helper functions available for managing your environment
-
-### 🔄 Reconfiguration
-
-Need to change your settings? Just run:
+Start JupyterLab with sensible defaults:
 
 ```bash
-jupyter-reconfigure
+flox activate -s
 ```
 
-Then deactivate and reactivate to run through the wizard again.
+Defaults:
+- Host: `localhost`
+- Port: `8888`
+- Token: Auto-generated secure random string
+- Notebook Directory: Current directory
+- Requirements Installation: Disabled
 
-## 📝 Usage
+### Custom Network Configuration
 
-After setup, you can manage your JupyterLab environment with these commands:
+Configure JupyterLab for network access:
+
+```bash
+# Listen on all interfaces for remote access
+JUPYTER_HOST="0.0.0.0" \
+JUPYTER_PORT="8888" \
+JUPYTER_SERVER_TOKEN="my-secret-token" \
+flox activate -s
+```
+
+One-liner:
+```bash
+JUPYTER_HOST=0.0.0.0 JUPYTER_PORT=8888 JUPYTER_SERVER_TOKEN=my-secret-token flox activate -s
+```
+
+### Custom Notebook Directory
+
+Specify where notebooks should be stored:
+
+```bash
+# Use a specific directory for notebooks
+NOTEBOOK_DIR="/path/to/my/notebooks" \
+flox activate -s
+```
+
+One-liner:
+```bash
+NOTEBOOK_DIR=/path/to/my/notebooks flox activate -s
+```
+
+### Automatic Requirements Installation
+
+Enable automatic package installation from requirements.txt:
+
+```bash
+# Auto-install packages on activation
+INSTALL_REQUIREMENTS="true" \
+flox activate -s
+```
+
+One-liner:
+```bash
+INSTALL_REQUIREMENTS=true flox activate -s
+```
+
+### Custom Virtual Environment Location
+
+Specify a custom location for the Python virtual environment:
+
+```bash
+# Use a specific directory for venv
+VENV_DIR="/path/to/custom/venv" \
+flox activate -s
+```
+
+One-liner:
+```bash
+VENV_DIR=/path/to/custom/venv flox activate -s
+```
+
+### Complete Custom Configuration
+
+Combine multiple settings for full control:
+
+```bash
+# Full custom configuration
+JUPYTER_HOST="0.0.0.0" \
+JUPYTER_PORT="9999" \
+JUPYTER_SERVER_TOKEN="super-secure-token-123" \
+NOTEBOOK_DIR="/home/user/my-notebooks" \
+VENV_DIR="/home/user/jupyter-venv" \
+INSTALL_REQUIREMENTS="true" \
+flox activate -s
+```
+
+One-liner:
+```bash
+JUPYTER_HOST=0.0.0.0 JUPYTER_PORT=9999 JUPYTER_SERVER_TOKEN=super-secure-token-123 NOTEBOOK_DIR=/home/user/my-notebooks VENV_DIR=/home/user/jupyter-venv INSTALL_REQUIREMENTS=true flox activate -s
+```
+
+### Using Flox Environment Composition
+
+Flox v1.4+ supports environment composition, allowing you to create a customized environment that builds upon `jupyterlab-headless`. The env vars you define in `[vars]` override those hard-coded into `jupyterlab-headless`.
+
+```toml
+# manifest.toml for your composed environment
+version = 1
+
+[vars]
+JUPYTER_HOST = "0.0.0.0"
+JUPYTER_PORT = "8888"
+JUPYTER_SERVER_TOKEN = "my-secure-token"
+NOTEBOOK_DIR = "/home/user/notebooks"
+INSTALL_REQUIREMENTS = "true"
+
+[include]
+environments = [
+    { remote = "barstoolbluz/jupyterlab-headless" }
+]
+
+[options]
+systems = [
+  "aarch64-darwin",
+  "aarch64-linux",
+  "x86_64-darwin",
+  "x86_64-linux",
+]
+```
+
+This approach allows you to:
+- Customize the JupyterLab configuration
+- Reuse the `jupyterlab-headless` environment without modifying it
+- Create different compositions for different deployment scenarios
+- Version control your configuration without the base environment
+
+### Managing JupyterLab Service
 
 ```bash
 # Start JupyterLab service
-flox activate -s
+flox services start
 
 # Check service status
 flox services status
@@ -105,125 +204,156 @@ flox services status
 # View service logs
 flox services logs jupyter-lab
 
-# Stop service (exit the environment)
-exit
+# Follow logs in real-time
+flox services logs --follow jupyter-lab
 
-# Show detailed help information
-jupyter-help
-
-# Reconfigure JupyterLab settings
-jupyter-reconfigure
+# Stop service
+flox services stop
 ```
 
-### 🌐 Accessing JupyterLab
+## 🔍 Configuration Variables
 
-After starting the service, access JupyterLab in your browser:
+All configuration is done via environment variables:
 
-1. Navigate to the URL shown on activation (default: `http://localhost:8888`)
-2. Enter the access token when prompted (shown on activation)
-3. Start creating notebooks!
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `JUPYTER_HOST` | `localhost` | Host to bind JupyterLab server |
+| `JUPYTER_PORT` | `8888` | Port for JupyterLab server |
+| `JUPYTER_SERVER_TOKEN` | Auto-generated | Authentication token (use openssl to generate) |
+| `NOTEBOOK_DIR` | Current directory | Directory for storing notebooks |
+| `VENV_DIR` | `$FLOX_ENV_CACHE/venv` | Python virtual environment location |
+| `INSTALL_REQUIREMENTS` | `false` | Auto-install from requirements.txt |
 
-### 📦 Python Package Management
+### Generating Secure Tokens
 
-The environment includes a dedicated virtual environment for your Python packages:
+For production use, generate a secure token:
 
 ```bash
-# Install packages
-pip install scikit-learn tensorflow
+# Generate a random token
+openssl rand -hex 32
 
-# Create a requirements.txt for reproducibility
-pip freeze > requirements.txt
-
-# Packages in requirements.txt are automatically installed on activation
-# (if INSTALL_REQUIREMENTS=true, which is the default)
+# Use it with JupyterLab
+JUPYTER_SERVER_TOKEN="$(openssl rand -hex 32)" flox activate -s
 ```
-
-### 🗂️ Notebook Organization
-
-By default, notebooks are stored in the environment directory. You can:
-
-- Change the notebook directory via the configuration wizard
-- Organize notebooks in subdirectories
-- Use version control (git) to track notebook changes
 
 ## 🔍 How It Works
 
-### 🌐 Network Configuration
-
-The environment supports two network modes:
-
-1. **Network Access (0.0.0.0)**:
-   - JupyterLab accessible from other devices on your network
-   - Useful for remote work or accessing from mobile devices
-   - Access via `http://<your-ip>:8888`
-
-2. **Local Only (127.0.0.1)**:
-   - JupyterLab only accessible from this computer
-   - More secure for sensitive work
-   - Access via `http://localhost:8888`
-
-### 🔐 Authentication
-
-The environment uses token-based authentication:
-
-- Token is set during initial configuration
-- Token is required for browser access
-- Token is displayed on every activation
-- Change token anytime via `jupyter-reconfigure`
-
 ### 🐍 Virtual Environment Management
 
-The environment automatically:
+1. **Automatic Creation**:
+   - Creates venv at `$VENV_DIR` (default: `$FLOX_ENV_CACHE/venv`)
+   - Activates on every environment activation
+   - Isolated from system Python packages
 
-1. Creates a Python virtual environment in `$FLOX_ENV_CACHE/venv`
-2. Activates the venv on every environment activation
-3. Installs packages from `requirements.txt` (if enabled)
-4. Makes all installed packages available in JupyterLab
+2. **Requirements Installation**:
+   - When `INSTALL_REQUIREMENTS=true` and `requirements.txt` exists
+   - Automatically runs `pip install -r requirements.txt`
+   - Only installs when file is present
 
-### 💾 Configuration Persistence
+3. **Service Integration**:
+   - JupyterLab service activates the venv
+   - All installed packages available in notebooks
+   - Consistent environment between shell and notebook kernel
 
-Your settings are saved in `$FLOX_ENV_CACHE/jupyter_config.sh`:
+### 🌐 Network Modes
 
-- Configuration persists across sessions
-- Settings survive environment updates
-- Helper functions saved for shell integration
-- Easy to back up or share (except tokens!)
+1. **Localhost Only** (`JUPYTER_HOST=localhost` or `127.0.0.1`):
+   - Only accessible from the local machine
+   - More secure for sensitive work
+   - Access via: `http://localhost:8888`
+
+2. **Network Access** (`JUPYTER_HOST=0.0.0.0`):
+   - Accessible from any network interface
+   - Useful for remote work or team collaboration
+   - Access via: `http://<your-ip>:8888`
+   - **Security**: Always use a strong token for network access
+
+### 🔐 Security
+
+- Token-based authentication required for all access
+- Auto-generated secure tokens if not provided
+- Tokens displayed on activation for easy access
+- Change token anytime via environment variable
+
+### 📂 Directory Structure
+
+The environment organizes data in consistent locations:
+
+- `$VENV_DIR` - Python virtual environment (default: `$FLOX_ENV_CACHE/venv`)
+- `$NOTEBOOK_DIR` - Jupyter notebooks (default: current directory)
+- `$FLOX_ENV_CACHE` - Flox environment cache
 
 ## 🔧 Troubleshooting
 
-If JupyterLab has issues:
+Common issues and solutions:
 
-1. **Service won't start**:
-   - Check logs: `flox services logs jupyter-lab`
-   - Verify port isn't in use: `netstat -an | grep 8888`
-   - Check virtual environment: `echo $VENV_DIR`
+1. **Service Won't Start**:
+   - Check if port is already in use: `netstat -an | grep 8888`
+   - View logs: `flox services logs jupyter-lab`
+   - Verify environment variables: `env | grep JUPYTER`
 
-2. **Can't access in browser**:
+2. **Can't Access JupyterLab**:
    - Verify service is running: `flox services status`
-   - Check the URL and token shown on activation
-   - For network access, ensure firewall allows connections
-   - Try using the IP address instead of localhost
+   - Check firewall settings for network access
+   - Ensure correct URL and token are used
+   - Try `http://<ip>:8888` instead of hostname
 
-3. **Package installation fails**:
-   - Activate environment and run: `pip install <package>` manually
-   - Check requirements.txt for syntax errors
-   - Ensure internet connection for package downloads
+3. **Package Installation Fails**:
+   - Check requirements.txt syntax
+   - Manually install: activate environment, then `pip install <package>`
+   - Verify internet connectivity
+   - Check pip logs in venv directory
 
-4. **Need to start fresh**:
-   - Run `jupyter-reconfigure` to reset configuration
-   - Or manually delete: `rm -rf $FLOX_ENV_CACHE/jupyter_config.sh $FLOX_ENV_CACHE/venv`
+4. **Virtual Environment Issues**:
+   - Delete and recreate: `rm -rf $VENV_DIR` then reactivate
+   - Check `VENV_DIR` path is writable
+   - Ensure Python 3.12 is available
+
+5. **Token Issues**:
+   - Check token in activation output
+   - Regenerate: `JUPYTER_SERVER_TOKEN="$(openssl rand -hex 32)" flox activate -s`
+   - Verify token matches what's shown on activation
+
+## 🌐 Production Deployment Tips
+
+For production or team use:
+
+1. **Security**:
+   - Always use strong, unique tokens
+   - Consider HTTPS reverse proxy (nginx, Caddy)
+   - Restrict network access via firewall rules
+   - Regularly update packages: `pip install --upgrade jupyterlab`
+
+2. **Performance**:
+   - Increase memory for large datasets
+   - Use SSD for notebook storage
+   - Monitor resource usage
+   - Consider dedicated venv per project
+
+3. **Collaboration**:
+   - Use version control (git) for notebooks
+   - Share requirements.txt for reproducibility
+   - Document custom configurations
+   - Consider JupyterHub for multi-user scenarios
+
+4. **Backup**:
+   - Regularly backup `$NOTEBOOK_DIR`
+   - Export notebooks to different formats (HTML, PDF)
+   - Version control your requirements.txt
+   - Document environment configurations
 
 ## 💻 System Compatibility
 
-This works on:
+This environment works on:
 - Linux (ARM64, x86_64)
 - macOS (ARM64, x86_64)
 
 ## 📚 Additional Resources
 
 - [JupyterLab Documentation](https://jupyterlab.readthedocs.io/)
-- [Jupyter Notebook Tutorial](https://jupyter-notebook.readthedocs.io/en/stable/)
-- [Python Data Science Handbook](https://jakevdp.github.io/PythonDataScienceHandbook/)
+- [Jupyter Server Documentation](https://jupyter-server.readthedocs.io/)
+- [Python Virtual Environments](https://docs.python.org/3/library/venv.html)
+- [Data Science with Python](https://jakevdp.github.io/PythonDataScienceHandbook/)
 - [Pandas Documentation](https://pandas.pydata.org/docs/)
 - [Matplotlib Gallery](https://matplotlib.org/stable/gallery/index.html)
 
@@ -232,7 +362,7 @@ This works on:
 [Flox](https://flox.dev/docs) builds on [Nix](https://github.com/NixOS/nix) to provide:
 
 - **Declarative environments** - Software, variables, services defined in TOML
-- **Path- and input-addressed storage** - Multiple package versions coexist without conflicts
+- **Input- and path-addressed storage** - Multiple package versions coexist without conflicts
 - **Reproducibility** - Same environment across dev, CI, and production
 - **Deterministic builds** - Same inputs always produce identical outputs
 - **Huge package collection** - Access to 150,000+ packages from Nixpkgs

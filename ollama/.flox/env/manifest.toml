@@ -1,0 +1,486 @@
+version = 1
+
+[install]
+ollama-cuda.flake = "github:barstoolbluz/ollama-cuda"
+ollama-cuda.systems = ["x86_64-linux", "aarch64-linux"]
+ollama-cuda.priority = 7
+ollama.pkg-path = "ollama"
+ollama.systems = ["x86_64-darwin", "aarch64-darwin"]
+bat.pkg-path = "bat"
+curl.pkg-path = "curl"
+
+[vars]
+# Base configuration paths (invariant)
+OLLAMA_MODELS_DIR = "$FLOX_ENV_CACHE/models"
+
+[hook]
+on-activate = '''
+# Create required directories
+mkdir -p "$FLOX_ENV_CACHE/models"
+
+# Fetch README # === SERVER CONFIGURATION ===
+export OLLAMA_HOST="${OLLAMA_HOST:-127.0.0.1:11434}"
+export OLLAMA_MODELS="${OLLAMA_MODELS:-$FLOX_ENV_CACHE/models}"
+export OLLAMA_ORIGINS="${OLLAMA_ORIGINS:-}"  # Use Ollama defaults
+
+# === PERFORMANCE & MEMORY ===
+export OLLAMA_CONTEXT_LENGTH="${OLLAMA_CONTEXT_LENGTH:-}"  # Default: 4096
+export OLLAMA_KEEP_ALIVE="${OLLAMA_KEEP_ALIVE:-}"  # Default: 5m
+export OLLAMA_MAX_LOADED_MODELS="${OLLAMA_MAX_LOADED_MODELS:-}"  # Default: auto (3 * GPU count)
+export OLLAMA_NUM_PARALLEL="${OLLAMA_NUM_PARALLEL:-}"  # Default: 1
+export OLLAMA_MAX_QUEUE="${OLLAMA_MAX_QUEUE:-}"  # Default: 512
+export OLLAMA_LOAD_TIMEOUT="${OLLAMA_LOAD_TIMEOUT:-}"  # Default: 5m
+
+# === GPU CONFIGURATION ===
+export OLLAMA_FLASH_ATTENTION="${OLLAMA_FLASH_ATTENTION:-}"  # Experimental
+export OLLAMA_KV_CACHE_TYPE="${OLLAMA_KV_CACHE_TYPE:-}"  # Default: f16
+export OLLAMA_GPU_OVERHEAD="${OLLAMA_GPU_OVERHEAD:-}"  # Default: 0
+export CUDA_VISIBLE_DEVICES="${CUDA_VISIBLE_DEVICES:-}"  # Limit visible GPUs
+
+# === ADVANCED / EXPERIMENTAL ===
+export OLLAMA_DEBUG="${OLLAMA_DEBUG:-0}"  # 0 = disabled, 1 = enabled
+export OLLAMA_SCHED_SPREAD="${OLLAMA_SCHED_SPREAD:-}"  # Schedule across all GPUs
+export OLLAMA_NOPRUNE="${OLLAMA_NOPRUNE:-}"  # Don't prune model blobs
+export OLLAMA_LLM_LIBRARY="${OLLAMA_LLM_LIBRARY:-}"  # Bypass autodetection
+export OLLAMA_AUTH="${OLLAMA_AUTH:-}"  # Experimental authentication
+
+# === DISPLAY CONFIGURATION ===
+echo ""
+echo "✅ Ollama environment ready (headless mode)"
+echo ""
+echo "Server:"
+echo "  Host: ${OLLAMA_HOST}"
+echo "  Models: ${OLLAMA_MODELS}"
+echo ""
+echo "Commands:"
+echo "  flox activate -s        Start Ollama service"
+echo "  ollama pull <model>     Download a model"
+echo "  ollama list             List local models"
+echo "  ollama-info             Show configuration"
+echo "  ollama-health           Test API endpoint"
+echo "  helpf                   View full README documentation"
+echo ""
+echo "Examples:"
+echo "  ollama pull llama2"
+echo "  OLLAMA_HOST=0.0.0.0:11434 flox activate -s"
+echo ""
+
+  # Fetch README.md if not present
+  README_FILE="$FLOX_ENV_PROJECT/README.md"
+  if [ ! -f "$README_FILE" ]; then
+    if curl -fsSL https://raw.githubusercontent.com/barstoolbluz/floxenvs/main/ollama-headless/README.md -o "$README_FILE" 2>/dev/null; then
+      echo "✓ Downloaded README.md (use 'helpf' to view)"
+    fi
+  fi
+'''
+
+[services]
+ollama.command = "ollama serve"
+
+[profile]
+bash = '''
+
+ollama-info() {
+    echo "Ollama Headless Environment Configuration"
+    echo ""
+    echo "Server:"
+    echo "  Host: ${OLLAMA_HOST}"
+    echo "  Models: ${OLLAMA_MODELS}"
+    echo ""
+    echo "Performance:"
+    if [ -n "$OLLAMA_CONTEXT_LENGTH" ]; then
+        echo "  Context Length: ${OLLAMA_CONTEXT_LENGTH}"
+    else
+        echo "  Context Length: 4096 (default)"
+    fi
+    if [ -n "$OLLAMA_KEEP_ALIVE" ]; then
+        echo "  Keep Alive: ${OLLAMA_KEEP_ALIVE}"
+    else
+        echo "  Keep Alive: 5m (default)"
+    fi
+    if [ -n "$OLLAMA_NUM_PARALLEL" ]; then
+        echo "  Num Parallel: ${OLLAMA_NUM_PARALLEL}"
+    else
+        echo "  Num Parallel: 1 (default)"
+    fi
+    if [ -n "$OLLAMA_MAX_QUEUE" ]; then
+        echo "  Max Queue: ${OLLAMA_MAX_QUEUE}"
+    else
+        echo "  Max Queue: 512 (default)"
+    fi
+    if [ -n "$OLLAMA_MAX_LOADED_MODELS" ]; then
+        echo "  Max Loaded Models: ${OLLAMA_MAX_LOADED_MODELS}"
+    else
+        echo "  Max Loaded Models: auto (default)"
+    fi
+    echo ""
+    echo "GPU:"
+    if [ -n "$OLLAMA_FLASH_ATTENTION" ]; then
+        echo "  Flash Attention: enabled"
+    else
+        echo "  Flash Attention: disabled (default)"
+    fi
+    if [ -n "$OLLAMA_KV_CACHE_TYPE" ]; then
+        echo "  KV Cache Type: ${OLLAMA_KV_CACHE_TYPE}"
+    else
+        echo "  KV Cache Type: f16 (default)"
+    fi
+    if [ -n "$CUDA_VISIBLE_DEVICES" ]; then
+        echo "  CUDA Devices: ${CUDA_VISIBLE_DEVICES}"
+    else
+        echo "  CUDA Devices: all (default)"
+    fi
+    echo ""
+    if [ "$OLLAMA_DEBUG" = "1" ]; then
+        echo "Debug: enabled"
+    else
+        echo "Debug: disabled"
+    fi
+    echo ""
+    echo "Commands:"
+    echo "  ollama pull <model>       Download a model"
+    echo "  ollama list               List local models"
+    echo "  ollama ps                 List running models"
+    echo "  flox services status      Check service status"
+    echo "  flox services logs ollama View Ollama logs"
+    echo "  ollama-health             Test API endpoint"
+    echo ""
+    echo "Runtime Override Examples:"
+    echo "  OLLAMA_HOST=0.0.0.0:11434 flox activate -s"
+    echo "  OLLAMA_NUM_PARALLEL=4 flox activate -s"
+    echo "  OLLAMA_DEBUG=1 flox activate -s"
+}
+export -f ollama-info
+
+ollama-health() {
+    local HOST="${OLLAMA_HOST:-127.0.0.1:11434}"
+    # Remove http:// or https:// prefix if present
+    HOST="${HOST#http://}"
+    HOST="${HOST#https://}"
+
+    if curl -s "http://${HOST}/" | grep -q "Ollama is running"; then
+        echo "✅ Ollama API is healthy at http://${HOST}"
+        return 0
+    else
+        echo "❌ Ollama API is not responding at http://${HOST}"
+        echo "   Try: flox services status"
+        return 1
+    fi
+}
+export -f ollama-health
+
+  helpf() {
+    local README_FILE="$FLOX_ENV_PROJECT/README.md"
+    local README_URL="https://raw.githubusercontent.com/barstoolbluz/floxenvs/main/ollama-headless/README.md"
+
+    if [ "$1" = "--help" ]; then
+      echo "Usage: helpf [OPTIONS]"
+      echo ""
+      echo "View environment documentation"
+      echo ""
+      echo "Options:"
+      echo "  --force    Force download fresh copy from GitHub"
+      echo "  --help     Show this help message"
+      echo ""
+      echo "The README is cached locally and only downloaded if missing."
+      return 0
+    fi
+
+    if [ "$1" = "--force" ]; then
+      echo "Fetching latest README.md from GitHub..."
+      if curl -fsSL "$README_URL" -o "$README_FILE"; then
+        echo "✓ Downloaded README.md"
+      else
+        echo "✗ Failed to download README.md"
+        return 1
+      fi
+    elif [ ! -f "$README_FILE" ]; then
+      echo "README.md not found, downloading..."
+      if curl -fsSL "$README_URL" -o "$README_FILE"; then
+        echo "✓ Downloaded README.md"
+      else
+        echo "✗ Failed to download README.md"
+        return 1
+      fi
+    fi
+
+    if [ -f "$README_FILE" ]; then
+      bat --style=auto --paging=always "$README_FILE"
+    else
+      echo "✗ README.md not found at $README_FILE"
+      return 1
+    fi
+  }
+  export -f helpf
+'''
+
+zsh = '''
+
+ollama-info() {
+    echo "Ollama Headless Environment Configuration"
+    echo ""
+    echo "Server:"
+    echo "  Host: ${OLLAMA_HOST}"
+    echo "  Models: ${OLLAMA_MODELS}"
+    echo ""
+    echo "Performance:"
+    if [ -n "$OLLAMA_CONTEXT_LENGTH" ]; then
+        echo "  Context Length: ${OLLAMA_CONTEXT_LENGTH}"
+    else
+        echo "  Context Length: 4096 (default)"
+    fi
+    if [ -n "$OLLAMA_KEEP_ALIVE" ]; then
+        echo "  Keep Alive: ${OLLAMA_KEEP_ALIVE}"
+    else
+        echo "  Keep Alive: 5m (default)"
+    fi
+    if [ -n "$OLLAMA_NUM_PARALLEL" ]; then
+        echo "  Num Parallel: ${OLLAMA_NUM_PARALLEL}"
+    else
+        echo "  Num Parallel: 1 (default)"
+    fi
+    if [ -n "$OLLAMA_MAX_QUEUE" ]; then
+        echo "  Max Queue: ${OLLAMA_MAX_QUEUE}"
+    else
+        echo "  Max Queue: 512 (default)"
+    fi
+    if [ -n "$OLLAMA_MAX_LOADED_MODELS" ]; then
+        echo "  Max Loaded Models: ${OLLAMA_MAX_LOADED_MODELS}"
+    else
+        echo "  Max Loaded Models: auto (default)"
+    fi
+    echo ""
+    echo "GPU:"
+    if [ -n "$OLLAMA_FLASH_ATTENTION" ]; then
+        echo "  Flash Attention: enabled"
+    else
+        echo "  Flash Attention: disabled (default)"
+    fi
+    if [ -n "$OLLAMA_KV_CACHE_TYPE" ]; then
+        echo "  KV Cache Type: ${OLLAMA_KV_CACHE_TYPE}"
+    else
+        echo "  KV Cache Type: f16 (default)"
+    fi
+    if [ -n "$CUDA_VISIBLE_DEVICES" ]; then
+        echo "  CUDA Devices: ${CUDA_VISIBLE_DEVICES}"
+    else
+        echo "  CUDA Devices: all (default)"
+    fi
+    echo ""
+    if [ "$OLLAMA_DEBUG" = "1" ]; then
+        echo "Debug: enabled"
+    else
+        echo "Debug: disabled"
+    fi
+    echo ""
+    echo "Commands:"
+    echo "  ollama pull <model>       Download a model"
+    echo "  ollama list               List local models"
+    echo "  ollama ps                 List running models"
+    echo "  flox services status      Check service status"
+    echo "  flox services logs ollama View Ollama logs"
+    echo "  ollama-health             Test API endpoint"
+    echo ""
+    echo "Runtime Override Examples:"
+    echo "  OLLAMA_HOST=0.0.0.0:11434 flox activate -s"
+    echo "  OLLAMA_NUM_PARALLEL=4 flox activate -s"
+    echo "  OLLAMA_DEBUG=1 flox activate -s"
+}
+
+ollama-health() {
+    local HOST="${OLLAMA_HOST:-127.0.0.1:11434}"
+    # Remove http:// or https:// prefix if present
+    HOST="${HOST#http://}"
+    HOST="${HOST#https://}"
+
+    if curl -s "http://${HOST}/" | grep -q "Ollama is running"; then
+        echo "✅ Ollama API is healthy at http://${HOST}"
+        return 0
+    else
+        echo "❌ Ollama API is not responding at http://${HOST}"
+        echo "   Try: flox services status"
+        return 1
+    fi
+}
+
+  helpf() {
+    local README_FILE="$FLOX_ENV_PROJECT/README.md"
+    local README_URL="https://raw.githubusercontent.com/barstoolbluz/floxenvs/main/ollama-headless/README.md"
+
+    if [ "$1" = "--help" ]; then
+      echo "Usage: helpf [OPTIONS]"
+      echo ""
+      echo "View environment documentation"
+      echo ""
+      echo "Options:"
+      echo "  --force    Force download fresh copy from GitHub"
+      echo "  --help     Show this help message"
+      echo ""
+      echo "The README is cached locally and only downloaded if missing."
+      return 0
+    fi
+
+    if [ "$1" = "--force" ]; then
+      echo "Fetching latest README.md from GitHub..."
+      if curl -fsSL "$README_URL" -o "$README_FILE"; then
+        echo "✓ Downloaded README.md"
+      else
+        echo "✗ Failed to download README.md"
+        return 1
+      fi
+    elif [ ! -f "$README_FILE" ]; then
+      echo "README.md not found, downloading..."
+      if curl -fsSL "$README_URL" -o "$README_FILE"; then
+        echo "✓ Downloaded README.md"
+      else
+        echo "✗ Failed to download README.md"
+        return 1
+      fi
+    fi
+
+    if [ -f "$README_FILE" ]; then
+      bat --style=auto --paging=always "$README_FILE"
+    else
+      echo "✗ README.md not found at $README_FILE"
+      return 1
+    fi
+  }
+'''
+
+fish = '''
+
+function ollama-info
+    echo "Ollama Headless Environment Configuration"
+    echo ""
+    echo "Server:"
+    echo "  Host: $OLLAMA_HOST"
+    echo "  Models: $OLLAMA_MODELS"
+    echo ""
+    echo "Performance:"
+    if test -n "$OLLAMA_CONTEXT_LENGTH"
+        echo "  Context Length: $OLLAMA_CONTEXT_LENGTH"
+    else
+        echo "  Context Length: 4096 (default)"
+    end
+    if test -n "$OLLAMA_KEEP_ALIVE"
+        echo "  Keep Alive: $OLLAMA_KEEP_ALIVE"
+    else
+        echo "  Keep Alive: 5m (default)"
+    end
+    if test -n "$OLLAMA_NUM_PARALLEL"
+        echo "  Num Parallel: $OLLAMA_NUM_PARALLEL"
+    else
+        echo "  Num Parallel: 1 (default)"
+    end
+    if test -n "$OLLAMA_MAX_QUEUE"
+        echo "  Max Queue: $OLLAMA_MAX_QUEUE"
+    else
+        echo "  Max Queue: 512 (default)"
+    end
+    if test -n "$OLLAMA_MAX_LOADED_MODELS"
+        echo "  Max Loaded Models: $OLLAMA_MAX_LOADED_MODELS"
+    else
+        echo "  Max Loaded Models: auto (default)"
+    end
+    echo ""
+    echo "GPU:"
+    if test -n "$OLLAMA_FLASH_ATTENTION"
+        echo "  Flash Attention: enabled"
+    else
+        echo "  Flash Attention: disabled (default)"
+    end
+    if test -n "$OLLAMA_KV_CACHE_TYPE"
+        echo "  KV Cache Type: $OLLAMA_KV_CACHE_TYPE"
+    else
+        echo "  KV Cache Type: f16 (default)"
+    end
+    if test -n "$CUDA_VISIBLE_DEVICES"
+        echo "  CUDA Devices: $CUDA_VISIBLE_DEVICES"
+    else
+        echo "  CUDA Devices: all (default)"
+    end
+    echo ""
+    if test "$OLLAMA_DEBUG" = "1"
+        echo "Debug: enabled"
+    else
+        echo "Debug: disabled"
+    end
+    echo ""
+    echo "Commands:"
+    echo "  ollama pull <model>       Download a model"
+    echo "  ollama list               List local models"
+    echo "  ollama ps                 List running models"
+    echo "  flox services status      Check service status"
+    echo "  flox services logs ollama View Ollama logs"
+    echo "  ollama-health             Test API endpoint"
+    echo ""
+    echo "Runtime Override Examples:"
+    echo "  OLLAMA_HOST=0.0.0.0:11434 flox activate -s"
+    echo "  OLLAMA_NUM_PARALLEL=4 flox activate -s"
+    echo "  OLLAMA_DEBUG=1 flox activate -s"
+end
+
+function ollama-health
+    set -l HOST (string replace -r '^https?://' '' $OLLAMA_HOST)
+
+    if curl -s "http://$HOST/" | grep -q "Ollama is running"
+        echo "✅ Ollama API is healthy at http://$HOST"
+        return 0
+    else
+        echo "❌ Ollama API is not responding at http://$HOST"
+        echo "   Try: flox services status"
+        return 1
+    end
+end
+
+function helpf
+    set README_FILE "$FLOX_ENV_PROJECT/README.md"
+    set README_URL "https://raw.githubusercontent.com/barstoolbluz/floxenvs/main/ollama-headless/README.md"
+
+    if test "$argv[1]" = "--help"
+        echo "Usage: helpf [OPTIONS]"
+        echo ""
+        echo "View environment documentation"
+        echo ""
+        echo "Options:"
+        echo "  --force    Force download fresh copy from GitHub"
+        echo "  --help     Show this help message"
+        echo ""
+        echo "The README is cached locally and only downloaded if missing."
+        return 0
+    end
+
+    if test "$argv[1]" = "--force"
+        echo "Fetching latest README.md from GitHub..."
+        if curl -fsSL "$README_URL" -o "$README_FILE"
+            echo "✓ Downloaded README.md"
+        else
+            echo "✗ Failed to download README.md"
+            return 1
+        end
+    else if not test -f "$README_FILE"
+        echo "README.md not found, downloading..."
+        if curl -fsSL "$README_URL" -o "$README_FILE"
+            echo "✓ Downloaded README.md"
+        else
+            echo "✗ Failed to download README.md"
+            return 1
+        end
+    end
+
+    if test -f "$README_FILE"
+        bat --style=auto --paging=always "$README_FILE"
+    else
+        echo "✗ README.md not found at $README_FILE"
+        return 1
+    end
+end
+'''
+
+[options]
+systems = [
+  "aarch64-darwin",
+  "aarch64-linux",
+  "x86_64-darwin",
+  "x86_64-linux",
+]

@@ -1,116 +1,96 @@
-# 🔥 A Flox Environment for Apache Spark Cluster Computing
+# 🔥 Flox Environment for Apache Spark Cluster Computing
 
-The `spark` environment is designed for local, interactive use—especially when users need help configuring things step by step. It's designed both to be usable and to be a teaching tool for learning about Flox.
+This `spark-headless` environment is designed for CI, headless setups, or scripted workflows—i.e., any non-interactive context.
 
-This environment simplifies Apache Spark cluster deployment by providing an interactive configuration wizard, automatic network detection, and service management.
-
-The separate [`spark-headless`](https://github.com/barstoolbluz/floxenvs/blob/main/spark-headless/README.md) environment is designed for CI, headless setups, or scripted workflows—i.e., any non-interactive context.
+The [`spark`](https://github.com/barstoolbluz/floxenvs/tree/main/spark/) environment is better for local, interactive use—especially when users need help configuring things step by step.
 
 ## ✨ Features
 
-- Interactive bootstrapping wizard for configuring either master or worker nodes;
-- Automatic network IP detection and configuration;
-- Automatic master-worker comms;
-- Shell integration for common Spark commands;
-- Flox service management for starting / stopping / restarting Spark;
-- Cross-platform compatibility (Linux x86_64 and ARM64);
-- Elegant, friendly terminal UI built with Gum.
+- Dynamic environment variable configuration for both master and worker nodes;
+- Intelligent handling of pre-set environment variables;
+- Automatic network IP detection with manual override capabilities;
+- Separation of binding and advertising IPs for complex network environments;
+- Cross-platform compatibility (Linux x86_64 and ARM64, macOS, Windows with WSL2);
+- Flox service management for Spark resources;
+- Default configurations that "just work" with minimal setup.
 
 ## 🧰 Included Tools
 
-The environment packs these essential tools:
+The environment includes these essential tools:
 
 - `spark` - Apache Spark distributed computing framework
 - `jdk` - Java Development Kit, required to run Spark
-- `gum` - Terminal UI toolkit powering the setup wizard
-- `bat` - Better `cat` with syntax highlighting
-- `curl` - HTTP client used for monitoring and diagnostics
-- `pip` - Python package manager for extending Spark capabilities
-- `gnused` - GNU implementation of the `sed` utility # provided for macOS compatibility
+- `bat` - Better `cat` for viewing this `README.md`
+- `curl` - HTTP client for downloading this `README.md` + other uses
+- `pip` - Python v3.12.x and `pip` package manager for `pyspark` support
+- `gnused` - GNU implementation of the `sed` editor # included for macOS compatibility
 - `gawk` - GNU implementation of `awk` # idem
-- `coreutils` - GNU core utilities # idem
+- `coreutils` - GNU `coreutils` # idem
 - `gnugrep` GNU implementation of `grep` # idem
 
 ## 🏁 Getting Started
 
 ### 📋 Prerequisites
 
-- Multi-node network or single machine for testing
 - [Flox](https://flox.dev/get) installed on your system
+- That's it.
 
 ### 💻 Installation & Activation
 
-Jump in with:
-
-1. Clone this repo
+Get started with:
 
 ```sh
-git clone https://github.com/yourusername/spark && cd spark
+# Clone the repo
+git clone https://github.com/barstoolbluz/floxenvs && cd floxenvs/spark-headless
+
+# Activate the environment
+flox activate -s # uses hard-coded defaults; see below for injecting env vars and activating
 ```
 
-2. Run:
+## 📝 Usage Scenarios
 
-```sh
+### Setting Up a Spark Master
+
+To configure a machine as a Spark master node:
+
+```bash
+# Set master configuration
+export SPARK_MODE="master"
+export SPARK_LOCAL_IP="192.168.0.130"  # Your master's IP address
+export SPARK_ADVERTISE_IP="192.168.0.130"  # IP to advertise to workers
+export SPARK_PORT="7077"  # Master port
+export SPARK_WEBUI_PORT="8080"  # Web UI port
+
+# Activate the environment
 flox activate -s
+
+# Activate as a one-liner
+SPARK_MODE=master SPARK_LOCAL_IP=192.168.0.130 SPARK_ADVERTISE_IP=192.168.0.130 SPARK_PORT=7077 SPARK_WEBUI_PORT=8080 flox activate -s
 ```
 
-This command:
-- Pulls in all dependencies
-- Fires up the Spark configuration wizard
-- Sets up your environment as either a master or worker node
-- Drops you into the Flox env with Spark ready to go
+### Setting Up a Spark Worker
 
-### 🧙 Configuration Wizard
+To configure a machine as a Spark worker node:
 
-First-time activation triggers a wizard that:
+```bash
+# Set worker configuration
+export SPARK_MODE="worker"
+export SPARK_HOST="192.168.0.130"  # IP of the master node
+export SPARK_PORT="7077"  # Master port
+export SPARK_MASTER_URL="spark://192.168.0.130:7077"  # Full master URL
+export SPARK_LOCAL_IP="localhost"  # This worker's IP
+export SPARK_WORKER_CORES="2"  # Number of cores to use
+export SPARK_WORKER_MEMORY="2g"  # Amount of memory
+export SPARK_WEBUI_PORT="8080"  # Worker Web UI port
 
-1. Lets you choose between master or worker node configuration;
-2. Detects and configures network settings automatically;
-3. Sets up proper IP address advertising for comms between Spark master and worker nodes;
-4. Configures ports, memory, and CPU allocation;
-5. Creates required directories for logs and data storage;
+# Activate the environment
+flox activate -s
 
-### 🧱 Hard-coded Configuration
-
-To skip the wizard, create `spark_config.sh` in `$FLOX_ENV_CACHE`.
-
-A `spark_config.sh` file for a Spark Master node might look like this:
-
-```
-# Spark configuration generated by Flox environment
-SPARK_MODE="master"
-SPARK_HOST="localhost"
-SPARK_PORT="7077"
-SPARK_WEBUI_PORT="8080"
-SPARK_WORKER_CORES="2"
-SPARK_WORKER_MEMORY="2g"
-SPARK_MASTER_URL="spark://192.168.0.88:7077"
-SPARK_LOG_DIR="$FLOX_ENV_CACHE/spark-logs"
-SPARK_WORKER_DIR="$FLOX_ENV_CACHE/spark-data"
-SPARK_LOCAL_IP="0.0.0.0"
-SPARK_ADVERTISE_IP="192.168.0.88"
+# Activate as a one-liner
+SPARK_MODE=worker SPARK_HOST=192.168.0.130 SPARK_PORT=7077 SPARK_MASTER_URL=spark://192.168.0.130:7077 SPARK_LOCAL_IP=localhost SPARK_WORKER_CORES=2 SPARK_WORKER_MEMORY=2g SPARK_WEBUI_PORT=8080 flox activate -s
 ```
 
-A `spark_config.sh` file for a Spark Worker node might like this:
-
-```
-# Spark configuration generated by Flox environment
-SPARK_MODE="worker"
-SPARK_HOST="worker"
-SPARK_PORT=""
-SPARK_WEBUI_PORT=""
-SPARK_WORKER_CORES="2"
-SPARK_WORKER_MEMORY="2g"
-SPARK_MASTER_URL="spark://192.168.0.88:7077"
-SPARK_LOG_DIR="$FLOX_ENV_CACHE/spark-logs"
-SPARK_WORKER_DIR="$FLOX_ENV_CACHE/spark-data"
-SPARK_LOCAL_IP="192.168.0.130"
-SPARK_ADVERTISE_IP="192.168.0.130"
-```
-
-## 📝 Usage
-
-After setup, you can manage your Spark cluster with simple commands:
+### Managing Your Spark Cluster
 
 ```bash
 # Start all Spark services
@@ -119,11 +99,11 @@ flox services start
 # Check service status
 flox services status
 
+# View service logs
+flox services logs spark
+
 # Stop all services
 flox services stop
-
-# Reconfigure your Spark environment
-reconfigure
 
 # Run interactive Spark shell
 spark-shell
@@ -139,58 +119,51 @@ spark-submit your-application.jar
 
 ### 🌐 Network Configuration
 
-The environment implements a robust network configuration approach:
+1. **Flexible IP Handling**:
+   - Respects pre-set environment variables
+   - Falls back to automatic detection when not specified
+   - Separates binding IPs from advertised IPs for complex setups
 
-1. **Network Detection**:
-   - Automatically identifies the machine's network IP
-   - Allows manual override if needed
+2. **Dynamic Configuration**:
+   - Environment variables can be set before activation
+   - No need to modify configuration files
 
-2. **Interface Binding**:
-   - Master binds to all interfaces (0.0.0.0) for maximum connectivity
-   - Workers use specific IP for proper connection to master
+3. **Service Integration**:
+   - Spark runtime is managed by Flox's service manager
+   - Proper log capture and reporting
+   - Automatic startup of the correct service based on mode -- i.e., master or worker
 
-3. **Hostname Resolution**:
-   - Uses IP addresses for communication instead of hostnames
-   - Prevents common DNS/hostname resolution issues in distributed setups
+### 🔧 Environment Variable Handling
 
-### 🔧 Service Management
+This environment accepts pre-set environment variables:
 
-The environment leverages Flox's service management to:
-
-1. Start and stop Spark services reliably
-2. Monitor cluster status through intuitive terminal UI
-3. Maintain proper environment variables across sessions
-
-### 📊 Spark Integration
-
-The environment configures Spark to:
-
-- Use the correct network settings for distributed computing
-- Allocate specified resources for workers (cores, memory)
-- Maintain persistent data and log directories
-- Provide easy access to all Spark commands and utilities
+- Spark-specific variables (e.g., `SPARK_MODE`, `SPARK_HOST`) set before activation take precedence over defaults
+- Defaults are only applied when variables aren't already defined
+- This enables flexible deployment across different network setups
 
 ## 🔧 Troubleshooting
 
-If Spark cluster communication breaks:
+If you encounter issues with your Spark cluster:
 
 1. **Workers can't connect to master**:
    - Verify network connectivity between nodes
-   - Check that the master's advertised IP is reachable from workers
-   - Run `reconfigure` to reconfigure with correct network settings
+   - Ensure master's advertised IP is accessible from workers
+   - Check firewall settings for ports 7077 and 8080
 
 2. **Service startup issues**:
-   - Check logs in `$FLOX_ENV_CACHE/spark-logs/`
-   - Ensure no port conflicts with existing services
+   - View logs with `flox services logs spark`
+   - Look for detailed errors in `$SPARK_LOG_DIR`
+   - Verify IP addresses are correct and nodes can reach each other
 
-3. **Performance issues**:
-   - Adjust worker memory and cores via `reconfigure`
-   - Check system resources and JVM settings
+3. **Configuration problems**:
+   - Use `env | grep SPARK` to view current settings
+   - Modify environment variables before activation
 
 ## 💻 System Compatibility
 
-This works on:
+This environment works on:
 - Linux (ARM64, x86_64)
+- macOS (ARM64, x86_64)
 
 ## 📚 Additional Resources
 
@@ -204,7 +177,7 @@ This works on:
 [Flox](https://flox.dev/docs) builds on [Nix](https://github.com/NixOS/nix) to provide:
 
 - **Declarative environments** - Software, variables, services defined in TOML
-- **Path- and input-addressed storage** - Multiple package versions coexist without conflicts
+- **Input- and path-addressed storage** - Multiple package versions coexist without conflicts
 - **Reproducibility** - Same environment across dev, CI, and production
 - **Deterministic builds** - Same inputs always produce identical outputs
 - **Huge package collection** - Access to 150,000+ packages from Nixpkgs

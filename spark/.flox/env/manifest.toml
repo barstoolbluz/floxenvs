@@ -146,8 +146,11 @@ fi
 
 # downloads README.md if not exists
 if [ ! -f "$FLOX_ENV_PROJECT/README.md" ] || [ ! -s "$FLOX_ENV_PROJECT/README.md" ]; then
-    curl -sL "https://raw.githubusercontent.com/barstoolbluz/floxenvs/main/spark/README.md" > "$FLOX_ENV_PROJECT/README.md" 2>/dev/null
+    curl -sL "https://raw.githubusercontent.com/barstoolbluz/floxenvs/main/spark-headless/README.md" > "$FLOX_ENV_PROJECT/README.md" 2>/dev/null
 fi
+
+echo ""
+echo "Run 'helpf' for detailed documentation"
 '''
 
 [profile]
@@ -169,11 +172,47 @@ info() {
   fi
 }
 
-readme() {
-  if [[ "$1" == "--refresh" ]] || [ ! -s "$FLOX_ENV_PROJECT/README.md" ]; then
-    curl -sL "https://raw.githubusercontent.com/barstoolbluz/floxenvs/main/spark-headless/README.md" > "$FLOX_ENV_PROJECT/README.md" 2>/dev/null
+helpf() {
+  local README_FILE="$FLOX_ENV_PROJECT/README.md"
+  local README_URL="https://raw.githubusercontent.com/barstoolbluz/floxenvs/main/spark-headless/README.md"
+
+  if [ "$1" = "--help" ]; then
+    echo "Usage: helpf [OPTIONS]"
+    echo ""
+    echo "View environment documentation"
+    echo ""
+    echo "Options:"
+    echo "  --force    Force download fresh copy from GitHub"
+    echo "  --help     Show this help message"
+    echo ""
+    echo "The README is cached locally and only downloaded if missing."
+    return 0
   fi
-  bat --language markdown "$FLOX_ENV_PROJECT/README.md" 2>/dev/null
+
+  if [ "$1" = "--force" ]; then
+    echo "Fetching latest README.md from GitHub..."
+    if curl -fsSL "$README_URL" -o "$README_FILE"; then
+      echo "✓ Downloaded README.md"
+    else
+      echo "✗ Failed to download README.md"
+      return 1
+    fi
+  elif [ ! -f "$README_FILE" ]; then
+    echo "README.md not found, downloading..."
+    if curl -fsSL "$README_URL" -o "$README_FILE"; then
+      echo "✓ Downloaded README.md"
+    else
+      echo "✗ Failed to download README.md"
+      return 1
+    fi
+  fi
+
+  if [ -f "$README_FILE" ]; then
+    bat --style=auto --paging=always "$README_FILE"
+  else
+    echo "✗ README.md not found at $README_FILE"
+    return 1
+  fi
 }
 '''
 
@@ -195,11 +234,47 @@ info() {
   fi
 }
 
-readme() {
-  if [[ "$1" == "--refresh" ]] || [ ! -s "$FLOX_ENV_PROJECT/README.md" ]; then
-    curl -sL "https://raw.githubusercontent.com/barstoolbluz/floxenvs/main/spark-headless/README.md" > "$FLOX_ENV_PROJECT/README.md" 2>/dev/null
+helpf() {
+  local README_FILE="$FLOX_ENV_PROJECT/README.md"
+  local README_URL="https://raw.githubusercontent.com/barstoolbluz/floxenvs/main/spark-headless/README.md"
+
+  if [ "$1" = "--help" ]; then
+    echo "Usage: helpf [OPTIONS]"
+    echo ""
+    echo "View environment documentation"
+    echo ""
+    echo "Options:"
+    echo "  --force    Force download fresh copy from GitHub"
+    echo "  --help     Show this help message"
+    echo ""
+    echo "The README is cached locally and only downloaded if missing."
+    return 0
   fi
-  bat --language markdown "$FLOX_ENV_PROJECT/README.md" 2>/dev/null
+
+  if [ "$1" = "--force" ]; then
+    echo "Fetching latest README.md from GitHub..."
+    if curl -fsSL "$README_URL" -o "$README_FILE"; then
+      echo "✓ Downloaded README.md"
+    else
+      echo "✗ Failed to download README.md"
+      return 1
+    fi
+  elif [ ! -f "$README_FILE" ]; then
+    echo "README.md not found, downloading..."
+    if curl -fsSL "$README_URL" -o "$README_FILE"; then
+      echo "✓ Downloaded README.md"
+    else
+      echo "✗ Failed to download README.md"
+      return 1
+    fi
+  fi
+
+  if [ -f "$README_FILE" ]; then
+    bat --style=auto --paging=always "$README_FILE"
+  else
+    echo "✗ README.md not found at $README_FILE"
+    return 1
+  fi
 }
 '''
 
@@ -223,7 +298,7 @@ end
 
 function readme
   if test "$argv[1]" = "--refresh"; or test ! -s "$FLOX_ENV_PROJECT/README.md"
-    curl -sL "https://raw.githubusercontent.com/barstoolbluz/floxenvs/main/spark-headless/README.md" > "$FLOX_ENV_PROJECT/README.md" 2>/dev/null
+    curl -sL "https://raw.githubusercontent.com/barstoolbluz/floxenvs/main/spark-basic/README.md" > "$FLOX_ENV_PROJECT/README.md" 2>/dev/null
   end
   bat --language markdown "$FLOX_ENV_PROJECT/README.md" 2>/dev/null
 end

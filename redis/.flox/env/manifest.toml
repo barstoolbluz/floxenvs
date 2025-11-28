@@ -1,431 +1,534 @@
 version = 1
 
-
 [install]
-gum.pkg-path = "gum"
 redis.pkg-path = "redis"
-
+bat.pkg-path = "bat"
+curl.pkg-path = "curl"
 
 [vars]
-# define env vars available at runtime
-REDIS_HOST = "127.0.0.1"
-REDIS_PORT = "16379"
-REDIS_PASSWORD = ""
-
+# Base configuration paths (invariant)
+REDIS_CONFIG_DIR = "$FLOX_ENV_CACHE/redis-config"
+REDIS_LOG_DIR = "$FLOX_ENV_CACHE/redis-logs"
+REDIS_DATA_DIR = "$FLOX_ENV_CACHE/redis-data"
 
 [hook]
 on-activate = '''
-# define env vars available during activation
-export REDIS_DIR="${FLOX_ENV_CACHE}/redis"
-export CONFIG_FILE="${FLOX_ENV_CACHE}/redis.config"
-export DEFAULT_REDIS_HOST="127.0.0.1"
-export DEFAULT_REDIS_PORT="16379"
-export DEFAULT_REDIS_PASSWORD=""
-export DEFAULT_REDIS_DIR="${FLOX_ENV_CACHE}/redis"
-export DEFAULT_REDIS_MAXMEMORY="256mb"
-export DEFAULT_REDIS_MAXMEMORY_POLICY="noeviction"
-export DEFAULT_REDIS_SAVE_RDB="yes"
-export DEFAULT_REDIS_SAVE_INTERVALS="900 1 300 10 60 10000"
-export DEFAULT_REDIS_APPENDONLY="no"
-export DEFAULT_REDIS_APPENDFSYNC="everysec"
-export DEFAULT_REDIS_DATABASES="16"
+# Fetch README # Create required directories
+mkdir -p "$FLOX_ENV_CACHE/redis-config"
+mkdir -p "$FLOX_ENV_CACHE/redis-logs"
+mkdir -p "$FLOX_ENV_CACHE/redis-data"
 
-# enable/disable debugging; set to "true" to enable verbose output
-export REDIS_DEBUG="false"
+# === RUNTIME VARIABLES - Connection ===
+export REDIS_HOST="${REDIS_HOST:-127.0.0.1}"
+export REDIS_PORT="${REDIS_PORT:-16379}"
+export REDIS_PASSWORD="${REDIS_PASSWORD:-}"
 
-# this function checks if first run
-check_first_run() {
-    if [[ ! -f "$CONFIG_FILE" ]]; then
-        return 0 # True, this is the first run
-    else
-        return 1 # False, not the first run
-    fi
-}
+# === RUNTIME VARIABLES - Memory Management ===
+export REDIS_MAXMEMORY="${REDIS_MAXMEMORY:-256mb}"
+export REDIS_MAXMEMORY_POLICY="${REDIS_MAXMEMORY_POLICY:-noeviction}"
+export REDIS_MAXMEMORY_SAMPLES="${REDIS_MAXMEMORY_SAMPLES:-5}"
 
-# this function loads redis.config if exists
-load_config() {
-    if [[ -f "$CONFIG_FILE" ]]; then
-        source "$CONFIG_FILE"
-    else
-        # set defaults if no redis.config
-        export REDIS_HOST="$DEFAULT_REDIS_HOST"
-        export REDIS_PORT="$DEFAULT_REDIS_PORT"
-        export REDIS_PASSWORD="$DEFAULT_REDIS_PASSWORD"
-        export REDIS_DIR="$DEFAULT_REDIS_DIR"
-        export REDIS_MAXMEMORY="$DEFAULT_REDIS_MAXMEMORY"
-        export REDIS_MAXMEMORY_POLICY="$DEFAULT_REDIS_MAXMEMORY_POLICY"
-        export REDIS_SAVE_RDB="$DEFAULT_REDIS_SAVE_RDB"
-        export REDIS_SAVE_INTERVALS="$DEFAULT_REDIS_SAVE_INTERVALS"
-        export REDIS_APPENDONLY="$DEFAULT_REDIS_APPENDONLY"
-        export REDIS_APPENDFSYNC="$DEFAULT_REDIS_APPENDFSYNC"
-        export REDIS_DATABASES="$DEFAULT_REDIS_DATABASES"
-    fi
-}
+# === RUNTIME VARIABLES - Persistence (RDB) ===
+export REDIS_SAVE_RDB="${REDIS_SAVE_RDB:-yes}"
+export REDIS_SAVE_900="${REDIS_SAVE_900:-1}"
+export REDIS_SAVE_300="${REDIS_SAVE_300:-10}"
+export REDIS_SAVE_60="${REDIS_SAVE_60:-10000}"
+export REDIS_RDB_COMPRESSION="${REDIS_RDB_COMPRESSION:-yes}"
+export REDIS_RDB_CHECKSUM="${REDIS_RDB_CHECKSUM:-yes}"
 
-# this function saves redis.config to file
-save_config() {
-    mkdir -p "$(dirname "$CONFIG_FILE")"
-    cat > "$CONFIG_FILE" << EOF
-# redis configuration - Generated on $(date)
-export REDIS_HOST="$REDIS_HOST"
-export REDIS_PORT="$REDIS_PORT"
-export REDIS_PASSWORD="$REDIS_PASSWORD"
-export REDIS_DIR="$REDIS_DIR"
-export REDIS_MAXMEMORY="$REDIS_MAXMEMORY"
-export REDIS_MAXMEMORY_POLICY="$REDIS_MAXMEMORY_POLICY"
-export REDIS_SAVE_RDB="$REDIS_SAVE_RDB"
-export REDIS_SAVE_INTERVALS="$REDIS_SAVE_INTERVALS"
-export REDIS_APPENDONLY="$REDIS_APPENDONLY"
-export REDIS_APPENDFSYNC="$REDIS_APPENDFSYNC"
-export REDIS_DATABASES="$REDIS_DATABASES"
-export REDIS_DEBUG="$REDIS_DEBUG"
+# === RUNTIME VARIABLES - Persistence (AOF) ===
+export REDIS_APPENDONLY="${REDIS_APPENDONLY:-no}"
+export REDIS_APPENDFSYNC="${REDIS_APPENDFSYNC:-everysec}"
+export REDIS_AOF_REWRITE_PERCENTAGE="${REDIS_AOF_REWRITE_PERCENTAGE:-100}"
+export REDIS_AOF_REWRITE_MIN_SIZE="${REDIS_AOF_REWRITE_MIN_SIZE:-64mb}"
 
-## BEGIN ACTIVATION HOOK ##
-$(declare -f debug_log)
-$(declare -f check_first_run)
-$(declare -f load_config)
-$(declare -f save_config)
-$(declare -f prompt_for_config)
-$(declare -f update_dependent_vars)
-$(declare -f create_redis_config)
-$(declare -f reconfigure_redis)
-$(declare -f first_run_setup)
-$(declare -f display_redis_config_ui)
-$(declare -f redis_setup)
-$(declare -f main)
-## END ACTIVATION HOOK ##
-EOF
-    chmod 644 "$CONFIG_FILE"
-}
+# === RUNTIME VARIABLES - Performance ===
+export REDIS_DATABASES="${REDIS_DATABASES:-16}"
+export REDIS_TCP_BACKLOG="${REDIS_TCP_BACKLOG:-511}"
+export REDIS_TIMEOUT="${REDIS_TIMEOUT:-0}"
+export REDIS_TCP_KEEPALIVE="${REDIS_TCP_KEEPALIVE:-300}"
+export REDIS_MAXCLIENTS="${REDIS_MAXCLIENTS:-10000}"
 
-# this function prompts user 'do you want to custom configure redis vars?'
-prompt_for_config() {
-    echo ""
-    if gum confirm "$(gum style --foreground 240 'Would you like to customize your Redis configuration?')" --default=false; then
-        REDIS_HOST=$(gum input --placeholder "$DEFAULT_REDIS_HOST" --value "$DEFAULT_REDIS_HOST" --prompt "Host Address: ")
-        REDIS_PORT=$(gum input --placeholder "$DEFAULT_REDIS_PORT" --value "$DEFAULT_REDIS_PORT" --prompt "Port: ")
+# === RUNTIME VARIABLES - Slow Log ===
+export REDIS_SLOWLOG_LOG_SLOWER_THAN="${REDIS_SLOWLOG_LOG_SLOWER_THAN:-10000}"
+export REDIS_SLOWLOG_MAX_LEN="${REDIS_SLOWLOG_MAX_LEN:-128}"
 
-        # Password (optional)
-        if gum confirm "$(gum style --foreground 240 'Set a password for Redis?')" --default=false; then
-            REDIS_PASSWORD=$(gum input --placeholder "password" --prompt "Password: " --password)
-        else
-            REDIS_PASSWORD=""
-        fi
+# === RUNTIME VARIABLES - Latency Monitor ===
+export REDIS_LATENCY_MONITOR_THRESHOLD="${REDIS_LATENCY_MONITOR_THRESHOLD:-0}"
 
-        if gum confirm "$(gum style --foreground 240 "Use default directory for Redis data? ($DEFAULT_REDIS_DIR)")" --default=true; then
-            REDIS_DIR="$DEFAULT_REDIS_DIR"
-        else
-            REDIS_DIR=$(gum input --placeholder "$DEFAULT_REDIS_DIR" --value "$DEFAULT_REDIS_DIR" --prompt "Redis Data Directory: ")
-        fi
+# === RUNTIME VARIABLES - Security ===
+export REDIS_PROTECTED_MODE="${REDIS_PROTECTED_MODE:-yes}"
+export REDIS_RENAME_COMMANDS="${REDIS_RENAME_COMMANDS:-}"
 
-        # Memory settings
-        REDIS_MAXMEMORY=$(gum input --placeholder "$DEFAULT_REDIS_MAXMEMORY" --value "$DEFAULT_REDIS_MAXMEMORY" --prompt "Max Memory (e.g., 256mb, 1gb): ")
+# === FLEXIBILITY ===
+export REDIS_EXTRA_OPTS="${REDIS_EXTRA_OPTS:-}"
 
-        echo ""
-        gum style --foreground 240 "Memory eviction policy when maxmemory is reached:"
-        REDIS_MAXMEMORY_POLICY=$(gum choose --header "Choose policy:" "noeviction" "allkeys-lru" "volatile-lru" "allkeys-random" "volatile-random" "volatile-ttl" "allkeys-lfu" "volatile-lfu")
+# === DERIVED VARIABLES ===
+export REDIS_DIR="${REDIS_DIR:-$FLOX_ENV_CACHE/redis-data}"
+export REDIS_CONF_FILE="$REDIS_CONFIG_DIR/redis.conf"
+export REDIS_LOG_FILE="$REDIS_LOG_DIR/redis.log"
 
-        # Persistence settings
-        echo ""
-        if gum confirm "$(gum style --foreground 240 'Enable RDB snapshots (point-in-time backups)?')" --default=true; then
-            REDIS_SAVE_RDB="yes"
-            gum style --foreground 240 "RDB save intervals format: 'seconds changes' (e.g., '900 1' = save after 900s if 1+ changes)"
-            REDIS_SAVE_INTERVALS=$(gum input --placeholder "$DEFAULT_REDIS_SAVE_INTERVALS" --value "$DEFAULT_REDIS_SAVE_INTERVALS" --prompt "Save intervals: ")
-        else
-            REDIS_SAVE_RDB="no"
-            REDIS_SAVE_INTERVALS=""
-        fi
-
-        echo ""
-        if gum confirm "$(gum style --foreground 240 'Enable AOF (Append Only File) for durability?')" --default=false; then
-            REDIS_APPENDONLY="yes"
-            echo ""
-            gum style --foreground 240 "AOF fsync policy:"
-            REDIS_APPENDFSYNC=$(gum choose --header "Choose fsync:" "everysec" "always" "no")
-        else
-            REDIS_APPENDONLY="no"
-            REDIS_APPENDFSYNC="everysec"
-        fi
-
-        # Database count
-        echo ""
-        REDIS_DATABASES=$(gum input --placeholder "$DEFAULT_REDIS_DATABASES" --value "$DEFAULT_REDIS_DATABASES" --prompt "Number of databases: ")
-    else
-        # defaults for gum prompts
-        REDIS_HOST="$DEFAULT_REDIS_HOST"
-        REDIS_PORT="$DEFAULT_REDIS_PORT"
-        REDIS_PASSWORD="$DEFAULT_REDIS_PASSWORD"
-        REDIS_DIR="$DEFAULT_REDIS_DIR"
-        REDIS_MAXMEMORY="$DEFAULT_REDIS_MAXMEMORY"
-        REDIS_MAXMEMORY_POLICY="$DEFAULT_REDIS_MAXMEMORY_POLICY"
-        REDIS_SAVE_RDB="$DEFAULT_REDIS_SAVE_RDB"
-        REDIS_SAVE_INTERVALS="$DEFAULT_REDIS_SAVE_INTERVALS"
-        REDIS_APPENDONLY="$DEFAULT_REDIS_APPENDONLY"
-        REDIS_APPENDFSYNC="$DEFAULT_REDIS_APPENDFSYNC"
-        REDIS_DATABASES="$DEFAULT_REDIS_DATABASES"
-    fi
-
-    # export user-defined variables
-    export REDIS_HOST REDIS_PORT REDIS_PASSWORD REDIS_DIR
-    export REDIS_MAXMEMORY REDIS_MAXMEMORY_POLICY
-    export REDIS_SAVE_RDB REDIS_SAVE_INTERVALS
-    export REDIS_APPENDONLY REDIS_APPENDFSYNC REDIS_DATABASES
-
-    # save to redis.config
-    save_config
-}
-
-# this function handles debug logging
-debug_log() {
-    if [[ "$REDIS_DEBUG" == "true" ]]; then
-        echo "$@"
-    fi
-}
-
-# this function updates dependent vars after loading redis.config
-update_dependent_vars() {
-    # is $REDIS_DIR an absolute path?
-    if [[ ! "$REDIS_DIR" = /* ]]; then
-        REDIS_DIR="$(pwd)/$REDIS_DIR"
-        export REDIS_DIR
-    fi
-
-    # set dependent vars with absolute paths
-    export REDIS_DATA_DIR="$REDIS_DIR/data"
-    export REDIS_CONF_FILE="$REDIS_DIR/redis.conf"
-    export REDIS_LOG_FILE="$REDIS_DIR/redis.log"
-
-    # debug output
-    debug_log "Configuration paths:"
-    debug_log "  REDIS_DIR: $REDIS_DIR"
-    debug_log "  REDIS_DATA_DIR: $REDIS_DATA_DIR"
-    debug_log "  REDIS_CONF_FILE: $REDIS_CONF_FILE"
-}
-
-# this function creates redis.conf file
-create_redis_config() {
-    mkdir -p "$REDIS_DIR" "$REDIS_DATA_DIR"
-    chmod 700 "$REDIS_DIR" "$REDIS_DATA_DIR"
+# === CONFIGURATION GENERATION ===
+generate_redis_config() {
+    # Ensure directories exist
+    mkdir -p "$REDIS_DIR" "$REDIS_CONFIG_DIR" "$REDIS_LOG_DIR"
+    chmod 700 "$REDIS_DIR" "$REDIS_CONFIG_DIR"
 
     cat > "$REDIS_CONF_FILE" << EOF
-# Redis configuration generated by Flox
+# Redis configuration generated by Flox (headless mode)
+# Connection
 bind $REDIS_HOST
 port $REDIS_PORT
-dir $REDIS_DATA_DIR
+protected-mode $REDIS_PROTECTED_MODE
+
+# General
+daemonize no
+dir $REDIS_DIR
 logfile $REDIS_LOG_FILE
 databases $REDIS_DATABASES
 
-# Memory management
+# Network
+tcp-backlog $REDIS_TCP_BACKLOG
+timeout $REDIS_TIMEOUT
+tcp-keepalive $REDIS_TCP_KEEPALIVE
+
+# Clients
+maxclients $REDIS_MAXCLIENTS
+
+# Memory Management
 maxmemory $REDIS_MAXMEMORY
 maxmemory-policy $REDIS_MAXMEMORY_POLICY
+maxmemory-samples $REDIS_MAXMEMORY_SAMPLES
 
 EOF
 
     # Add password if set
-    if [[ -n "$REDIS_PASSWORD" ]]; then
+    if [ -n "$REDIS_PASSWORD" ]; then
+        echo "# Security" >> "$REDIS_CONF_FILE"
         echo "requirepass $REDIS_PASSWORD" >> "$REDIS_CONF_FILE"
+        echo "" >> "$REDIS_CONF_FILE"
     fi
 
-    # Add RDB persistence if enabled
-    if [[ "$REDIS_SAVE_RDB" == "yes" && -n "$REDIS_SAVE_INTERVALS" ]]; then
-        echo "" >> "$REDIS_CONF_FILE"
-        echo "# RDB Persistence" >> "$REDIS_CONF_FILE"
-        # Parse and add save directives
-        # Format: "900 1 300 10 60 10000" -> save 900 1, save 300 10, save 60 10000
-        set -- $REDIS_SAVE_INTERVALS
-        while [ $# -ge 2 ]; do
-            echo "save $1 $2" >> "$REDIS_CONF_FILE"
-            shift 2
+    # Add command renaming if set
+    if [ -n "$REDIS_RENAME_COMMANDS" ]; then
+        echo "# Command renaming" >> "$REDIS_CONF_FILE"
+        # Format: "FLUSHDB,FLUSHALL,CONFIG" -> rename-command FLUSHDB "", rename-command FLUSHALL ""
+        IFS=',' read -ra CMDS <<< "$REDIS_RENAME_COMMANDS"
+        for cmd in "${CMDS[@]}"; do
+            echo "rename-command $cmd \"\"" >> "$REDIS_CONF_FILE"
         done
-    else
         echo "" >> "$REDIS_CONF_FILE"
-        echo "# RDB disabled" >> "$REDIS_CONF_FILE"
+    fi
+
+    # RDB Persistence
+    echo "# RDB Persistence" >> "$REDIS_CONF_FILE"
+    if [ "$REDIS_SAVE_RDB" = "yes" ]; then
+        echo "save 900 $REDIS_SAVE_900" >> "$REDIS_CONF_FILE"
+        echo "save 300 $REDIS_SAVE_300" >> "$REDIS_CONF_FILE"
+        echo "save 60 $REDIS_SAVE_60" >> "$REDIS_CONF_FILE"
+        echo "rdbcompression $REDIS_RDB_COMPRESSION" >> "$REDIS_CONF_FILE"
+        echo "rdbchecksum $REDIS_RDB_CHECKSUM" >> "$REDIS_CONF_FILE"
+    else
         echo "save \"\"" >> "$REDIS_CONF_FILE"
     fi
-
-    # Add AOF persistence if enabled
     echo "" >> "$REDIS_CONF_FILE"
+
+    # AOF Persistence
     echo "# AOF Persistence" >> "$REDIS_CONF_FILE"
     echo "appendonly $REDIS_APPENDONLY" >> "$REDIS_CONF_FILE"
-    if [[ "$REDIS_APPENDONLY" == "yes" ]]; then
+    if [ "$REDIS_APPENDONLY" = "yes" ]; then
         echo "appendfsync $REDIS_APPENDFSYNC" >> "$REDIS_CONF_FILE"
+        echo "auto-aof-rewrite-percentage $REDIS_AOF_REWRITE_PERCENTAGE" >> "$REDIS_CONF_FILE"
+        echo "auto-aof-rewrite-min-size $REDIS_AOF_REWRITE_MIN_SIZE" >> "$REDIS_CONF_FILE"
     fi
+    echo "" >> "$REDIS_CONF_FILE"
+
+    # Slow Log
+    echo "# Slow Log" >> "$REDIS_CONF_FILE"
+    echo "slowlog-log-slower-than $REDIS_SLOWLOG_LOG_SLOWER_THAN" >> "$REDIS_CONF_FILE"
+    echo "slowlog-max-len $REDIS_SLOWLOG_MAX_LEN" >> "$REDIS_CONF_FILE"
+    echo "" >> "$REDIS_CONF_FILE"
+
+    # Latency Monitor
+    echo "# Latency Monitor" >> "$REDIS_CONF_FILE"
+    echo "latency-monitor-threshold $REDIS_LATENCY_MONITOR_THRESHOLD" >> "$REDIS_CONF_FILE"
 
     chmod 644 "$REDIS_CONF_FILE"
-    debug_log "Redis configuration file created at: $REDIS_CONF_FILE"
     return 0
 }
 
-# we call this function from profile if we want/need to reconfigure redis
-reconfigure_redis() {
-    rm -f "$CONFIG_FILE"
-    first_run_setup
-    redis_setup
-}
+# Generate configuration on activation
+generate_redis_config
 
-# it's tautological!
-first_run_setup() {
-    if check_first_run; then
-        display_redis_config_ui
-    else
-        load_config
+# Display info with safety warnings
+echo ""
+echo "✅ Redis environment ready (headless mode)"
+echo ""
+
+# Safety warnings
+if [ "$REDIS_PROTECTED_MODE" = "no" ]; then
+    echo "⚠️  WARNING: Protected mode disabled - EXPOSED TO NETWORK"
+fi
+if [ -z "$REDIS_PASSWORD" ]; then
+    echo "⚠️  WARNING: No password set - UNAUTHENTICATED ACCESS"
+fi
+if [ "$REDIS_HOST" = "0.0.0.0" ]; then
+    echo "⚠️  WARNING: Listening on all interfaces - NETWORK EXPOSED"
+fi
+if [ "$REDIS_APPENDONLY" = "no" ] && [ "$REDIS_SAVE_RDB" = "no" ]; then
+    echo "⚠️  WARNING: All persistence disabled - DATA LOSS ON RESTART"
+fi
+[ "$REDIS_PROTECTED_MODE" = "no" ] || [ -z "$REDIS_PASSWORD" ] || [ "$REDIS_HOST" = "0.0.0.0" ] || [ "$REDIS_APPENDONLY" = "no" -a "$REDIS_SAVE_RDB" = "no" ] && echo ""
+
+echo "Connection:"
+echo "  Host: ${REDIS_HOST}:${REDIS_PORT}"
+if [ -n "$REDIS_PASSWORD" ]; then
+    echo "  Password: ***"
+else
+    echo "  Password: (none)"
+fi
+echo ""
+echo "Memory:"
+echo "  Max memory: ${REDIS_MAXMEMORY}"
+echo "  Eviction policy: ${REDIS_MAXMEMORY_POLICY}"
+echo ""
+echo "Persistence:"
+echo "  RDB snapshots: ${REDIS_SAVE_RDB}"
+echo "  AOF logging: ${REDIS_APPENDONLY}"
+echo ""
+echo "Commands:"
+echo "  flox activate -s        Start Redis"
+echo "  redis-cli               Connect to Redis"
+echo "  redis-info              Show configuration"
+echo "  helpf                   View full README documentation"
+echo ""
+
+  # Fetch README.md if not present
+  README_FILE="$FLOX_ENV_PROJECT/README.md"
+  if [ ! -f "$README_FILE" ]; then
+    if curl -fsSL https://raw.githubusercontent.com/barstoolbluz/floxenvs/main/redis-headless/README.md -o "$README_FILE" 2>/dev/null; then
+      echo "✓ Downloaded README.md (use 'helpf' to view)"
     fi
-
-    update_dependent_vars
-}
-
-# our gum-ified tui (thank you ye good folk at charmbracelet!)
-display_redis_config_ui() {
-    clear
-
-    # customize header + colors
-    gum style \
-        --border rounded \
-        --border-foreground 240 \
-        --padding "1 2" \
-        --margin "1 0" \
-        --width 70 \
-        "$(gum style --foreground 196 --bold 'Redis Configuration')
-
-$(gum style --foreground 240 'First-time setup for your local Redis instance')"
-
-    prompt_for_config
-}
-
-# redis setup master function
-redis_setup() {
-    debug_log "Setting up Redis..."
-
-    # create redis config
-    debug_log "Creating Redis configuration file..."
-    create_redis_config || { echo "Failed to create configuration file"; return 1; }
-
-    debug_log "Redis setup completed successfully"
-    return 0
-}
-
-# gummified help message
-show_redis_help() {
-    # Determine display host
-    local display_host
-    if [[ "$REDIS_HOST" == "0.0.0.0" ]]; then
-        display_host="localhost"
-    else
-        display_host="$REDIS_HOST"
-    fi
-
-    # Create the help message with Gum styling
-    gum style \
-        --border rounded \
-        --border-foreground 240 \
-        --padding "1 2" \
-        --margin "1 0" \
-        --width 96 \
-        "$(gum style --foreground 196 --bold 'This is a  F l o x  Redis Environment')
-
-👉  Service Management:
-    $(gum style --foreground 212 'flox activate -s')    Start Redis at activation
-    $(gum style --foreground 212 'redisstart')          Start Redis post activation
-    $(gum style --foreground 212 'redisstop')           Stop Redis post activation
-    $(gum style --foreground 212 'redisrestart')        Restart Redis post activation
-
-👉  Configuration:
-    $(gum style --foreground 212 'redisconfigure')      Reconfigure Redis post activation
-
-👉  Connection:
-    $(gum style --foreground 212 'redis-cli')           Connect to Redis
-
-👉  Connection Details:
-    Host:     $(gum style --foreground 212 "${display_host}")
-    Port:     $(gum style --foreground 212 "${REDIS_PORT}")
-    Password: $(gum style --foreground 212 "$([ -n "$REDIS_PASSWORD" ] && echo "***" || echo "none")")
-
-👉  Persistence:
-    RDB:      $(gum style --foreground 212 "${REDIS_SAVE_RDB}")
-    AOF:      $(gum style --foreground 212 "${REDIS_APPENDONLY}")"
-
-    echo ""
-}
-
-# it's tautological!
-main() {
-    first_run_setup
-
-    redis_setup
-
-    show_redis_help
-}
-
-# runnit all
-main
-'''
-
-
-[profile]
-common = '''
-'''
-
-bash = '''
-source "${FLOX_ENV_CACHE}/redis.config" 2>/dev/null || true
-redisstart() { flox services start redis; }
-redisstop() { flox services stop redis; }
-redisrestart() { flox services restart redis; }
-redisconfigure() {
-  flox services stop redis
-  source "${FLOX_ENV_CACHE}/redis.config" 2>/dev/null || true
-  reconfigure_redis
-  flox services start redis
-}
-export -f redisstart redisstop redisrestart redisconfigure
-unset -f debug_log create_redis_config check_first_run
-unset -f load_config prompt_for_config display_redis_config_ui main
-'''
-
-zsh = '''
-source "${FLOX_ENV_CACHE}/redis.config" 2>/dev/null || true
-redisstart() { flox services start redis; }
-redisstop() { flox services stop redis; }
-redisrestart() { flox services restart redis; }
-redisconfigure() {
-  flox services stop redis
-  source "${FLOX_ENV_CACHE}/redis.config" 2>/dev/null || true
-  reconfigure_redis
-  flox services start redis
-}
-export redisstart redisstop redisrestart redisconfigure
-unset -f "debug_log" "create_redis_config" "check_first_run"
-unset -f "load_config" "prompt_for_config" "display_redis_config_ui" "main"
-'''
-
-fish = '''
-source "$FLOX_ENV_CACHE/redis.config" 2>/dev/null || true
-
-function redisstart
-    flox services start redis
-end
-
-function redisstop
-    flox services stop redis
-end
-
-function redisrestart
-    flox services restart redis
-end
-
-function redisconfigure
-    flox services stop redis
-    source "$FLOX_ENV_CACHE/redis.config" 2>/dev/null || true
-    reconfigure_redis
-    flox services start redis
-end
-
-functions -e debug_log create_redis_config check_first_run
-functions -e load_config prompt_for_config display_redis_config_ui main
+  fi
 '''
 
 [services]
 redis.command = "redis-server $REDIS_CONF_FILE"
 
+[profile]
+bash = '''
+
+redis-info() {
+    echo "Redis (Headless Mode) - Configuration"
+    echo ""
+    echo "Connection:"
+    echo "  Host: ${REDIS_HOST}:${REDIS_PORT}"
+    if [ -n "$REDIS_PASSWORD" ]; then
+        echo "  Password: ***"
+    else
+        echo "  Password: (none)"
+    fi
+    echo "  Protected mode: ${REDIS_PROTECTED_MODE}"
+    echo ""
+    echo "Memory:"
+    echo "  Max memory: ${REDIS_MAXMEMORY}"
+    echo "  Eviction policy: ${REDIS_MAXMEMORY_POLICY}"
+    echo "  Eviction samples: ${REDIS_MAXMEMORY_SAMPLES}"
+    echo ""
+    echo "Persistence (RDB):"
+    echo "  Enabled: ${REDIS_SAVE_RDB}"
+    if [ "$REDIS_SAVE_RDB" = "yes" ]; then
+        echo "  Save after 900s if ${REDIS_SAVE_900}+ changes"
+        echo "  Save after 300s if ${REDIS_SAVE_300}+ changes"
+        echo "  Save after 60s if ${REDIS_SAVE_60}+ changes"
+        echo "  Compression: ${REDIS_RDB_COMPRESSION}"
+        echo "  Checksum: ${REDIS_RDB_CHECKSUM}"
+    fi
+    echo ""
+    echo "Persistence (AOF):"
+    echo "  Enabled: ${REDIS_APPENDONLY}"
+    if [ "$REDIS_APPENDONLY" = "yes" ]; then
+        echo "  Fsync policy: ${REDIS_APPENDFSYNC}"
+        echo "  Rewrite percentage: ${REDIS_AOF_REWRITE_PERCENTAGE}"
+        echo "  Rewrite min size: ${REDIS_AOF_REWRITE_MIN_SIZE}"
+    fi
+    echo ""
+    echo "Performance:"
+    echo "  Databases: ${REDIS_DATABASES}"
+    echo "  Max clients: ${REDIS_MAXCLIENTS}"
+    echo "  TCP backlog: ${REDIS_TCP_BACKLOG}"
+    echo "  Timeout: ${REDIS_TIMEOUT}s"
+    echo "  TCP keepalive: ${REDIS_TCP_KEEPALIVE}s"
+    echo ""
+    echo "Monitoring:"
+    echo "  Slow log threshold: ${REDIS_SLOWLOG_LOG_SLOWER_THAN}μs"
+    echo "  Slow log max length: ${REDIS_SLOWLOG_MAX_LEN}"
+    echo "  Latency monitor threshold: ${REDIS_LATENCY_MONITOR_THRESHOLD}ms"
+    echo ""
+    echo "Data Directory: ${REDIS_DIR}"
+    echo "Config File: ${REDIS_CONF_FILE}"
+    echo ""
+    echo "Commands:"
+    echo "  redis-cli                       Connect to Redis"
+    echo "  flox activate -s                Start Redis service"
+    echo "  flox services status            Check service status"
+    echo "  flox services logs redis        View service logs"
+    echo "  flox services restart redis     Restart with new settings"
+}
+export -f redis-info
+
+  helpf() {
+    local README_FILE="$FLOX_ENV_PROJECT/README.md"
+    local README_URL="https://raw.githubusercontent.com/barstoolbluz/floxenvs/main/redis-headless/README.md"
+
+    if [ "$1" = "--help" ]; then
+      echo "Usage: helpf [OPTIONS]"
+      echo ""
+      echo "View environment documentation"
+      echo ""
+      echo "Options:"
+      echo "  --force    Force download fresh copy from GitHub"
+      echo "  --help     Show this help message"
+      echo ""
+      echo "The README is cached locally and only downloaded if missing."
+      return 0
+    fi
+
+    if [ "$1" = "--force" ]; then
+      echo "Fetching latest README.md from GitHub..."
+      if curl -fsSL "$README_URL" -o "$README_FILE"; then
+        echo "✓ Downloaded README.md"
+      else
+        echo "✗ Failed to download README.md"
+        return 1
+      fi
+    elif [ ! -f "$README_FILE" ]; then
+      echo "README.md not found, downloading..."
+      if curl -fsSL "$README_URL" -o "$README_FILE"; then
+        echo "✓ Downloaded README.md"
+      else
+        echo "✗ Failed to download README.md"
+        return 1
+      fi
+    fi
+
+    if [ -f "$README_FILE" ]; then
+      bat --style=auto --paging=always "$README_FILE"
+    else
+      echo "✗ README.md not found at $README_FILE"
+      return 1
+    fi
+  }
+  export -f helpf
+'''
+
+zsh = '''
+
+redis-info() {
+    echo "Redis (Headless Mode) - Configuration"
+    echo ""
+    echo "Connection:"
+    echo "  Host: ${REDIS_HOST}:${REDIS_PORT}"
+    if [ -n "$REDIS_PASSWORD" ]; then
+        echo "  Password: ***"
+    else
+        echo "  Password: (none)"
+    fi
+    echo "  Protected mode: ${REDIS_PROTECTED_MODE}"
+    echo ""
+    echo "Memory:"
+    echo "  Max memory: ${REDIS_MAXMEMORY}"
+    echo "  Eviction policy: ${REDIS_MAXMEMORY_POLICY}"
+    echo "  Eviction samples: ${REDIS_MAXMEMORY_SAMPLES}"
+    echo ""
+    echo "Persistence (RDB):"
+    echo "  Enabled: ${REDIS_SAVE_RDB}"
+    if [ "$REDIS_SAVE_RDB" = "yes" ]; then
+        echo "  Save after 900s if ${REDIS_SAVE_900}+ changes"
+        echo "  Save after 300s if ${REDIS_SAVE_300}+ changes"
+        echo "  Save after 60s if ${REDIS_SAVE_60}+ changes"
+        echo "  Compression: ${REDIS_RDB_COMPRESSION}"
+        echo "  Checksum: ${REDIS_RDB_CHECKSUM}"
+    fi
+    echo ""
+    echo "Persistence (AOF):"
+    echo "  Enabled: ${REDIS_APPENDONLY}"
+    if [ "$REDIS_APPENDONLY" = "yes" ]; then
+        echo "  Fsync policy: ${REDIS_APPENDFSYNC}"
+        echo "  Rewrite percentage: ${REDIS_AOF_REWRITE_PERCENTAGE}"
+        echo "  Rewrite min size: ${REDIS_AOF_REWRITE_MIN_SIZE}"
+    fi
+    echo ""
+    echo "Performance:"
+    echo "  Databases: ${REDIS_DATABASES}"
+    echo "  Max clients: ${REDIS_MAXCLIENTS}"
+    echo "  TCP backlog: ${REDIS_TCP_BACKLOG}"
+    echo "  Timeout: ${REDIS_TIMEOUT}s"
+    echo "  TCP keepalive: ${REDIS_TCP_KEEPALIVE}s"
+    echo ""
+    echo "Monitoring:"
+    echo "  Slow log threshold: ${REDIS_SLOWLOG_LOG_SLOWER_THAN}μs"
+    echo "  Slow log max length: ${REDIS_SLOWLOG_MAX_LEN}"
+    echo "  Latency monitor threshold: ${REDIS_LATENCY_MONITOR_THRESHOLD}ms"
+    echo ""
+    echo "Data Directory: ${REDIS_DIR}"
+    echo "Config File: ${REDIS_CONF_FILE}"
+    echo ""
+    echo "Commands:"
+    echo "  redis-cli                       Connect to Redis"
+    echo "  flox activate -s                Start Redis service"
+    echo "  flox services status            Check service status"
+    echo "  flox services logs redis        View service logs"
+    echo "  flox services restart redis     Restart with new settings"
+}
+
+  helpf() {
+    local README_FILE="$FLOX_ENV_PROJECT/README.md"
+    local README_URL="https://raw.githubusercontent.com/barstoolbluz/floxenvs/main/redis-headless/README.md"
+
+    if [ "$1" = "--help" ]; then
+      echo "Usage: helpf [OPTIONS]"
+      echo ""
+      echo "View environment documentation"
+      echo ""
+      echo "Options:"
+      echo "  --force    Force download fresh copy from GitHub"
+      echo "  --help     Show this help message"
+      echo ""
+      echo "The README is cached locally and only downloaded if missing."
+      return 0
+    fi
+
+    if [ "$1" = "--force" ]; then
+      echo "Fetching latest README.md from GitHub..."
+      if curl -fsSL "$README_URL" -o "$README_FILE"; then
+        echo "✓ Downloaded README.md"
+      else
+        echo "✗ Failed to download README.md"
+        return 1
+      fi
+    elif [ ! -f "$README_FILE" ]; then
+      echo "README.md not found, downloading..."
+      if curl -fsSL "$README_URL" -o "$README_FILE"; then
+        echo "✓ Downloaded README.md"
+      else
+        echo "✗ Failed to download README.md"
+        return 1
+      fi
+    fi
+
+    if [ -f "$README_FILE" ]; then
+      bat --style=auto --paging=always "$README_FILE"
+    else
+      echo "✗ README.md not found at $README_FILE"
+      return 1
+    fi
+  }
+'''
+
+fish = '''
+
+function redis-info
+    echo "Redis (Headless Mode) - Configuration"
+    echo ""
+    echo "Connection:"
+    echo "  Host: $REDIS_HOST:$REDIS_PORT"
+    if test -n "$REDIS_PASSWORD"
+        echo "  Password: ***"
+    else
+        echo "  Password: (none)"
+    end
+    echo "  Protected mode: $REDIS_PROTECTED_MODE"
+    echo ""
+    echo "Memory:"
+    echo "  Max memory: $REDIS_MAXMEMORY"
+    echo "  Eviction policy: $REDIS_MAXMEMORY_POLICY"
+    echo "  Eviction samples: $REDIS_MAXMEMORY_SAMPLES"
+    echo ""
+    echo "Persistence (RDB):"
+    echo "  Enabled: $REDIS_SAVE_RDB"
+    if test "$REDIS_SAVE_RDB" = "yes"
+        echo "  Save after 900s if $REDIS_SAVE_900+ changes"
+        echo "  Save after 300s if $REDIS_SAVE_300+ changes"
+        echo "  Save after 60s if $REDIS_SAVE_60+ changes"
+        echo "  Compression: $REDIS_RDB_COMPRESSION"
+        echo "  Checksum: $REDIS_RDB_CHECKSUM"
+    end
+    echo ""
+    echo "Persistence (AOF):"
+    echo "  Enabled: $REDIS_APPENDONLY"
+    if test "$REDIS_APPENDONLY" = "yes"
+        echo "  Fsync policy: $REDIS_APPENDFSYNC"
+        echo "  Rewrite percentage: $REDIS_AOF_REWRITE_PERCENTAGE"
+        echo "  Rewrite min size: $REDIS_AOF_REWRITE_MIN_SIZE"
+    end
+    echo ""
+    echo "Performance:"
+    echo "  Databases: $REDIS_DATABASES"
+    echo "  Max clients: $REDIS_MAXCLIENTS"
+    echo "  TCP backlog: $REDIS_TCP_BACKLOG"
+    echo "  Timeout: $REDIS_TIMEOUT"s
+    echo "  TCP keepalive: $REDIS_TCP_KEEPALIVE"s
+    echo ""
+    echo "Monitoring:"
+    echo "  Slow log threshold: $REDIS_SLOWLOG_LOG_SLOWER_THAN"μs
+    echo "  Slow log max length: $REDIS_SLOWLOG_MAX_LEN"
+    echo "  Latency monitor threshold: $REDIS_LATENCY_MONITOR_THRESHOLD"ms
+    echo ""
+    echo "Data Directory: $REDIS_DIR"
+    echo "Config File: $REDIS_CONF_FILE"
+    echo ""
+    echo "Commands:"
+    echo "  redis-cli                       Connect to Redis"
+    echo "  flox activate -s                Start Redis service"
+    echo "  flox services status            Check service status"
+    echo "  flox services logs redis        View service logs"
+    echo "  flox services restart redis     Restart with new settings"
+end
+
+function helpf
+    set README_FILE "$FLOX_ENV_PROJECT/README.md"
+    set README_URL "https://raw.githubusercontent.com/barstoolbluz/floxenvs/main/redis-headless/README.md"
+
+    if test "$argv[1]" = "--help"
+        echo "Usage: helpf [OPTIONS]"
+        echo ""
+        echo "View environment documentation"
+        echo ""
+        echo "Options:"
+        echo "  --force    Force download fresh copy from GitHub"
+        echo "  --help     Show this help message"
+        echo ""
+        echo "The README is cached locally and only downloaded if missing."
+        return 0
+    end
+
+    if test "$argv[1]" = "--force"
+        echo "Fetching latest README.md from GitHub..."
+        if curl -fsSL "$README_URL" -o "$README_FILE"
+            echo "✓ Downloaded README.md"
+        else
+            echo "✗ Failed to download README.md"
+            return 1
+        end
+    else if not test -f "$README_FILE"
+        echo "README.md not found, downloading..."
+        if curl -fsSL "$README_URL" -o "$README_FILE"
+            echo "✓ Downloaded README.md"
+        else
+            echo "✗ Failed to download README.md"
+            return 1
+        end
+    end
+
+    if test -f "$README_FILE"
+        bat --style=auto --paging=always "$README_FILE"
+    else
+        echo "✗ README.md not found at $README_FILE"
+        return 1
+    end
+end
+'''
 
 [options]
 systems = [

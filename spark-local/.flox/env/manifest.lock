@@ -1,0 +1,1164 @@
+{
+  "lockfile-version": 1,
+  "manifest": {
+    "version": 1,
+    "install": {
+      "bat": {
+        "pkg-path": "bat"
+      },
+      "coreutils": {
+        "pkg-path": "coreutils"
+      },
+      "curl": {
+        "pkg-path": "curl"
+      },
+      "gawk": {
+        "pkg-path": "gawk"
+      },
+      "gnugrep": {
+        "pkg-path": "gnugrep"
+      },
+      "gnused": {
+        "pkg-path": "gnused"
+      },
+      "jdk": {
+        "pkg-path": "jdk"
+      },
+      "pip": {
+        "pkg-path": "python312Packages.pip"
+      },
+      "spark": {
+        "pkg-path": "spark"
+      }
+    },
+    "hook": {
+      "on-activate": "# creates $SPARK data and log  dirs\nmkdir -p \"$FLOX_ENV_CACHE/spark-data\"\nmkdir -p \"$FLOX_ENV_CACHE/spark-logs\"\n\n# Sets $SPARK_HOME if not set\nexport SPARK_HOME=\"${SPARK_HOME:-$(dirname $(which spark-submit))/..}\"\n\n# Sets data + log dirs if not already set\nif [ -z \"$SPARK_LOG_DIR\" ]; then\n    export SPARK_LOG_DIR=\"$FLOX_ENV_CACHE/spark-logs\"\nfi\n\nif [ -z \"$SPARK_WORKER_DIR\" ]; then\n    export SPARK_WORKER_DIR=\"$FLOX_ENV_CACHE/spark-data\"\nfi\n\n# checks + sets env vars if not already set\nif [ -z \"$SPARK_MODE\" ]; then\n    export SPARK_MODE=\"worker\"\nfi\n\nif [ -z \"$SPARK_HOST\" ]; then\n    export SPARK_HOST=\"localhost\"\nfi\n\nif [ -z \"$SPARK_PORT\" ]; then\n    export SPARK_PORT=\"7077\"\nfi\n\nif [ -z \"$SPARK_WEBUI_PORT\" ]; then\n    export SPARK_WEBUI_PORT=\"8080\"\nfi\n\nif [ -z \"$SPARK_WORKER_CORES\" ]; then\n    export SPARK_WORKER_CORES=\"2\"\nfi\n\nif [ -z \"$SPARK_WORKER_MEMORY\" ]; then\n    export SPARK_WORKER_MEMORY=\"2g\"\nfi\n\n# detects ip if $SPARK_LOCAL_IP isn't set\nif [ -z \"$SPARK_LOCAL_IP\" ]; then\n    # detects os to determine which ip detection method to use\n    OS_TYPE=$(uname -s)\n    \n    # special handling for darwin/macos\n    if [ \"$OS_TYPE\" = \"Darwin\" ]; then\n        # darwin/macos\n        DETECTED_IP=$(ifconfig | grep \"inet \" | grep -v 127.0.0.1 | head -n 1 | awk '{print $2}')\n    elif [ \"$OS_TYPE\" = \"Linux\" ]; then\n        # linux\n        DETECTED_IP=$(hostname -I 2>/dev/null | awk '{print $1}')\n        \n        # falls back to trying ifconfig or ip\n        if [ -z \"$DETECTED_IP\" ]; then\n            if command -v ifconfig >/dev/null 2>&1; then\n                DETECTED_IP=$(ifconfig | grep -Eo 'inet (addr:)?([0-9]*\\.){3}[0-9]*' | grep -Eo '([0-9]*\\.){3}[0-9]*' | grep -v '127.0.0.1' | head -n 1)\n            elif command -v ip >/dev/null 2>&1; then\n                DETECTED_IP=$(ip -4 addr show | grep -oP '(?<=inet\\s)\\d+(\\.\\d+){3}' | grep -v '127.0.0.1' | head -n 1)\n            fi\n        fi\n    else\n        # fallback for darwin/macos\n        DETECTED_IP=$(ifconfig 2>/dev/null | grep -Eo 'inet (addr:)?([0-9]*\\.){3}[0-9]*' | grep -Eo '([0-9]*\\.){3}[0-9]*' | grep -v '127.0.0.1' | head -n 1)\n    fi\n    \n    # falls back to localhost if everything else is kaput\n    if [ -z \"$DETECTED_IP\" ]; then\n        DETECTED_IP=\"127.0.0.1\"\n        echo \"Warning: Could not detect IP address, using 127.0.0.1 as fallback.\"\n    fi\n    \n    # sets local ip if not already set\n    export SPARK_LOCAL_IP=\"$DETECTED_IP\"\nfi\n\n# sets advertise ip if not already set\nif [ -z \"$SPARK_ADVERTISE_IP\" ]; then\n    export SPARK_ADVERTISE_IP=\"$SPARK_LOCAL_IP\"\nfi\n\n# sets $SPARK_MASTER_URL if $SPARK_MODE=master and  not already set\nif [ -z \"$SPARK_MASTER_URL\" ]; then\n    if [ \"$SPARK_MODE\" = \"master\" ]; then\n        export SPARK_MASTER_URL=\"spark://$SPARK_ADVERTISE_IP:$SPARK_PORT\"\n    else\n        # builds from host/port for $SPARK_MODE=worker\n        export SPARK_MASTER_URL=\"spark://$SPARK_HOST:$SPARK_PORT\"\n    fi\nfi\n\n# sets $SPARK_MASTER env vars\nif [ \"$SPARK_MODE\" = \"master\" ]; then\n    if [ -z \"$SPARK_MASTER_HOST\" ]; then\n        export SPARK_MASTER_HOST=\"$SPARK_ADVERTISE_IP\"\n    fi\n    \n    if [ -z \"$SPARK_MASTER_PORT\" ]; then\n        export SPARK_MASTER_PORT=\"$SPARK_PORT\"\n    fi\n    \n    if [ -z \"$SPARK_MASTER_WEBUI_PORT\" ]; then\n        export SPARK_MASTER_WEBUI_PORT=\"$SPARK_WEBUI_PORT\"\n    fi\nfi\n\n# tries to find JAVA_HOME if not already set; should be set b/c this is flox!\nif [ -z \"$JAVA_HOME\" ]; then\n    export JAVA_HOME=\"$(dirname $(dirname $(which java)))\"\nfi\n\n# displays current configuration\necho \"Spark Environment Configuration:\"\necho \"  Mode:          $SPARK_MODE\"\necho \"  Local IP:      $SPARK_LOCAL_IP\"\necho \"  Advertise IP:  $SPARK_ADVERTISE_IP\"\necho \"  Data Dir:      $SPARK_WORKER_DIR\"\necho \"  Log Dir:       $SPARK_LOG_DIR\"\nif [ \"$SPARK_MODE\" = \"master\" ]; then\n    echo \"  Master URL:    $SPARK_MASTER_URL (I am the master)\"\n    echo \"  Web UI:        http://$SPARK_ADVERTISE_IP:$SPARK_WEBUI_PORT\"\nelse\n    echo \"  Master URL:    $SPARK_MASTER_URL\"\n    echo \"  Worker Cores:  $SPARK_WORKER_CORES\"\n    echo \"  Worker Memory: $SPARK_WORKER_MEMORY\"\nfi\n\n# downloads README.md if not exists\nif [ ! -f \"$FLOX_ENV_PROJECT/README.md\" ] || [ ! -s \"$FLOX_ENV_PROJECT/README.md\" ]; then\n    curl -sL \"https://raw.githubusercontent.com/barstoolbluz/floxenvs/main/spark/README.md\" > \"$FLOX_ENV_PROJECT/README.md\" 2>/dev/null\nfi\n\necho \"\"\necho \"Run 'helpf' for detailed documentation\"\n"
+    },
+    "profile": {
+      "bash": "info() {\n  echo \"Spark Environment Configuration:\"\n  echo \"  Mode:          $SPARK_MODE\"\n  echo \"  Local IP:      $SPARK_LOCAL_IP\"\n  echo \"  Advertise IP:  $SPARK_ADVERTISE_IP\"\n  echo \"  Data Dir:      $SPARK_WORKER_DIR\"\n  echo \"  Log Dir:       $SPARK_LOG_DIR\"\n  if [ \"$SPARK_MODE\" = \"master\" ]; then\n      echo \"  Master URL:    $SPARK_MASTER_URL (I am the master)\"\n      echo \"  Web UI:        http://$SPARK_ADVERTISE_IP:$SPARK_WEBUI_PORT\"\n  else\n      echo \"  Master URL:    $SPARK_MASTER_URL\"\n      echo \"  Worker Cores:  $SPARK_WORKER_CORES\"\n      echo \"  Worker Memory: $SPARK_WORKER_MEMORY\"\n  fi\n}\n\nhelpf() {\n  local README_URL=\"https://raw.githubusercontent.com/barstoolbluz/floxenvs/main/spark/README.md\"\n  local README_FILE=\"$FLOX_ENV_PROJECT/README.md\"\n\n  if [[ \"$1\" == \"--help\" ]]; then\n    echo \"Usage: helpf [--force]\"\n    echo \"  --force  Force re-download of README from remote\"\n    echo \"  --help   Show this help message\"\n    return 0\n  fi\n\n  if [[ \"$1\" == \"--force\" ]] || [ ! -s \"$README_FILE\" ]; then\n    curl -sL \"$README_URL\" > \"$README_FILE\" 2>/dev/null\n  fi\n\n  bat --style=auto --paging=always \"$README_FILE\" 2>/dev/null\n}\n",
+      "zsh": "info() {\n  echo \"Spark Environment Configuration:\"\n  echo \"  Mode:          $SPARK_MODE\"\n  echo \"  Local IP:      $SPARK_LOCAL_IP\"\n  echo \"  Advertise IP:  $SPARK_ADVERTISE_IP\"\n  echo \"  Data Dir:      $SPARK_WORKER_DIR\"\n  echo \"  Log Dir:       $SPARK_LOG_DIR\"\n  if [ \"$SPARK_MODE\" = \"master\" ]; then\n      echo \"  Master URL:    $SPARK_MASTER_URL (I am the master)\"\n      echo \"  Web UI:        http://$SPARK_ADVERTISE_IP:$SPARK_WEBUI_PORT\"\n  else\n      echo \"  Master URL:    $SPARK_MASTER_URL\"\n      echo \"  Worker Cores:  $SPARK_WORKER_CORES\"\n      echo \"  Worker Memory: $SPARK_WORKER_MEMORY\"\n  fi\n}\n\nhelpf() {\n  local README_URL=\"https://raw.githubusercontent.com/barstoolbluz/floxenvs/main/spark/README.md\"\n  local README_FILE=\"$FLOX_ENV_PROJECT/README.md\"\n\n  if [[ \"$1\" == \"--help\" ]]; then\n    echo \"Usage: helpf [--force]\"\n    echo \"  --force  Force re-download of README from remote\"\n    echo \"  --help   Show this help message\"\n    return 0\n  fi\n\n  if [[ \"$1\" == \"--force\" ]] || [ ! -s \"$README_FILE\" ]; then\n    curl -sL \"$README_URL\" > \"$README_FILE\" 2>/dev/null\n  fi\n\n  bat --style=auto --paging=always \"$README_FILE\" 2>/dev/null\n}\n",
+      "fish": "function info\n  echo \"Spark Environment Configuration:\"\n  echo \"  Mode:          $SPARK_MODE\"\n  echo \"  Local IP:      $SPARK_LOCAL_IP\"\n  echo \"  Advertise IP:  $SPARK_ADVERTISE_IP\"\n  echo \"  Data Dir:      $SPARK_WORKER_DIR\"\n  echo \"  Log Dir:       $SPARK_LOG_DIR\"\n  if [ \"$SPARK_MODE\" = \"master\" ]\n      echo \"  Master URL:    $SPARK_MASTER_URL (I am the master)\"\n      echo \"  Web UI:        http://$SPARK_ADVERTISE_IP:$SPARK_WEBUI_PORT\"\n  else\n      echo \"  Master URL:    $SPARK_MASTER_URL\"\n      echo \"  Worker Cores:  $SPARK_WORKER_CORES\"\n      echo \"  Worker Memory: $SPARK_WORKER_MEMORY\"\n  end\nend\n\nfunction readme\n  if test \"$argv[1]\" = \"--refresh\"; or test ! -s \"$FLOX_ENV_PROJECT/README.md\"\n    curl -sL \"https://raw.githubusercontent.com/barstoolbluz/floxenvs/main/spark-headless/README.md\" > \"$FLOX_ENV_PROJECT/README.md\" 2>/dev/null\n  end\n  bat --language markdown \"$FLOX_ENV_PROJECT/README.md\" 2>/dev/null\nend\n"
+    },
+    "options": {
+      "systems": [
+        "aarch64-darwin",
+        "aarch64-linux",
+        "x86_64-darwin",
+        "x86_64-linux"
+      ]
+    },
+    "services": {
+      "spark": {
+        "command": "mkdir -p \"$SPARK_LOG_DIR\"\nmkdir -p \"$SPARK_WORKER_DIR\"\n\nenv | grep SPARK > \"$SPARK_LOG_DIR/env-vars.log\"\n\nif [ \"$SPARK_MODE\" = \"master\" ]; then\n    if ping -c 1 -W 1 \"$SPARK_LOCAL_IP\" > /dev/null 2>&1; then\n        echo \"IP $SPARK_LOCAL_IP is reachable\" >> \"$SPARK_LOG_DIR/startup.log\"\n    else\n        echo \"Warning: IP $SPARK_LOCAL_IP might not be reachable\" >> \"$SPARK_LOG_DIR/startup.log\"\n        \n        if ip addr | grep -q \"$SPARK_LOCAL_IP\"; then\n            echo \"IP $SPARK_LOCAL_IP is configured locally\" >> \"$SPARK_LOG_DIR/startup.log\"\n        else\n            echo \"Warning: IP $SPARK_LOCAL_IP is not configured on any local interface\" >> \"$SPARK_LOG_DIR/startup.log\"\n            echo \"Falling back to 127.0.0.1 for binding\" >> \"$SPARK_LOG_DIR/startup.log\"\n            export SPARK_LOCAL_IP=\"127.0.0.1\"\n        fi\n    fi\n    \n    export SPARK_MASTER_HOST=\"$SPARK_ADVERTISE_IP\"\n    export SPARK_MASTER_PORT=\"$SPARK_PORT\"\n    export SPARK_MASTER_WEBUI_PORT=\"$SPARK_WEBUI_PORT\"\n    export SPARK_LOCAL_IP=\"$SPARK_LOCAL_IP\"\n    \n    unset SPARK_LOCAL_HOSTNAME\n    unset SPARK_PUBLIC_DNS\n    \n    echo \"Starting Spark master at $SPARK_MASTER_URL (binding to $SPARK_LOCAL_IP, advertising as $SPARK_ADVERTISE_IP)\" >> \"$SPARK_LOG_DIR/startup.log\"\n    cd \"$SPARK_HOME\" && \"./sbin/start-master.sh\"\nelif [ \"$SPARK_MODE\" = \"worker\" ] && [ ! -z \"$SPARK_MASTER_URL\" ]; then\n    if ping -c 1 -W 1 \"$SPARK_LOCAL_IP\" > /dev/null 2>&1; then\n        echo \"IP $SPARK_LOCAL_IP is reachable\" >> \"$SPARK_LOG_DIR/startup.log\"\n    else\n        echo \"Warning: IP $SPARK_LOCAL_IP might not be reachable\" >> \"$SPARK_LOG_DIR/startup.log\"\n        \n        if ip addr | grep -q \"$SPARK_LOCAL_IP\"; then\n            echo \"IP $SPARK_LOCAL_IP is configured locally\" >> \"$SPARK_LOG_DIR/startup.log\"\n        else\n            echo \"Warning: IP $SPARK_LOCAL_IP is not configured on any local interface\" >> \"$SPARK_LOG_DIR/startup.log\"\n            echo \"Falling back to 127.0.0.1 for binding\" >> \"$SPARK_LOG_DIR/startup.log\"\n            export SPARK_LOCAL_IP=\"127.0.0.1\"\n        fi\n    fi\n    \n    export SPARK_WORKER_CORES=\"$SPARK_WORKER_CORES\"\n    export SPARK_WORKER_MEMORY=\"$SPARK_WORKER_MEMORY\"\n    \n    unset SPARK_LOCAL_HOSTNAME\n    unset SPARK_PUBLIC_DNS\n    \n    echo \"Starting Spark worker at $SPARK_LOCAL_IP connecting to $SPARK_MASTER_URL\" >> \"$SPARK_LOG_DIR/startup.log\" \n    cd \"$SPARK_HOME\" && \"./sbin/start-worker.sh\" \"$SPARK_MASTER_URL\"\nelse\n    echo \"ERROR: Invalid configuration. SPARK_MODE=$SPARK_MODE, SPARK_MASTER_URL=$SPARK_MASTER_URL\" >> \"$SPARK_LOG_DIR/startup.log\"\n    exit 1\nfi\n\n# keeps the service running\ntail -f /dev/null\n"
+      }
+    }
+  },
+  "packages": [
+    {
+      "attr_path": "bat",
+      "broken": false,
+      "derivation": "/nix/store/bb8m193f4azrby6x67709vd84bhammig-bat-0.26.0.drv",
+      "description": "Cat(1) clone with syntax highlighting and Git integration",
+      "install_id": "bat",
+      "license": "[ Apache-2.0, MIT ]",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=5ae3b07d8d6527c42f17c876e404993199144b6a",
+      "name": "bat-0.26.0",
+      "pname": "bat",
+      "rev": "5ae3b07d8d6527c42f17c876e404993199144b6a",
+      "rev_count": 901419,
+      "rev_date": "2025-11-24T06:39:56Z",
+      "scrape_date": "2025-11-26T02:53:23.525715Z",
+      "stabilities": [
+        "unstable"
+      ],
+      "unfree": false,
+      "version": "0.26.0",
+      "outputs_to_install": [
+        "out"
+      ],
+      "outputs": {
+        "out": "/nix/store/09p75pqsy6ybv79msnwikxf2n3lzv60b-bat-0.26.0"
+      },
+      "system": "aarch64-darwin",
+      "group": "toplevel",
+      "priority": 5
+    },
+    {
+      "attr_path": "bat",
+      "broken": false,
+      "derivation": "/nix/store/3rx7bp6gn6slylwwwgads7h8n7h7fd45-bat-0.26.0.drv",
+      "description": "Cat(1) clone with syntax highlighting and Git integration",
+      "install_id": "bat",
+      "license": "[ Apache-2.0, MIT ]",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=5ae3b07d8d6527c42f17c876e404993199144b6a",
+      "name": "bat-0.26.0",
+      "pname": "bat",
+      "rev": "5ae3b07d8d6527c42f17c876e404993199144b6a",
+      "rev_count": 901419,
+      "rev_date": "2025-11-24T06:39:56Z",
+      "scrape_date": "2025-11-26T03:02:38.142174Z",
+      "stabilities": [
+        "unstable"
+      ],
+      "unfree": false,
+      "version": "0.26.0",
+      "outputs_to_install": [
+        "out"
+      ],
+      "outputs": {
+        "out": "/nix/store/f0nz9yqd2ys8gjca0kdyk1ahm15dg1vc-bat-0.26.0"
+      },
+      "system": "aarch64-linux",
+      "group": "toplevel",
+      "priority": 5
+    },
+    {
+      "attr_path": "bat",
+      "broken": false,
+      "derivation": "/nix/store/ln9adzycljj5m8jjcd3cr7chcn78i136-bat-0.26.0.drv",
+      "description": "Cat(1) clone with syntax highlighting and Git integration",
+      "install_id": "bat",
+      "license": "[ Apache-2.0, MIT ]",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=5ae3b07d8d6527c42f17c876e404993199144b6a",
+      "name": "bat-0.26.0",
+      "pname": "bat",
+      "rev": "5ae3b07d8d6527c42f17c876e404993199144b6a",
+      "rev_count": 901419,
+      "rev_date": "2025-11-24T06:39:56Z",
+      "scrape_date": "2025-11-26T03:12:23.508970Z",
+      "stabilities": [
+        "unstable"
+      ],
+      "unfree": false,
+      "version": "0.26.0",
+      "outputs_to_install": [
+        "out"
+      ],
+      "outputs": {
+        "out": "/nix/store/nybsshcfpq7x9mmi27lqksbawdkkgvps-bat-0.26.0"
+      },
+      "system": "x86_64-darwin",
+      "group": "toplevel",
+      "priority": 5
+    },
+    {
+      "attr_path": "bat",
+      "broken": false,
+      "derivation": "/nix/store/9ikxgf7cmwg434l8ig00wzykjyqc9sq7-bat-0.26.0.drv",
+      "description": "Cat(1) clone with syntax highlighting and Git integration",
+      "install_id": "bat",
+      "license": "[ Apache-2.0, MIT ]",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=5ae3b07d8d6527c42f17c876e404993199144b6a",
+      "name": "bat-0.26.0",
+      "pname": "bat",
+      "rev": "5ae3b07d8d6527c42f17c876e404993199144b6a",
+      "rev_count": 901419,
+      "rev_date": "2025-11-24T06:39:56Z",
+      "scrape_date": "2025-11-26T03:21:45.170921Z",
+      "stabilities": [
+        "unstable"
+      ],
+      "unfree": false,
+      "version": "0.26.0",
+      "outputs_to_install": [
+        "out"
+      ],
+      "outputs": {
+        "out": "/nix/store/7hvin9iffbz3krad04nsb06frc4vcznl-bat-0.26.0"
+      },
+      "system": "x86_64-linux",
+      "group": "toplevel",
+      "priority": 5
+    },
+    {
+      "attr_path": "coreutils",
+      "broken": false,
+      "derivation": "/nix/store/wlfdkpsfl7sr5ap0jy6a5g2np5fw5ddl-coreutils-9.8.drv",
+      "description": "GNU Core Utilities",
+      "install_id": "coreutils",
+      "license": "GPL-3.0-or-later",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=5ae3b07d8d6527c42f17c876e404993199144b6a",
+      "name": "coreutils-9.8",
+      "pname": "coreutils",
+      "rev": "5ae3b07d8d6527c42f17c876e404993199144b6a",
+      "rev_count": 901419,
+      "rev_date": "2025-11-24T06:39:56Z",
+      "scrape_date": "2025-11-26T02:53:23.875356Z",
+      "stabilities": [
+        "unstable"
+      ],
+      "unfree": false,
+      "version": "9.8",
+      "outputs_to_install": [
+        "out"
+      ],
+      "outputs": {
+        "info": "/nix/store/nb4svndwaykkdinz6b2zjpknwdn0gc6s-coreutils-9.8-info",
+        "out": "/nix/store/1swaqmkr1329q50ky497sps80p16fn95-coreutils-9.8"
+      },
+      "system": "aarch64-darwin",
+      "group": "toplevel",
+      "priority": 5
+    },
+    {
+      "attr_path": "coreutils",
+      "broken": false,
+      "derivation": "/nix/store/jfna48p7m098r0wcgadq16p9vr8v4amw-coreutils-9.8.drv",
+      "description": "GNU Core Utilities",
+      "install_id": "coreutils",
+      "license": "GPL-3.0-or-later",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=5ae3b07d8d6527c42f17c876e404993199144b6a",
+      "name": "coreutils-9.8",
+      "pname": "coreutils",
+      "rev": "5ae3b07d8d6527c42f17c876e404993199144b6a",
+      "rev_count": 901419,
+      "rev_date": "2025-11-24T06:39:56Z",
+      "scrape_date": "2025-11-26T03:02:38.598880Z",
+      "stabilities": [
+        "unstable"
+      ],
+      "unfree": false,
+      "version": "9.8",
+      "outputs_to_install": [
+        "out"
+      ],
+      "outputs": {
+        "debug": "/nix/store/kfdvla3vclwqqajgy57sx7rgwf0886iq-coreutils-9.8-debug",
+        "info": "/nix/store/6438x1108fs9w0y3i8kixp5hyy0mprxn-coreutils-9.8-info",
+        "out": "/nix/store/d9jxdwalyr5qzmyz9m5avmzn7w40h7iy-coreutils-9.8"
+      },
+      "system": "aarch64-linux",
+      "group": "toplevel",
+      "priority": 5
+    },
+    {
+      "attr_path": "coreutils",
+      "broken": false,
+      "derivation": "/nix/store/l0wys2ml6s8vilhh7cdajw4qrllayji5-coreutils-9.8.drv",
+      "description": "GNU Core Utilities",
+      "install_id": "coreutils",
+      "license": "GPL-3.0-or-later",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=5ae3b07d8d6527c42f17c876e404993199144b6a",
+      "name": "coreutils-9.8",
+      "pname": "coreutils",
+      "rev": "5ae3b07d8d6527c42f17c876e404993199144b6a",
+      "rev_count": 901419,
+      "rev_date": "2025-11-24T06:39:56Z",
+      "scrape_date": "2025-11-26T03:12:23.851818Z",
+      "stabilities": [
+        "unstable"
+      ],
+      "unfree": false,
+      "version": "9.8",
+      "outputs_to_install": [
+        "out"
+      ],
+      "outputs": {
+        "info": "/nix/store/10x9gm9rxiabrsypkbni68hzxmxa0p3x-coreutils-9.8-info",
+        "out": "/nix/store/f8q9yh6ry4pz5z1hf8sw0ah3gznqs8sr-coreutils-9.8"
+      },
+      "system": "x86_64-darwin",
+      "group": "toplevel",
+      "priority": 5
+    },
+    {
+      "attr_path": "coreutils",
+      "broken": false,
+      "derivation": "/nix/store/m507z3g5zq4lv5x99rqb6dfdh5m0xixx-coreutils-9.8.drv",
+      "description": "GNU Core Utilities",
+      "install_id": "coreutils",
+      "license": "GPL-3.0-or-later",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=5ae3b07d8d6527c42f17c876e404993199144b6a",
+      "name": "coreutils-9.8",
+      "pname": "coreutils",
+      "rev": "5ae3b07d8d6527c42f17c876e404993199144b6a",
+      "rev_count": 901419,
+      "rev_date": "2025-11-24T06:39:56Z",
+      "scrape_date": "2025-11-26T03:21:45.670192Z",
+      "stabilities": [
+        "unstable"
+      ],
+      "unfree": false,
+      "version": "9.8",
+      "outputs_to_install": [
+        "out"
+      ],
+      "outputs": {
+        "debug": "/nix/store/94960sngigrxkp9c4xf1w5kkp99fn41j-coreutils-9.8-debug",
+        "info": "/nix/store/y1m7chay8is0jhibk9n4a39sacbnsf8q-coreutils-9.8-info",
+        "out": "/nix/store/imad8dvhp77h0pjbckp6wvmnyhp8dpgg-coreutils-9.8"
+      },
+      "system": "x86_64-linux",
+      "group": "toplevel",
+      "priority": 5
+    },
+    {
+      "attr_path": "curl",
+      "broken": false,
+      "derivation": "/nix/store/m32hif61caakwkghi7wqagqd7xhyqi72-curl-8.17.0.drv",
+      "description": "Command line tool for transferring files with URL syntax",
+      "install_id": "curl",
+      "license": "curl",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=5ae3b07d8d6527c42f17c876e404993199144b6a",
+      "name": "curl-8.17.0",
+      "pname": "curl",
+      "rev": "5ae3b07d8d6527c42f17c876e404993199144b6a",
+      "rev_count": 901419,
+      "rev_date": "2025-11-24T06:39:56Z",
+      "scrape_date": "2025-11-26T02:53:23.917873Z",
+      "stabilities": [
+        "unstable"
+      ],
+      "unfree": false,
+      "version": "8.17.0",
+      "outputs_to_install": [
+        "bin",
+        "man"
+      ],
+      "outputs": {
+        "bin": "/nix/store/qfwqcndy8bji6xww0gizclf2nqi2qpph-curl-8.17.0-bin",
+        "dev": "/nix/store/ydp55g2mbd6rk6lfw0krkk3jwgdiqj5d-curl-8.17.0-dev",
+        "devdoc": "/nix/store/8s884m82fmrbiyz8malglqc4sd632dkc-curl-8.17.0-devdoc",
+        "man": "/nix/store/rk815zvrhwzbi7c6d589v2mhxzyzb400-curl-8.17.0-man",
+        "out": "/nix/store/yxv8fxaz0fyhc31dv3rz89kc50zw5hgj-curl-8.17.0"
+      },
+      "system": "aarch64-darwin",
+      "group": "toplevel",
+      "priority": 5
+    },
+    {
+      "attr_path": "curl",
+      "broken": false,
+      "derivation": "/nix/store/yj9yps30x00a54zi1wfhz3qw8shwajmp-curl-8.17.0.drv",
+      "description": "Command line tool for transferring files with URL syntax",
+      "install_id": "curl",
+      "license": "curl",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=5ae3b07d8d6527c42f17c876e404993199144b6a",
+      "name": "curl-8.17.0",
+      "pname": "curl",
+      "rev": "5ae3b07d8d6527c42f17c876e404993199144b6a",
+      "rev_count": 901419,
+      "rev_date": "2025-11-24T06:39:56Z",
+      "scrape_date": "2025-11-26T03:02:38.721672Z",
+      "stabilities": [
+        "unstable"
+      ],
+      "unfree": false,
+      "version": "8.17.0",
+      "outputs_to_install": [
+        "bin",
+        "man"
+      ],
+      "outputs": {
+        "bin": "/nix/store/4x19j6zihdl6pya63xs8g360f2r614sx-curl-8.17.0-bin",
+        "debug": "/nix/store/5hmbdk99knmbg8b0fzh96bv6bkcf6v5i-curl-8.17.0-debug",
+        "dev": "/nix/store/iqs9mjscns3h5npgkrhgr5xa7qzwd0si-curl-8.17.0-dev",
+        "devdoc": "/nix/store/1fwncv08c8g78k3hj3cj375vx92ndrp8-curl-8.17.0-devdoc",
+        "man": "/nix/store/b29qbmbfvzkm34k0jnj8ykqg2gzj3rdy-curl-8.17.0-man",
+        "out": "/nix/store/b0a6qc92vybjiggh0kg387cg0zp3kl6j-curl-8.17.0"
+      },
+      "system": "aarch64-linux",
+      "group": "toplevel",
+      "priority": 5
+    },
+    {
+      "attr_path": "curl",
+      "broken": false,
+      "derivation": "/nix/store/b4b30fps6wdnyb5bwvm6hzci57vlimr5-curl-8.17.0.drv",
+      "description": "Command line tool for transferring files with URL syntax",
+      "install_id": "curl",
+      "license": "curl",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=5ae3b07d8d6527c42f17c876e404993199144b6a",
+      "name": "curl-8.17.0",
+      "pname": "curl",
+      "rev": "5ae3b07d8d6527c42f17c876e404993199144b6a",
+      "rev_count": 901419,
+      "rev_date": "2025-11-24T06:39:56Z",
+      "scrape_date": "2025-11-26T03:12:23.895346Z",
+      "stabilities": [
+        "unstable"
+      ],
+      "unfree": false,
+      "version": "8.17.0",
+      "outputs_to_install": [
+        "bin",
+        "man"
+      ],
+      "outputs": {
+        "bin": "/nix/store/w2336wv560g1n58cwashmmczdn3bfkq1-curl-8.17.0-bin",
+        "dev": "/nix/store/39zfdgq9kg3mb4sycf8pj4pdssrzki6c-curl-8.17.0-dev",
+        "devdoc": "/nix/store/ipa7v9z7pjcnnv0fmdya1fldcxv0a28z-curl-8.17.0-devdoc",
+        "man": "/nix/store/i6xmhcan8g4abda7ivv20nvwxrsssjqj-curl-8.17.0-man",
+        "out": "/nix/store/x9gyg634fi8mgcyay9mqa1ral7xg72fm-curl-8.17.0"
+      },
+      "system": "x86_64-darwin",
+      "group": "toplevel",
+      "priority": 5
+    },
+    {
+      "attr_path": "curl",
+      "broken": false,
+      "derivation": "/nix/store/nxfmgcdlh44nnd17z62r7588waj6lqln-curl-8.17.0.drv",
+      "description": "Command line tool for transferring files with URL syntax",
+      "install_id": "curl",
+      "license": "curl",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=5ae3b07d8d6527c42f17c876e404993199144b6a",
+      "name": "curl-8.17.0",
+      "pname": "curl",
+      "rev": "5ae3b07d8d6527c42f17c876e404993199144b6a",
+      "rev_count": 901419,
+      "rev_date": "2025-11-24T06:39:56Z",
+      "scrape_date": "2025-11-26T03:21:45.771655Z",
+      "stabilities": [
+        "unstable"
+      ],
+      "unfree": false,
+      "version": "8.17.0",
+      "outputs_to_install": [
+        "bin",
+        "man"
+      ],
+      "outputs": {
+        "bin": "/nix/store/0rfz69vp1nl0q2hxzig20hc60sk72z62-curl-8.17.0-bin",
+        "debug": "/nix/store/h1fxw0xrifxvbhcp7b8hxsgirxxxfzav-curl-8.17.0-debug",
+        "dev": "/nix/store/ikmdk37frjdblkba3wl3xws2wwgln17x-curl-8.17.0-dev",
+        "devdoc": "/nix/store/jm6irg81cc0hqg43l39lkxr6pb0w2xk5-curl-8.17.0-devdoc",
+        "man": "/nix/store/ijd0yybyzwm98d3q6x7a9cyixgxk0i5d-curl-8.17.0-man",
+        "out": "/nix/store/8idis3j5l13c3x74jl8xly0k4qyk9mx6-curl-8.17.0"
+      },
+      "system": "x86_64-linux",
+      "group": "toplevel",
+      "priority": 5
+    },
+    {
+      "attr_path": "gawk",
+      "broken": false,
+      "derivation": "/nix/store/4kn46bdbh0vgi8frknngdzsdwr872wkc-gawk-5.3.2.drv",
+      "description": "GNU implementation of the Awk programming language",
+      "install_id": "gawk",
+      "license": "GPL-3.0-or-later",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=5ae3b07d8d6527c42f17c876e404993199144b6a",
+      "name": "gawk-5.3.2",
+      "pname": "gawk",
+      "rev": "5ae3b07d8d6527c42f17c876e404993199144b6a",
+      "rev_count": 901419,
+      "rev_date": "2025-11-24T06:39:56Z",
+      "scrape_date": "2025-11-26T02:53:24.451682Z",
+      "stabilities": [
+        "unstable"
+      ],
+      "unfree": false,
+      "version": "5.3.2",
+      "outputs_to_install": [
+        "man",
+        "out"
+      ],
+      "outputs": {
+        "info": "/nix/store/5awnprjaxr0h8l7p9216ca7hnd94mvsr-gawk-5.3.2-info",
+        "man": "/nix/store/fmqc0z22mkm3lsp53yyj30wlgyfpvg90-gawk-5.3.2-man",
+        "out": "/nix/store/wk6hmvlw0d7xi36c1sy5lljakzwj0r3x-gawk-5.3.2"
+      },
+      "system": "aarch64-darwin",
+      "group": "toplevel",
+      "priority": 5
+    },
+    {
+      "attr_path": "gawk",
+      "broken": false,
+      "derivation": "/nix/store/c612d1r7ydmy1jq718czbkmlfqwikbny-gawk-5.3.2.drv",
+      "description": "GNU implementation of the Awk programming language",
+      "install_id": "gawk",
+      "license": "GPL-3.0-or-later",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=5ae3b07d8d6527c42f17c876e404993199144b6a",
+      "name": "gawk-5.3.2",
+      "pname": "gawk",
+      "rev": "5ae3b07d8d6527c42f17c876e404993199144b6a",
+      "rev_count": 901419,
+      "rev_date": "2025-11-24T06:39:56Z",
+      "scrape_date": "2025-11-26T03:02:39.549341Z",
+      "stabilities": [
+        "unstable"
+      ],
+      "unfree": false,
+      "version": "5.3.2",
+      "outputs_to_install": [
+        "man",
+        "out"
+      ],
+      "outputs": {
+        "info": "/nix/store/sxjx0094zvkcbb22kwxv293dixnsl3fy-gawk-5.3.2-info",
+        "man": "/nix/store/51s6q0rby64ldapx9l6l3wrq7lw1im7d-gawk-5.3.2-man",
+        "out": "/nix/store/6b4p79kw3f3axy42y28ckhqqyh2akqfh-gawk-5.3.2"
+      },
+      "system": "aarch64-linux",
+      "group": "toplevel",
+      "priority": 5
+    },
+    {
+      "attr_path": "gawk",
+      "broken": false,
+      "derivation": "/nix/store/p6ggjjz29rsxszxnc9nv4hbhhcfxcw4w-gawk-5.3.2.drv",
+      "description": "GNU implementation of the Awk programming language",
+      "install_id": "gawk",
+      "license": "GPL-3.0-or-later",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=5ae3b07d8d6527c42f17c876e404993199144b6a",
+      "name": "gawk-5.3.2",
+      "pname": "gawk",
+      "rev": "5ae3b07d8d6527c42f17c876e404993199144b6a",
+      "rev_count": 901419,
+      "rev_date": "2025-11-24T06:39:56Z",
+      "scrape_date": "2025-11-26T03:12:24.422527Z",
+      "stabilities": [
+        "unstable"
+      ],
+      "unfree": false,
+      "version": "5.3.2",
+      "outputs_to_install": [
+        "man",
+        "out"
+      ],
+      "outputs": {
+        "info": "/nix/store/88shyivadqy106vd3p5ka2r38fzylwaj-gawk-5.3.2-info",
+        "man": "/nix/store/ri02frgrap8bmwiranvmlv54gc9z3axr-gawk-5.3.2-man",
+        "out": "/nix/store/vgk81ybwgw7ql83cmq6jxbbv8jjyhs2z-gawk-5.3.2"
+      },
+      "system": "x86_64-darwin",
+      "group": "toplevel",
+      "priority": 5
+    },
+    {
+      "attr_path": "gawk",
+      "broken": false,
+      "derivation": "/nix/store/sycqg6xajkzkp8sf39c7spm67ggpzanc-gawk-5.3.2.drv",
+      "description": "GNU implementation of the Awk programming language",
+      "install_id": "gawk",
+      "license": "GPL-3.0-or-later",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=5ae3b07d8d6527c42f17c876e404993199144b6a",
+      "name": "gawk-5.3.2",
+      "pname": "gawk",
+      "rev": "5ae3b07d8d6527c42f17c876e404993199144b6a",
+      "rev_count": 901419,
+      "rev_date": "2025-11-24T06:39:56Z",
+      "scrape_date": "2025-11-26T03:21:46.691610Z",
+      "stabilities": [
+        "unstable"
+      ],
+      "unfree": false,
+      "version": "5.3.2",
+      "outputs_to_install": [
+        "man",
+        "out"
+      ],
+      "outputs": {
+        "info": "/nix/store/5l07k0a1052sv9kn0lcbj3vqky29k1p8-gawk-5.3.2-info",
+        "man": "/nix/store/2g7r19hw2g5z871hhzam6qkc9jn8gfpl-gawk-5.3.2-man",
+        "out": "/nix/store/y2wdhdcrffp9hnkzk06d178hq3g98jay-gawk-5.3.2"
+      },
+      "system": "x86_64-linux",
+      "group": "toplevel",
+      "priority": 5
+    },
+    {
+      "attr_path": "gnugrep",
+      "broken": false,
+      "derivation": "/nix/store/jch1gs3ywwg10svk5fn0hawz254n9wsp-gnugrep-3.12.drv",
+      "description": "GNU implementation of the Unix grep command",
+      "install_id": "gnugrep",
+      "license": "GPL-3.0-or-later",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=5ae3b07d8d6527c42f17c876e404993199144b6a",
+      "name": "gnugrep-3.12",
+      "pname": "gnugrep",
+      "rev": "5ae3b07d8d6527c42f17c876e404993199144b6a",
+      "rev_count": 901419,
+      "rev_date": "2025-11-24T06:39:56Z",
+      "scrape_date": "2025-11-26T02:53:24.644544Z",
+      "stabilities": [
+        "unstable"
+      ],
+      "unfree": false,
+      "version": "3.12",
+      "outputs_to_install": [
+        "out"
+      ],
+      "outputs": {
+        "info": "/nix/store/nqpc2y88mixkamgjy9znrzdi9iwai19q-gnugrep-3.12-info",
+        "out": "/nix/store/1r5p3mwlq9m50yvcdaf64xdv7v5gq581-gnugrep-3.12"
+      },
+      "system": "aarch64-darwin",
+      "group": "toplevel",
+      "priority": 5
+    },
+    {
+      "attr_path": "gnugrep",
+      "broken": false,
+      "derivation": "/nix/store/hy55y090n5mxc6rwy66pv5ggqlq6r8yj-gnugrep-3.12.drv",
+      "description": "GNU implementation of the Unix grep command",
+      "install_id": "gnugrep",
+      "license": "GPL-3.0-or-later",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=5ae3b07d8d6527c42f17c876e404993199144b6a",
+      "name": "gnugrep-3.12",
+      "pname": "gnugrep",
+      "rev": "5ae3b07d8d6527c42f17c876e404993199144b6a",
+      "rev_count": 901419,
+      "rev_date": "2025-11-24T06:39:56Z",
+      "scrape_date": "2025-11-26T03:02:40.226575Z",
+      "stabilities": [
+        "unstable"
+      ],
+      "unfree": false,
+      "version": "3.12",
+      "outputs_to_install": [
+        "out"
+      ],
+      "outputs": {
+        "info": "/nix/store/19qw8vhsjyval2gqpjj7lz8mmvzzblzj-gnugrep-3.12-info",
+        "out": "/nix/store/5728bdap49nsnk1c8zq96fqsm4b7ihj6-gnugrep-3.12"
+      },
+      "system": "aarch64-linux",
+      "group": "toplevel",
+      "priority": 5
+    },
+    {
+      "attr_path": "gnugrep",
+      "broken": false,
+      "derivation": "/nix/store/bmlrzaccsbz9lcbvkjd8dbsh9q8h11sr-gnugrep-3.12.drv",
+      "description": "GNU implementation of the Unix grep command",
+      "install_id": "gnugrep",
+      "license": "GPL-3.0-or-later",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=5ae3b07d8d6527c42f17c876e404993199144b6a",
+      "name": "gnugrep-3.12",
+      "pname": "gnugrep",
+      "rev": "5ae3b07d8d6527c42f17c876e404993199144b6a",
+      "rev_count": 901419,
+      "rev_date": "2025-11-24T06:39:56Z",
+      "scrape_date": "2025-11-26T03:12:24.642276Z",
+      "stabilities": [
+        "unstable"
+      ],
+      "unfree": false,
+      "version": "3.12",
+      "outputs_to_install": [
+        "out"
+      ],
+      "outputs": {
+        "info": "/nix/store/28mlpnj7b802j64r7b2wv777nwkjbv88-gnugrep-3.12-info",
+        "out": "/nix/store/bmwjhb6qh2d311gm18igv8x0kzy9mgnp-gnugrep-3.12"
+      },
+      "system": "x86_64-darwin",
+      "group": "toplevel",
+      "priority": 5
+    },
+    {
+      "attr_path": "gnugrep",
+      "broken": false,
+      "derivation": "/nix/store/hi1hlj16r6gwpzk8kk3wnmq1wjgyf3jf-gnugrep-3.12.drv",
+      "description": "GNU implementation of the Unix grep command",
+      "install_id": "gnugrep",
+      "license": "GPL-3.0-or-later",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=5ae3b07d8d6527c42f17c876e404993199144b6a",
+      "name": "gnugrep-3.12",
+      "pname": "gnugrep",
+      "rev": "5ae3b07d8d6527c42f17c876e404993199144b6a",
+      "rev_count": 901419,
+      "rev_date": "2025-11-24T06:39:56Z",
+      "scrape_date": "2025-11-26T03:21:47.426143Z",
+      "stabilities": [
+        "unstable"
+      ],
+      "unfree": false,
+      "version": "3.12",
+      "outputs_to_install": [
+        "out"
+      ],
+      "outputs": {
+        "info": "/nix/store/yvbqbxfhlx1ynricb75ms7b0ffqyzgic-gnugrep-3.12-info",
+        "out": "/nix/store/x3zjxxz8m4ki88axp0gn8q8m6bldybba-gnugrep-3.12"
+      },
+      "system": "x86_64-linux",
+      "group": "toplevel",
+      "priority": 5
+    },
+    {
+      "attr_path": "gnused",
+      "broken": false,
+      "derivation": "/nix/store/73cnshf9lz1k2v176phxi52rq1g4mk7j-gnused-4.9.drv",
+      "description": "GNU sed, a batch stream editor",
+      "install_id": "gnused",
+      "license": "GPL-3.0-or-later",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=5ae3b07d8d6527c42f17c876e404993199144b6a",
+      "name": "gnused-4.9",
+      "pname": "gnused",
+      "rev": "5ae3b07d8d6527c42f17c876e404993199144b6a",
+      "rev_count": 901419,
+      "rev_date": "2025-11-24T06:39:56Z",
+      "scrape_date": "2025-11-26T02:53:24.651370Z",
+      "stabilities": [
+        "unstable"
+      ],
+      "unfree": false,
+      "version": "4.9",
+      "outputs_to_install": [
+        "out"
+      ],
+      "outputs": {
+        "info": "/nix/store/nwbb6v11d385qkvh1f320jw28vpzjv4h-gnused-4.9-info",
+        "out": "/nix/store/ipgh18959gxm39fhy7b9db4cn6vl0p0j-gnused-4.9"
+      },
+      "system": "aarch64-darwin",
+      "group": "toplevel",
+      "priority": 5
+    },
+    {
+      "attr_path": "gnused",
+      "broken": false,
+      "derivation": "/nix/store/x29rpyvvqw94rsfkqxnc6cr8k1p75zda-gnused-4.9.drv",
+      "description": "GNU sed, a batch stream editor",
+      "install_id": "gnused",
+      "license": "GPL-3.0-or-later",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=5ae3b07d8d6527c42f17c876e404993199144b6a",
+      "name": "gnused-4.9",
+      "pname": "gnused",
+      "rev": "5ae3b07d8d6527c42f17c876e404993199144b6a",
+      "rev_count": 901419,
+      "rev_date": "2025-11-24T06:39:56Z",
+      "scrape_date": "2025-11-26T03:02:40.237258Z",
+      "stabilities": [
+        "unstable"
+      ],
+      "unfree": false,
+      "version": "4.9",
+      "outputs_to_install": [
+        "out"
+      ],
+      "outputs": {
+        "info": "/nix/store/ck8g1q6qp5ab3v0kgysh77prz950qqc3-gnused-4.9-info",
+        "out": "/nix/store/xcjag3jcsfdmixjcm3xckkrkcl5r48b6-gnused-4.9"
+      },
+      "system": "aarch64-linux",
+      "group": "toplevel",
+      "priority": 5
+    },
+    {
+      "attr_path": "gnused",
+      "broken": false,
+      "derivation": "/nix/store/b35f518hrn5376d937f1kn0jr7p78n3y-gnused-4.9.drv",
+      "description": "GNU sed, a batch stream editor",
+      "install_id": "gnused",
+      "license": "GPL-3.0-or-later",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=5ae3b07d8d6527c42f17c876e404993199144b6a",
+      "name": "gnused-4.9",
+      "pname": "gnused",
+      "rev": "5ae3b07d8d6527c42f17c876e404993199144b6a",
+      "rev_count": 901419,
+      "rev_date": "2025-11-24T06:39:56Z",
+      "scrape_date": "2025-11-26T03:12:24.649255Z",
+      "stabilities": [
+        "unstable"
+      ],
+      "unfree": false,
+      "version": "4.9",
+      "outputs_to_install": [
+        "out"
+      ],
+      "outputs": {
+        "info": "/nix/store/nq47w0avvqk2r0ln7splxxqrmbk17h8n-gnused-4.9-info",
+        "out": "/nix/store/7w2wwlbr9rmjlr34ng42hbp00hwjaawz-gnused-4.9"
+      },
+      "system": "x86_64-darwin",
+      "group": "toplevel",
+      "priority": 5
+    },
+    {
+      "attr_path": "gnused",
+      "broken": false,
+      "derivation": "/nix/store/379i0mbr9krm4pp924s43k1mxgpjy36d-gnused-4.9.drv",
+      "description": "GNU sed, a batch stream editor",
+      "install_id": "gnused",
+      "license": "GPL-3.0-or-later",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=5ae3b07d8d6527c42f17c876e404993199144b6a",
+      "name": "gnused-4.9",
+      "pname": "gnused",
+      "rev": "5ae3b07d8d6527c42f17c876e404993199144b6a",
+      "rev_count": 901419,
+      "rev_date": "2025-11-24T06:39:56Z",
+      "scrape_date": "2025-11-26T03:21:47.437825Z",
+      "stabilities": [
+        "unstable"
+      ],
+      "unfree": false,
+      "version": "4.9",
+      "outputs_to_install": [
+        "out"
+      ],
+      "outputs": {
+        "info": "/nix/store/p0xbl3agrrybwbqykdsh18yw1vf5n0p8-gnused-4.9-info",
+        "out": "/nix/store/drc7kang929jaza6cy9zdx10s4gw1z5p-gnused-4.9"
+      },
+      "system": "x86_64-linux",
+      "group": "toplevel",
+      "priority": 5
+    },
+    {
+      "attr_path": "jdk",
+      "broken": false,
+      "derivation": "/nix/store/nv62b32is6mbi9wgyqkn2c463sm9g82j-zulu-ca-jdk-21.0.8.drv",
+      "description": "Certified builds of OpenJDK",
+      "install_id": "jdk",
+      "license": "GPL-2.0-only",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=5ae3b07d8d6527c42f17c876e404993199144b6a",
+      "name": "zulu-ca-jdk-21.0.8",
+      "pname": "jdk",
+      "rev": "5ae3b07d8d6527c42f17c876e404993199144b6a",
+      "rev_count": 901419,
+      "rev_date": "2025-11-24T06:39:56Z",
+      "scrape_date": "2025-11-26T02:53:38.449846Z",
+      "stabilities": [
+        "unstable"
+      ],
+      "unfree": false,
+      "version": "21.0.8",
+      "outputs_to_install": [
+        "out"
+      ],
+      "outputs": {
+        "out": "/nix/store/zng56j969rl5xnkz5v5c7j9fsxpm7sm1-zulu-ca-jdk-21.0.8"
+      },
+      "system": "aarch64-darwin",
+      "group": "toplevel",
+      "priority": 5
+    },
+    {
+      "attr_path": "jdk",
+      "broken": false,
+      "derivation": "/nix/store/q2jcidg3njs3rxpxl2y8pqbfsnf1lnzr-openjdk-21.0.9+10.drv",
+      "description": "Open-source Java Development Kit",
+      "install_id": "jdk",
+      "license": "GPL-2.0-only",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=5ae3b07d8d6527c42f17c876e404993199144b6a",
+      "name": "openjdk-21.0.9+10",
+      "pname": "jdk",
+      "rev": "5ae3b07d8d6527c42f17c876e404993199144b6a",
+      "rev_count": 901419,
+      "rev_date": "2025-11-24T06:39:56Z",
+      "scrape_date": "2025-11-26T03:02:59.346088Z",
+      "stabilities": [
+        "unstable"
+      ],
+      "unfree": false,
+      "version": "21.0.9+10",
+      "outputs_to_install": [
+        "out"
+      ],
+      "outputs": {
+        "debug": "/nix/store/qmczwsgqyfq49baj86rwza8nc49ag282-openjdk-21.0.9+10-debug",
+        "out": "/nix/store/jlxgl3k14x3zhfa00rsygfw3fgp6xgg8-openjdk-21.0.9+10"
+      },
+      "system": "aarch64-linux",
+      "group": "toplevel",
+      "priority": 5
+    },
+    {
+      "attr_path": "jdk",
+      "broken": false,
+      "derivation": "/nix/store/7z99yhr5xryfal0ps4bcn25bi9xh05nd-zulu-ca-jdk-21.0.8.drv",
+      "description": "Certified builds of OpenJDK",
+      "install_id": "jdk",
+      "license": "GPL-2.0-only",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=5ae3b07d8d6527c42f17c876e404993199144b6a",
+      "name": "zulu-ca-jdk-21.0.8",
+      "pname": "jdk",
+      "rev": "5ae3b07d8d6527c42f17c876e404993199144b6a",
+      "rev_count": 901419,
+      "rev_date": "2025-11-24T06:39:56Z",
+      "scrape_date": "2025-11-26T03:12:38.898951Z",
+      "stabilities": [
+        "unstable"
+      ],
+      "unfree": false,
+      "version": "21.0.8",
+      "outputs_to_install": [
+        "out"
+      ],
+      "outputs": {
+        "out": "/nix/store/bkqa7q4jkrg69fmmik1sz8lszclmibdw-zulu-ca-jdk-21.0.8"
+      },
+      "system": "x86_64-darwin",
+      "group": "toplevel",
+      "priority": 5
+    },
+    {
+      "attr_path": "jdk",
+      "broken": false,
+      "derivation": "/nix/store/b7j35wva9ag6zzsvd1g4hvy1zmvv4pwv-openjdk-21.0.9+10.drv",
+      "description": "Open-source Java Development Kit",
+      "install_id": "jdk",
+      "license": "GPL-2.0-only",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=5ae3b07d8d6527c42f17c876e404993199144b6a",
+      "name": "openjdk-21.0.9+10",
+      "pname": "jdk",
+      "rev": "5ae3b07d8d6527c42f17c876e404993199144b6a",
+      "rev_count": 901419,
+      "rev_date": "2025-11-24T06:39:56Z",
+      "scrape_date": "2025-11-26T03:22:06.774877Z",
+      "stabilities": [
+        "unstable"
+      ],
+      "unfree": false,
+      "version": "21.0.9+10",
+      "outputs_to_install": [
+        "out"
+      ],
+      "outputs": {
+        "debug": "/nix/store/iqrpym2396ppr5498xci88zf6kc37yxl-openjdk-21.0.9+10-debug",
+        "out": "/nix/store/65qpdkc33j5wqzxvz8c23zhgms8hl35y-openjdk-21.0.9+10"
+      },
+      "system": "x86_64-linux",
+      "group": "toplevel",
+      "priority": 5
+    },
+    {
+      "attr_path": "python312Packages.pip",
+      "broken": false,
+      "derivation": "/nix/store/5h8qrw5pc23acifm9g84xm4q5nhz4n83-python3.12-pip-25.0.1.drv",
+      "description": "PyPA recommended tool for installing Python packages",
+      "install_id": "pip",
+      "license": "[ MIT ]",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=5ae3b07d8d6527c42f17c876e404993199144b6a",
+      "name": "python3.12-pip-25.0.1",
+      "pname": "pip",
+      "rev": "5ae3b07d8d6527c42f17c876e404993199144b6a",
+      "rev_count": 901419,
+      "rev_date": "2025-11-24T06:39:56Z",
+      "scrape_date": "2025-11-26T02:54:13.722080Z",
+      "stabilities": [
+        "unstable"
+      ],
+      "unfree": false,
+      "version": "25.0.1",
+      "outputs_to_install": [
+        "man",
+        "out"
+      ],
+      "outputs": {
+        "dist": "/nix/store/rzfqyb0l8hdv880lrk3d2w6484w985ym-python3.12-pip-25.0.1-dist",
+        "man": "/nix/store/qqd1r168y4sabv7rhxs4dfairp0w2x7v-python3.12-pip-25.0.1-man",
+        "out": "/nix/store/hnay7d9b8w7rx825dxgqf3nhlwayzlg3-python3.12-pip-25.0.1"
+      },
+      "system": "aarch64-darwin",
+      "group": "toplevel",
+      "priority": 5
+    },
+    {
+      "attr_path": "python312Packages.pip",
+      "broken": false,
+      "derivation": "/nix/store/14w9f8qg3ysfw980sfgdj04pyw7x3qc2-python3.12-pip-25.0.1.drv",
+      "description": "PyPA recommended tool for installing Python packages",
+      "install_id": "pip",
+      "license": "[ MIT ]",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=5ae3b07d8d6527c42f17c876e404993199144b6a",
+      "name": "python3.12-pip-25.0.1",
+      "pname": "pip",
+      "rev": "5ae3b07d8d6527c42f17c876e404993199144b6a",
+      "rev_count": 901419,
+      "rev_date": "2025-11-24T06:39:56Z",
+      "scrape_date": "2025-11-26T03:03:55.937298Z",
+      "stabilities": [
+        "unstable"
+      ],
+      "unfree": false,
+      "version": "25.0.1",
+      "outputs_to_install": [
+        "man",
+        "out"
+      ],
+      "outputs": {
+        "dist": "/nix/store/jinhkx1in1gfgqqjc6vkm4d40zfq6lf9-python3.12-pip-25.0.1-dist",
+        "man": "/nix/store/wxn5yc797qrxw0cvzqhgsspb8rcb561k-python3.12-pip-25.0.1-man",
+        "out": "/nix/store/6414365485ywyh0bw6v1i1ps0jyrvk6y-python3.12-pip-25.0.1"
+      },
+      "system": "aarch64-linux",
+      "group": "toplevel",
+      "priority": 5
+    },
+    {
+      "attr_path": "python312Packages.pip",
+      "broken": false,
+      "derivation": "/nix/store/bm1y12a1cl9wp7mwfqdgri9hxhly0nx7-python3.12-pip-25.0.1.drv",
+      "description": "PyPA recommended tool for installing Python packages",
+      "install_id": "pip",
+      "license": "[ MIT ]",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=5ae3b07d8d6527c42f17c876e404993199144b6a",
+      "name": "python3.12-pip-25.0.1",
+      "pname": "pip",
+      "rev": "5ae3b07d8d6527c42f17c876e404993199144b6a",
+      "rev_count": 901419,
+      "rev_date": "2025-11-24T06:39:56Z",
+      "scrape_date": "2025-11-26T03:13:14.292840Z",
+      "stabilities": [
+        "unstable"
+      ],
+      "unfree": false,
+      "version": "25.0.1",
+      "outputs_to_install": [
+        "man",
+        "out"
+      ],
+      "outputs": {
+        "dist": "/nix/store/mraak0x6kqigq1zlm9l4l338xb4pv071-python3.12-pip-25.0.1-dist",
+        "man": "/nix/store/7idqy3rlx2pycdwg3a17rjjp0n8jmrqb-python3.12-pip-25.0.1-man",
+        "out": "/nix/store/5cir6lgryqnssm5fvd5wab2bc6g61rmg-python3.12-pip-25.0.1"
+      },
+      "system": "x86_64-darwin",
+      "group": "toplevel",
+      "priority": 5
+    },
+    {
+      "attr_path": "python312Packages.pip",
+      "broken": false,
+      "derivation": "/nix/store/r6jzxa8kxbyk8h7krmzl22i1j2c53253-python3.12-pip-25.0.1.drv",
+      "description": "PyPA recommended tool for installing Python packages",
+      "install_id": "pip",
+      "license": "[ MIT ]",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=5ae3b07d8d6527c42f17c876e404993199144b6a",
+      "name": "python3.12-pip-25.0.1",
+      "pname": "pip",
+      "rev": "5ae3b07d8d6527c42f17c876e404993199144b6a",
+      "rev_count": 901419,
+      "rev_date": "2025-11-24T06:39:56Z",
+      "scrape_date": "2025-11-26T03:22:59.822525Z",
+      "stabilities": [
+        "unstable"
+      ],
+      "unfree": false,
+      "version": "25.0.1",
+      "outputs_to_install": [
+        "man",
+        "out"
+      ],
+      "outputs": {
+        "dist": "/nix/store/1vfsfxpi1b0cva4q1v2j2if1pj4hqvvc-python3.12-pip-25.0.1-dist",
+        "man": "/nix/store/19p9qpx0fadsqrvyk4rv68c47r3mp7xp-python3.12-pip-25.0.1-man",
+        "out": "/nix/store/s5jl20jq8gwrm9xpzsa925zgal4qf2cm-python3.12-pip-25.0.1"
+      },
+      "system": "x86_64-linux",
+      "group": "toplevel",
+      "priority": 5
+    },
+    {
+      "attr_path": "spark",
+      "broken": false,
+      "derivation": "/nix/store/130c4j2m6j0wwgzckf6cammvs12kkhsj-spark-4.0.1.drv",
+      "description": "Apache Spark is a fast and general engine for large-scale data processing",
+      "install_id": "spark",
+      "license": "Apache-2.0",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=5ae3b07d8d6527c42f17c876e404993199144b6a",
+      "name": "spark-4.0.1",
+      "pname": "spark",
+      "rev": "5ae3b07d8d6527c42f17c876e404993199144b6a",
+      "rev_count": 901419,
+      "rev_date": "2025-11-24T06:39:56Z",
+      "scrape_date": "2025-11-26T02:55:11.576358Z",
+      "stabilities": [
+        "unstable"
+      ],
+      "unfree": false,
+      "version": "4.0.1",
+      "outputs_to_install": [
+        "out"
+      ],
+      "outputs": {
+        "out": "/nix/store/36z26fzyrbm006mq4viqfyvyahly55xh-spark-4.0.1"
+      },
+      "system": "aarch64-darwin",
+      "group": "toplevel",
+      "priority": 5
+    },
+    {
+      "attr_path": "spark",
+      "broken": false,
+      "derivation": "/nix/store/43b4nipq3gg7xln3qs1zpymkf61vd2qc-spark-4.0.1.drv",
+      "description": "Apache Spark is a fast and general engine for large-scale data processing",
+      "install_id": "spark",
+      "license": "Apache-2.0",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=5ae3b07d8d6527c42f17c876e404993199144b6a",
+      "name": "spark-4.0.1",
+      "pname": "spark",
+      "rev": "5ae3b07d8d6527c42f17c876e404993199144b6a",
+      "rev_count": 901419,
+      "rev_date": "2025-11-24T06:39:56Z",
+      "scrape_date": "2025-11-26T03:05:11.258067Z",
+      "stabilities": [
+        "unstable"
+      ],
+      "unfree": false,
+      "version": "4.0.1",
+      "outputs_to_install": [
+        "out"
+      ],
+      "outputs": {
+        "out": "/nix/store/xplm1ywbgh67jdp4ni46ndbqi7dsnvvr-spark-4.0.1"
+      },
+      "system": "aarch64-linux",
+      "group": "toplevel",
+      "priority": 5
+    },
+    {
+      "attr_path": "spark",
+      "broken": false,
+      "derivation": "/nix/store/48808rsi870ky9i7f74j0ijlrx8il2b3-spark-4.0.1.drv",
+      "description": "Apache Spark is a fast and general engine for large-scale data processing",
+      "install_id": "spark",
+      "license": "Apache-2.0",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=5ae3b07d8d6527c42f17c876e404993199144b6a",
+      "name": "spark-4.0.1",
+      "pname": "spark",
+      "rev": "5ae3b07d8d6527c42f17c876e404993199144b6a",
+      "rev_count": 901419,
+      "rev_date": "2025-11-24T06:39:56Z",
+      "scrape_date": "2025-11-26T03:14:11.956202Z",
+      "stabilities": [
+        "unstable"
+      ],
+      "unfree": false,
+      "version": "4.0.1",
+      "outputs_to_install": [
+        "out"
+      ],
+      "outputs": {
+        "out": "/nix/store/indlg7bwcpkvsyyw2qng8x00abgg4vzq-spark-4.0.1"
+      },
+      "system": "x86_64-darwin",
+      "group": "toplevel",
+      "priority": 5
+    },
+    {
+      "attr_path": "spark",
+      "broken": false,
+      "derivation": "/nix/store/m39s88hkadx5j1r9w8pfk3lynp2mn3jg-spark-4.0.1.drv",
+      "description": "Apache Spark is a fast and general engine for large-scale data processing",
+      "install_id": "spark",
+      "license": "Apache-2.0",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=5ae3b07d8d6527c42f17c876e404993199144b6a",
+      "name": "spark-4.0.1",
+      "pname": "spark",
+      "rev": "5ae3b07d8d6527c42f17c876e404993199144b6a",
+      "rev_count": 901419,
+      "rev_date": "2025-11-24T06:39:56Z",
+      "scrape_date": "2025-11-26T03:24:08.312033Z",
+      "stabilities": [
+        "unstable"
+      ],
+      "unfree": false,
+      "version": "4.0.1",
+      "outputs_to_install": [
+        "out"
+      ],
+      "outputs": {
+        "out": "/nix/store/i2lqszdsba9563bxqvkgaxqqdgfvb0rq-spark-4.0.1"
+      },
+      "system": "x86_64-linux",
+      "group": "toplevel",
+      "priority": 5
+    }
+  ]
+}

@@ -10,214 +10,337 @@ version = 1
 
 
 ## Install Packages --------------------------------------------------
-##  $ flox install gum  <- puts a package in [install] section below
-##  $ flox search gum   <- search for a package
-##  $ flox show gum     <- show all versions of a package
-## -------------------------------------------------------------------
 [install]
 kind.pkg-path = "kind"
 kubectl.pkg-path = "kubectl"
-k9s.pkg-path = "k9s"
-stern.pkg-path = "stern"
-gum.pkg-path = "gum"
+curl.pkg-path = "curl"
+bat.pkg-path = "bat"
 jq.pkg-path = "jq"
-helm.pkg-path = "helm"
-helm.systems = ["aarch64-linux", "x86_64-linux"]
 coreutils.pkg-path = "coreutils"
-# gum.pkg-path = "gum"
-# gum.version = "^0.14.5"
+coreutils.pkg-group = "darwin-tools"
 
 
 ## Environment Variables ---------------------------------------------
-##  ... available for use in the activated environment
-##      as well as [hook], [profile] scripts and [services] below.
-## -------------------------------------------------------------------
 [vars]
-# INTRO_MESSAGE = "It's gettin' Flox in here"
+KIND_CONFIG_DIR = "$FLOX_ENV_CACHE/kind-config"
+KIND_LOG_DIR = "$FLOX_ENV_CACHE/kind-logs"
+KIND_DATA_DIR = "$FLOX_ENV_CACHE/kind-data"
 
 
 ## Activation Hook ---------------------------------------------------
-##  ... run by _bash_ shell when you run 'flox activate'.
-## -------------------------------------------------------------------
 [hook]
 on-activate = '''
-# Show the welcome message
-show_kind_help() {
-    # Get current cluster context if available
-    local current_context
-    if command -v kubectl >/dev/null 2>&1; then
-        current_context=$(kubectl config current-context 2>/dev/null || echo "None")
-    else
-        current_context="None"
-    fi
+# Create required directories
+mkdir -p "$FLOX_ENV_CACHE/kind-config"
+mkdir -p "$FLOX_ENV_CACHE/kind-logs"
+mkdir -p "$FLOX_ENV_CACHE/kind-data"
 
-    # Get list of KIND clusters
-    local kind_clusters
-    if command -v kind >/dev/null 2>&1; then
-        kind_clusters=$(kind get clusters 2>/dev/null)
-        if [ -z "$kind_clusters" ]; then
-            kind_clusters="No clusters found"
-        fi
-    else
-        kind_clusters="KIND not available"
-    fi
+# Runtime-configurable variables with defaults
+export KIND_CLUSTER_NAME="${KIND_CLUSTER_NAME:-kind}"
+export KIND_CONFIG_FILE="${KIND_CONFIG_FILE:-$KIND_CONFIG_DIR/cluster.yaml}"
+export KIND_KUBECONFIG="${KIND_KUBECONFIG:-$KIND_DATA_DIR/kubeconfig}"
+export KIND_IMAGE="${KIND_IMAGE:-}"
 
-    # Create the help message with Gum styling
-    gum style \
-        --border rounded \
-        --border-foreground 240 \
-        --padding "1 2" \
-        --margin "1 0" \
-        --width 84 \
-        "$(gum style --foreground 141 --bold 'This is a  F l o x  KIND Kubernetes Environment')
-
-👉  Create KIND Cluster:
-    $(gum style --foreground 212 'bootstrap')                           Interactive KIND cluster creation wizard
-    $(gum style --foreground 212 'create-cluster NAME')                 Create KIND cluster with existing config
-
-👉  Manage Kubernetes:
-    $(gum style --foreground 212 'kubectl')                             Control Kubernetes clusters
-    $(gum style --foreground 212 'k9s')                                 Terminal UI for Kubernetes
-    $(gum style --foreground 212 'helm')                                Kubernetes package manager
-    
-👉  Built-in Environment Commands:
-    $(gum style --foreground 212 'delete-cluster NAME')                 Delete a KIND cluster
-    $(gum style --foreground 212 'kind get clusters')                   List all KIND clusters
-    $(gum style --foreground 212 'kubectl config get-contexts')         Show available contexts
-    
-👉  Environment Details:
-    Current Context: $(gum style --foreground 212 "${current_context}")
-    KIND Clusters:   $(gum style --foreground 212 "${kind_clusters}")"
-
-    echo ""
-}
-
-# Function to download shell files from GitHub silently
-download_shell_files() {
-    # Create the cache directory if it doesn't exist
-    mkdir -p "$FLOX_ENV_CACHE" >/dev/null 2>&1
-    
-    # GitHub raw content base URL
-    local base_url="https://raw.githubusercontent.com/barstoolbluz/floxenvs/main/kind/.flox/cache"
-    
-    # Download files silently
-    curl -s -f -o "$FLOX_ENV_CACHE/kind_wizard.bash" "$base_url/kind_wizard.bash" >/dev/null 2>&1
-    [ -f "$FLOX_ENV_CACHE/kind_wizard.bash" ] && chmod +x "$FLOX_ENV_CACHE/kind_wizard.bash" >/dev/null 2>&1
-    
-    curl -s -f -o "$FLOX_ENV_CACHE/kind_wizard.zsh" "$base_url/kind_wizard.zsh" >/dev/null 2>&1
-    [ -f "$FLOX_ENV_CACHE/kind_wizard.zsh" ] && chmod +x "$FLOX_ENV_CACHE/kind_wizard.zsh" >/dev/null 2>&1
-    
-    curl -s -f -o "$FLOX_ENV_CACHE/kind_wizard.fish" "$base_url/kind_wizard.fish" >/dev/null 2>&1
-    [ -f "$FLOX_ENV_CACHE/kind_wizard.fish" ] && chmod +x "$FLOX_ENV_CACHE/kind_wizard.fish" >/dev/null 2>&1
-}
-
-# Download shell files if they don't exist
-if [ ! -f "$FLOX_ENV_CACHE/kind_wizard.bash" ] || \
-   [ ! -f "$FLOX_ENV_CACHE/kind_wizard.zsh" ] || \
-   [ ! -f "$FLOX_ENV_CACHE/kind_wizard.fish" ]; then
-    download_shell_files >/dev/null 2>&1
+# Generate default KIND config if not exists
+if [ ! -f "$KIND_CONFIG_FILE" ]; then
+    cat > "$KIND_CONFIG_FILE" << 'EOF'
+kind: Cluster
+apiVersion: kind.x-k8s.io/v1alpha4
+nodes:
+- role: control-plane
+- role: worker
+EOF
 fi
 
-# Run the help message
-show_kind_help
-
-# Check if KIND is available
-if command -v kind >/dev/null 2>&1; then
-    # Check if any KIND clusters exist
-    if [ -z "$(kind get clusters 2>/dev/null)" ]; then
-        # No clusters exist, source the Bash wizard and prompt to create one
-        gum style --foreground 212 --bold "No KIND clusters detected. Let's set one up!"
-        if [ -f "$FLOX_ENV_CACHE/kind_wizard.bash" ]; then
-            source "$FLOX_ENV_CACHE/kind_wizard.bash"
-            bootstrap
-        fi
-    fi
+# Fetch README if missing
+README_FILE="$FLOX_ENV_PROJECT/README.md"
+if [ ! -s "$README_FILE" ]; then
+    curl -fsSL "https://raw.githubusercontent.com/barstoolbluz/floxenvs/main/kind-headless/README.md" -o "$README_FILE" 2>/dev/null || true
 fi
+
+# Display minimal info
+echo ""
+echo "✅ KIND environment ready (headless mode)"
+echo ""
+echo "Cluster Name: $KIND_CLUSTER_NAME"
+echo "Config File:  $KIND_CONFIG_FILE"
+echo ""
+echo "Start cluster: flox activate -s"
+echo "Check status:  flox services status"
+echo "Show info:     kind-info"
+echo "For help:      helpf"
+echo ""
 '''
 
+
+## Profile script ----------------------------------------------------
 [profile]
 bash = '''
-# Source the bootstrap function
-if [ -f "$FLOX_ENV_CACHE/kind_wizard.bash" ]; then
-    source "$FLOX_ENV_CACHE/kind_wizard.bash"
-fi
-
-create-cluster() {
-    local cluster_name=${1:-$(gum input --placeholder "cluster name")}
-    kind create cluster --name "$cluster_name" --config "${cluster_name}-kind.yaml"
+kind-info() {
+    echo "KIND Cluster (Headless Mode)"
+    echo ""
+    echo "Cluster Name: $KIND_CLUSTER_NAME"
+    echo "Config File:  $KIND_CONFIG_FILE"
+    echo "Kubeconfig:   $KIND_KUBECONFIG"
+    echo ""
+    echo "Commands:"
+    echo "  flox activate -s        Start KIND cluster service"
+    echo "  flox services status    Check service status"
+    echo "  flox services logs kind View service logs"
+    echo "  kubectl cluster-info    Show cluster information"
+    echo "  kind get clusters       List KIND clusters"
+    echo ""
+    echo "Runtime Configuration:"
+    echo "  KIND_CLUSTER_NAME       Default: $KIND_CLUSTER_NAME"
+    echo "  KIND_CONFIG_FILE        Default: $KIND_CONFIG_FILE"
+    echo "  KIND_KUBECONFIG         Default: $KIND_KUBECONFIG"
+    echo "  KIND_IMAGE              Default: (latest)"
+    echo ""
+    echo "Example:"
+    echo "  KIND_CLUSTER_NAME=dev KIND_CONFIG_FILE=./my-config.yaml flox activate -s"
 }
 
-delete-cluster() {
-    local cluster_name=${1:-$(gum input --placeholder "cluster to delete")}
-    kind delete cluster --name "$cluster_name"
-}
+helpf() {
+  local README_FILE="$FLOX_ENV_PROJECT/README.md"
+  local README_URL="https://raw.githubusercontent.com/barstoolbluz/floxenvs/main/kind-headless/README.md"
 
-readme() {
-  local readme_path="$FLOX_ENV_CACHE/README.md"
-  [[ "$1" == "--refresh" || ! -f "$readme_path" ]] && curl -s -o "$readme_path" "https://raw.githubusercontent.com/barstoolbluz/floxenvs/main/kind/README.md" 2>/dev/null
-  command -v bat &>/dev/null && bat --paging=always "$readme_path" 2>/dev/null || cat "$readme_path" 2>/dev/null
+  if [ "$1" = "--help" ]; then
+    echo "Usage: helpf [OPTIONS]"
+    echo ""
+    echo "View environment documentation"
+    echo ""
+    echo "Options:"
+    echo "  --force    Force download fresh copy from GitHub"
+    echo "  --help     Show this help message"
+    echo ""
+    echo "The README is cached locally and only downloaded if missing."
+    return 0
+  fi
+
+  if [ "$1" = "--force" ]; then
+    echo "Fetching latest README.md from GitHub..."
+    if curl -fsSL "$README_URL" -o "$README_FILE"; then
+      echo "✓ Downloaded README.md"
+    else
+      echo "✗ Failed to download README.md"
+      return 1
+    fi
+  elif [ ! -f "$README_FILE" ]; then
+    echo "README.md not found, downloading..."
+    if curl -fsSL "$README_URL" -o "$README_FILE"; then
+      echo "✓ Downloaded README.md"
+    else
+      echo "✗ Failed to download README.md"
+      return 1
+    fi
+  fi
+
+  if [ -f "$README_FILE" ]; then
+    bat --style=auto --paging=always "$README_FILE"
+  else
+    echo "✗ README.md not found at $README_FILE"
+    return 1
+  fi
 }
 '''
 
 zsh = '''
-# Source the kind_wizard function
-if [ -f "$FLOX_ENV_CACHE/kind_wizard.zsh" ]; then
-    source "$FLOX_ENV_CACHE/kind_wizard.zsh"
-fi
-
-create-cluster() {
-    local cluster_name=${1:-$(gum input --placeholder "cluster name")}
-    kind create cluster --name "$cluster_name" --config "${cluster_name}-kind.yaml"
+kind-info() {
+    echo "KIND Cluster (Headless Mode)"
+    echo ""
+    echo "Cluster Name: $KIND_CLUSTER_NAME"
+    echo "Config File:  $KIND_CONFIG_FILE"
+    echo "Kubeconfig:   $KIND_KUBECONFIG"
+    echo ""
+    echo "Commands:"
+    echo "  flox activate -s        Start KIND cluster service"
+    echo "  flox services status    Check service status"
+    echo "  flox services logs kind View service logs"
+    echo "  kubectl cluster-info    Show cluster information"
+    echo "  kind get clusters       List KIND clusters"
+    echo ""
+    echo "Runtime Configuration:"
+    echo "  KIND_CLUSTER_NAME       Default: $KIND_CLUSTER_NAME"
+    echo "  KIND_CONFIG_FILE        Default: $KIND_CONFIG_FILE"
+    echo "  KIND_KUBECONFIG         Default: $KIND_KUBECONFIG"
+    echo "  KIND_IMAGE              Default: (latest)"
+    echo ""
+    echo "Example:"
+    echo "  KIND_CLUSTER_NAME=dev KIND_CONFIG_FILE=./my-config.yaml flox activate -s"
 }
 
-delete-cluster() {
-    local cluster_name=${1:-$(gum input --placeholder "cluster to delete")}
-    kind delete cluster --name "$cluster_name"
-}
+helpf() {
+  local README_FILE="$FLOX_ENV_PROJECT/README.md"
+  local README_URL="https://raw.githubusercontent.com/barstoolbluz/floxenvs/main/kind-headless/README.md"
 
-readme() {
-  local readme_path="$FLOX_ENV_CACHE/README.md"
-  [[ "$1" == "--refresh" || ! -f "$readme_path" ]] && curl -s -o "$readme_path" "https://raw.githubusercontent.com/barstoolbluz/floxenvs/main/kind/README.md" 2>/dev/null
-  command -v bat &>/dev/null && bat --paging=always "$readme_path" 2>/dev/null || cat "$readme_path" 2>/dev/null
+  if [ "$1" = "--help" ]; then
+    echo "Usage: helpf [OPTIONS]"
+    echo ""
+    echo "View environment documentation"
+    echo ""
+    echo "Options:"
+    echo "  --force    Force download fresh copy from GitHub"
+    echo "  --help     Show this help message"
+    echo ""
+    echo "The README is cached locally and only downloaded if missing."
+    return 0
+  fi
+
+  if [ "$1" = "--force" ]; then
+    echo "Fetching latest README.md from GitHub..."
+    if curl -fsSL "$README_URL" -o "$README_FILE"; then
+      echo "✓ Downloaded README.md"
+    else
+      echo "✗ Failed to download README.md"
+      return 1
+    fi
+  elif [ ! -f "$README_FILE" ]; then
+    echo "README.md not found, downloading..."
+    if curl -fsSL "$README_URL" -o "$README_FILE"; then
+      echo "✓ Downloaded README.md"
+    else
+      echo "✗ Failed to download README.md"
+      return 1
+    fi
+  fi
+
+  if [ -f "$README_FILE" ]; then
+    bat --style=auto --paging=always "$README_FILE"
+  else
+    echo "✗ README.md not found at $README_FILE"
+    return 1
+  fi
 }
 '''
 
 fish = '''
-# Source the kind_wizard function
-if test -f "$FLOX_ENV_CACHE/kind_wizard.fish"
-    source "$FLOX_ENV_CACHE/kind_wizard.fish"
+function kind-info
+    echo "KIND Cluster (Headless Mode)"
+    echo ""
+    echo "Cluster Name: $KIND_CLUSTER_NAME"
+    echo "Config File:  $KIND_CONFIG_FILE"
+    echo "Kubeconfig:   $KIND_KUBECONFIG"
+    echo ""
+    echo "Commands:"
+    echo "  flox activate -s        Start KIND cluster service"
+    echo "  flox services status    Check service status"
+    echo "  flox services logs kind View service logs"
+    echo "  kubectl cluster-info    Show cluster information"
+    echo "  kind get clusters       List KIND clusters"
+    echo ""
+    echo "Runtime Configuration:"
+    echo "  KIND_CLUSTER_NAME       Default: $KIND_CLUSTER_NAME"
+    echo "  KIND_CONFIG_FILE        Default: $KIND_CONFIG_FILE"
+    echo "  KIND_KUBECONFIG         Default: $KIND_KUBECONFIG"
+    echo "  KIND_IMAGE              Default: (latest)"
+    echo ""
+    echo "Example:"
+    echo "  KIND_CLUSTER_NAME=dev KIND_CONFIG_FILE=./my-config.yaml flox activate -s"
 end
 
-function create-cluster
-    set cluster_name $argv[1]
-    if test -z "$cluster_name"
-        set cluster_name (gum input --placeholder "cluster name")
+function helpf
+  set README_FILE "$FLOX_ENV_PROJECT/README.md"
+  set README_URL "https://raw.githubusercontent.com/barstoolbluz/floxenvs/main/kind-headless/README.md"
+
+  if test "$argv[1]" = "--help"
+    echo "Usage: helpf [OPTIONS]"
+    echo ""
+    echo "View environment documentation"
+    echo ""
+    echo "Options:"
+    echo "  --force    Force download fresh copy from GitHub"
+    echo "  --help     Show this help message"
+    echo ""
+    echo "The README is cached locally and only downloaded if missing."
+    return 0
+  end
+
+  if test "$argv[1]" = "--force"
+    echo "Fetching latest README.md from GitHub..."
+    if curl -fsSL "$README_URL" -o "$README_FILE"
+      echo "✓ Downloaded README.md"
+    else
+      echo "✗ Failed to download README.md"
+      return 1
     end
-    kind create cluster --name "$cluster_name" --config "$cluster_name-kind.yaml"
-end
-
-function delete-cluster
-    set cluster_name $argv[1]
-    if test -z "$cluster_name"
-        set cluster_name (gum input --placeholder "cluster to delete")
+  else if not test -f "$README_FILE"
+    echo "README.md not found, downloading..."
+    if curl -fsSL "$README_URL" -o "$README_FILE"
+      echo "✓ Downloaded README.md"
+    else
+      echo "✗ Failed to download README.md"
+      return 1
     end
-    kind delete cluster --name "$cluster_name"
-end
+  end
 
-function readme
-  set readme_path "$FLOX_ENV_CACHE/README.md"
-  test "$argv[1]" = "--refresh" -o ! -f "$readme_path"; and curl -s -o "$readme_path" "https://raw.githubusercontent.com/barstoolbluz/floxenvs/main/kind/README.md" 2>/dev/null
-  command -v bat >/dev/null; and bat --paging=always "$readme_path" 2>/dev/null; or cat "$readme_path" 2>/dev/null
+  if test -f "$README_FILE"
+    bat --style=auto --paging=always "$README_FILE"
+  else
+    echo "✗ README.md not found at $README_FILE"
+    return 1
+  end
 end
 '''
 
+
 ## Services ----------------------------------------------------------
-##  $ flox services start             <- Starts all services
-##  $ flox services status            <- Status of running services
-##  $ flox activate --start-services  <- Activates & starts all
-## -------------------------------------------------------------------
 [services]
-# myservice.command = "python3 -m http.server"
+kind.command = '''
+mkdir -p "$KIND_LOG_DIR"
+mkdir -p "$KIND_DATA_DIR"
+
+# Log startup
+echo "=== KIND Service Startup ===" > "$KIND_LOG_DIR/service.log"
+echo "Starting at $(date)" >> "$KIND_LOG_DIR/service.log"
+echo "KIND_CLUSTER_NAME = $KIND_CLUSTER_NAME" >> "$KIND_LOG_DIR/service.log"
+echo "KIND_CONFIG_FILE = $KIND_CONFIG_FILE" >> "$KIND_LOG_DIR/service.log"
+
+# Check if cluster already exists
+if kind get clusters 2>/dev/null | grep -q "^${KIND_CLUSTER_NAME}$"; then
+    echo "Cluster '$KIND_CLUSTER_NAME' already exists" | tee -a "$KIND_LOG_DIR/service.log"
+else
+    echo "Creating KIND cluster '$KIND_CLUSTER_NAME'..." | tee -a "$KIND_LOG_DIR/service.log"
+
+    # Build kind create command
+    KIND_CMD="kind create cluster --name $KIND_CLUSTER_NAME"
+
+    # Add config file if it exists
+    if [ -f "$KIND_CONFIG_FILE" ]; then
+        KIND_CMD="$KIND_CMD --config $KIND_CONFIG_FILE"
+    fi
+
+    # Add image if specified
+    if [ -n "$KIND_IMAGE" ]; then
+        KIND_CMD="$KIND_CMD --image $KIND_IMAGE"
+    fi
+
+    # Add kubeconfig location
+    KIND_CMD="$KIND_CMD --kubeconfig $KIND_KUBECONFIG"
+
+    # Create cluster
+    echo "Running: $KIND_CMD" >> "$KIND_LOG_DIR/service.log"
+    if eval "$KIND_CMD" 2>&1 | tee -a "$KIND_LOG_DIR/service.log"; then
+        echo "✓ Cluster created successfully" | tee -a "$KIND_LOG_DIR/service.log"
+
+        # Set KUBECONFIG for kubectl
+        export KUBECONFIG="$KIND_KUBECONFIG"
+
+        # Wait for cluster to be ready
+        echo "Waiting for cluster to be ready..." | tee -a "$KIND_LOG_DIR/service.log"
+        kubectl wait --for=condition=Ready nodes --all --timeout=300s 2>&1 | tee -a "$KIND_LOG_DIR/service.log"
+
+        echo "✓ Cluster is ready" | tee -a "$KIND_LOG_DIR/service.log"
+        echo "" | tee -a "$KIND_LOG_DIR/service.log"
+        kubectl cluster-info 2>&1 | tee -a "$KIND_LOG_DIR/service.log"
+    else
+        echo "✗ Failed to create cluster" | tee -a "$KIND_LOG_DIR/service.log"
+        exit 1
+    fi
+fi
+
+# Keep service running
+tail -f /dev/null
+'''
 
 
 ## Other Environment Options -----------------------------------------
@@ -229,5 +352,3 @@ systems = [
   "x86_64-darwin",
   "x86_64-linux",
 ]
-# Uncomment to disable CUDA detection.
-# cuda-detection = false

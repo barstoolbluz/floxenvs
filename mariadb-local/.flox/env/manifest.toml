@@ -1,0 +1,614 @@
+version = 1
+
+[install]
+bat.pkg-path = "bat"
+curl.pkg-path = "curl"
+gum.pkg-path = "gum"
+mariadb.pkg-path = "mariadb"
+
+[vars]
+# define env vars available at runtime
+MARIADB_BIND_ADDRESS = "127.0.0.1"
+MARIADB_PORT = "13307"
+MARIADB_ROOT_PASSWORD = "mariadbpass"
+MARIADB_DATABASE = "mysql"
+
+[hook]
+on-activate = '''
+# define env vars available during activation
+export MARIADB_DIR="${FLOX_ENV_CACHE}/mariadb"
+export CONFIG_FILE="${FLOX_ENV_CACHE}/mariadb.config"
+export DEFAULT_MARIADB_BIND_ADDRESS="127.0.0.1"
+export DEFAULT_MARIADB_PORT="13307"
+export DEFAULT_MARIADB_ROOT_PASSWORD="mariadbpass"
+export DEFAULT_MARIADB_DATABASE="mysql"
+export DEFAULT_MARIADB_DIR="${FLOX_ENV_CACHE}/mariadb"
+
+# enable/disable debugging; set to "true" to enable verbose output
+export MARIADB_DEBUG="false"
+
+# this function checks if first run
+check_first_run() {
+    if [[ ! -f "$CONFIG_FILE" ]]; then
+        return 0 # True, this is the first run
+    else
+        return 1 # False, not the first run
+    fi
+}
+
+# this function loads mariadb.config if exists
+load_config() {
+    if [[ -f "$CONFIG_FILE" ]]; then
+        source "$CONFIG_FILE"
+    else
+        # set defaults if no mariadb.config
+        export MARIADB_BIND_ADDRESS="$DEFAULT_MARIADB_BIND_ADDRESS"
+        export MARIADB_PORT="$DEFAULT_MARIADB_PORT"
+        export MARIADB_ROOT_PASSWORD="$DEFAULT_MARIADB_ROOT_PASSWORD"
+        export MARIADB_DATABASE="$DEFAULT_MARIADB_DATABASE"
+        export MARIADB_DIR="$DEFAULT_MARIADB_DIR"
+    fi
+}
+
+# this function saves mariadb.config to file
+save_config() {
+    mkdir -p "$(dirname "$CONFIG_FILE")"
+    cat > "$CONFIG_FILE" << EOF
+# mariadb configuration - Generated on $(date)
+export MARIADB_BIND_ADDRESS="$MARIADB_BIND_ADDRESS"
+export MARIADB_PORT="$MARIADB_PORT"
+export MARIADB_ROOT_PASSWORD="$MARIADB_ROOT_PASSWORD"
+export MARIADB_DATABASE="$MARIADB_DATABASE"
+export MARIADB_DIR="$MARIADB_DIR"
+export MARIADB_DEBUG="$MARIADB_DEBUG"
+
+## BEGIN ACTIVATION HOOK ##
+$(declare -f debug_log)
+$(declare -f check_first_run)
+$(declare -f load_config)
+$(declare -f save_config)
+$(declare -f prompt_for_config)
+$(declare -f update_dependent_vars)
+$(declare -f initialize_mariadb)
+$(declare -f start_mariadb)
+$(declare -f set_root_password)
+$(declare -f create_database)
+$(declare -f stop_mariadb)
+$(declare -f reconfigure_mariadb)
+$(declare -f first_run_setup)
+$(declare -f display_mariadb_config_ui)
+$(declare -f mariadb_setup)
+$(declare -f main)
+## END ACTIVATION HOOK ##
+EOF
+    chmod 644 "$CONFIG_FILE"
+}
+
+# this function prompts user 'do you want to custom configure mariadb vars?'
+prompt_for_config() {
+    echo ""
+    if gum confirm "$(gum style --foreground 240 'Would you like to customize your MariaDB configuration?')" --default=false; then
+        MARIADB_BIND_ADDRESS=$(gum input --placeholder "$DEFAULT_MARIADB_BIND_ADDRESS" --value "$DEFAULT_MARIADB_BIND_ADDRESS" --prompt "Bind Address: ")
+        MARIADB_PORT=$(gum input --placeholder "$DEFAULT_MARIADB_PORT" --value "$DEFAULT_MARIADB_PORT" --prompt "Port: ")
+        MARIADB_ROOT_PASSWORD=$(gum input --placeholder "$DEFAULT_MARIADB_ROOT_PASSWORD" --value "$DEFAULT_MARIADB_ROOT_PASSWORD" --prompt "Root Password: " --password)
+        MARIADB_DATABASE=$(gum input --placeholder "$DEFAULT_MARIADB_DATABASE" --value "$DEFAULT_MARIADB_DATABASE" --prompt "Database: ")
+
+        if gum confirm "Use default directory for MariaDB data?" --default=true; then
+            MARIADB_DIR="$DEFAULT_MARIADB_DIR"
+        else
+            MARIADB_DIR=$(gum input --placeholder "$DEFAULT_MARIADB_DIR" --value "$DEFAULT_MARIADB_DIR" --prompt "MariaDB Data Directory: ")
+        fi
+    else
+        # defaults for gum prompts
+        MARIADB_BIND_ADDRESS="$DEFAULT_MARIADB_BIND_ADDRESS"
+        MARIADB_PORT="$DEFAULT_MARIADB_PORT"
+        MARIADB_ROOT_PASSWORD="$DEFAULT_MARIADB_ROOT_PASSWORD"
+        MARIADB_DATABASE="$DEFAULT_MARIADB_DATABASE"
+        MARIADB_DIR="$DEFAULT_MARIADB_DIR"
+    fi
+
+    # export user-defined variables
+    export MARIADB_BIND_ADDRESS MARIADB_PORT MARIADB_ROOT_PASSWORD MARIADB_DATABASE MARIADB_DIR
+
+    # save to mariadb.config
+    save_config
+}
+
+# this function handles debug logging
+debug_log() {
+    if [[ "$MARIADB_DEBUG" == "true" ]]; then
+        echo "$@"
+    fi
+}
+
+# this function updates dependent vars after loading mariadb.config
+update_dependent_vars() {
+    # is $MARIADB_DIR an absolute path?
+    if [[ ! "$MARIADB_DIR" = /* ]]; then
+        MARIADB_DIR="$(pwd)/$MARIADB_DIR"
+        export MARIADB_DIR
+    fi
+
+    # set dependent vars with absolute paths
+    export MARIADB_DATADIR="$MARIADB_DIR/data"
+    export MARIADB_SOCKET="$MARIADB_DIR/run/mysql.sock"
+    export MARIADB_SOCKET_DIR="$MARIADB_DIR/run"
+    export MARIADB_LOG_ERROR="$MARIADB_DIR/run/error.log"
+    export DATABASE_URL="mysql://root:$MARIADB_ROOT_PASSWORD@$MARIADB_BIND_ADDRESS:$MARIADB_PORT/$MARIADB_DATABASE"
+
+    # debug output
+    debug_log "Configuration paths:"
+    debug_log "  MARIADB_DIR: $MARIADB_DIR"
+    debug_log "  MARIADB_DATADIR: $MARIADB_DATADIR"
+    debug_log "  MARIADB_SOCKET: $MARIADB_SOCKET"
+}
+
+# this function initializes mariadb
+initialize_mariadb() {
+    mkdir -p "$(dirname "$MARIADB_DATADIR")" && chmod 700 "$(dirname "$MARIADB_DATADIR")"
+    rm -rf "$MARIADB_DATADIR" && mkdir -p "$MARIADB_DATADIR" && chmod 700 "$MARIADB_DATADIR"
+    mkdir -p "$MARIADB_SOCKET_DIR" && chmod 700 "$MARIADB_SOCKET_DIR"
+
+    if [[ "$MARIADB_DEBUG" == "true" ]]; then
+        if ! mysql_install_db --datadir="$MARIADB_DATADIR" --user="$USER"; then
+            echo "Retrying without --user flag..."
+            mysql_install_db --datadir="$MARIADB_DATADIR"
+        fi
+    else
+        if ! mysql_install_db --datadir="$MARIADB_DATADIR" --user="$USER" > /dev/null 2>&1; then
+            mysql_install_db --datadir="$MARIADB_DATADIR" > /dev/null 2>&1
+        fi
+    fi
+
+    return $?
+}
+
+# this function starts mariadb
+start_mariadb() {
+    # is $MARIADB_SOCKET_DIR an absolute path?
+    if [[ ! "$MARIADB_SOCKET_DIR" = /* ]]; then
+        debug_log "Warning: MARIADB_SOCKET_DIR is not an absolute path. Using absolute path instead."
+        MARIADB_SOCKET_DIR="$(pwd)/$MARIADB_SOCKET_DIR"
+        export MARIADB_SOCKET_DIR
+        export MARIADB_SOCKET="$MARIADB_SOCKET_DIR/mysql.sock"
+    fi
+
+    # create socket dir
+    debug_log "Creating MariaDB socket directory at: $MARIADB_SOCKET_DIR"
+    mkdir -p "$MARIADB_SOCKET_DIR"
+    chmod 700 "$MARIADB_SOCKET_DIR"
+
+    # was / was not socket dir created successfully?
+    if [[ ! -d "$MARIADB_SOCKET_DIR" ]]; then
+        echo "Error: Failed to create MariaDB socket directory at $MARIADB_SOCKET_DIR"
+        return 1
+    fi
+
+    debug_log "Starting MariaDB with socket: $MARIADB_SOCKET"
+    debug_log "Data directory: $MARIADB_DATADIR"
+
+    # start mariadb with or without debugging
+    if [[ "$MARIADB_DEBUG" == "true" ]]; then
+        mysqld --datadir="$MARIADB_DATADIR" \
+               --socket="$MARIADB_SOCKET" \
+               --bind-address="$MARIADB_BIND_ADDRESS" \
+               --port="$MARIADB_PORT" \
+               --log-error="$MARIADB_LOG_ERROR" &
+        MARIADB_PID=$!
+    else
+        mysqld --datadir="$MARIADB_DATADIR" \
+               --socket="$MARIADB_SOCKET" \
+               --bind-address="$MARIADB_BIND_ADDRESS" \
+               --port="$MARIADB_PORT" \
+               --log-error="$MARIADB_LOG_ERROR" > /dev/null 2>&1 &
+        MARIADB_PID=$!
+    fi
+
+    export MARIADB_PID
+    sleep 3  # Wait for MariaDB to start
+
+    return 0
+}
+
+# this function sets root password
+set_root_password() {
+    debug_log "Setting root password..."
+    # MariaDB uses unix_socket by default, so connect without password first
+    mysql -u root --socket="$MARIADB_SOCKET" <<EOF > /dev/null 2>&1
+ALTER USER 'root'@'localhost' IDENTIFIED BY '$MARIADB_ROOT_PASSWORD';
+FLUSH PRIVILEGES;
+EOF
+    return 0
+}
+
+# this function creates database if not exist
+create_database() {
+    if [[ "$MARIADB_DATABASE" != "mysql" ]]; then
+        debug_log "Creating database $MARIADB_DATABASE..."
+        mysql -u root --password="$MARIADB_ROOT_PASSWORD" --socket="$MARIADB_SOCKET" -e "CREATE DATABASE IF NOT EXISTS \`$MARIADB_DATABASE\`;" > /dev/null 2>&1
+    fi
+    return 0
+}
+
+# this function stops mariadb
+stop_mariadb() {
+    if [[ -n "$MARIADB_PID" ]]; then
+        debug_log "Stopping MariaDB (PID: $MARIADB_PID)..."
+        if mysqladmin -u root --password="$MARIADB_ROOT_PASSWORD" --socket="$MARIADB_SOCKET" shutdown > /dev/null 2>&1; then
+            wait $MARIADB_PID 2>/dev/null
+        else
+            # If shutdown fails, try kill
+            kill $MARIADB_PID 2>/dev/null
+            sleep 1
+            kill -9 $MARIADB_PID 2>/dev/null
+        fi
+    fi
+    return 0
+}
+
+# we call this function from profile if we want/need to reconfigure mariadb
+reconfigure_mariadb() {
+    rm -f "$CONFIG_FILE"
+    first_run_setup
+    mariadb_setup
+}
+
+# it's tautological!
+first_run_setup() {
+    if check_first_run; then
+        display_mariadb_config_ui
+    else
+        load_config
+    fi
+
+    update_dependent_vars
+}
+
+# our gum-ified tui (thank you ye good folk at charmbracelet!)
+display_mariadb_config_ui() {
+    clear
+
+    # customize header + colors
+    gum style \
+        --border rounded \
+        --border-foreground 240 \
+        --padding "1 2" \
+        --margin "1 0" \
+        --width 70 \
+        "$(gum style --foreground 42 --bold 'MariaDB Configuration')
+
+$(gum style --foreground 240 'First-time setup for your local development database')"
+
+    prompt_for_config
+}
+
+# mariadb setup master function
+mariadb_setup() {
+    debug_log "Setting up MariaDB..."
+
+    # this is where we init mariadb
+    debug_log "Initializing MariaDB..."
+    initialize_mariadb || { echo "Failed to initialize MariaDB"; return 1; }
+
+    if [[ -d "$MARIADB_DATADIR/mysql" ]]; then
+        debug_log "MariaDB data directory initialized successfully"
+
+        # this is where we start it up
+        debug_log "Starting MariaDB..."
+        start_mariadb || { echo "Failed to start MariaDB"; return 1; }
+
+        # set root password
+        debug_log "Setting root password..."
+        set_root_password || { echo "Failed to set root password"; return 1; }
+
+        # this is where we create database
+        debug_log "Creating database..."
+        create_database || { echo "Failed to create database"; return 1; }
+
+        # this is where we shut it down
+        debug_log "Stopping MariaDB..."
+        stop_mariadb || { echo "Failed to stop MariaDB"; return 1; }
+
+        debug_log "MariaDB setup completed successfully"
+    else
+        echo "Error: MariaDB data directory was not initialized correctly"
+        return 1
+    fi
+
+    return 0
+}
+
+# gummified help message
+show_mariadb_help() {
+    # Determine display host
+    local display_host
+    if [[ "$MARIADB_BIND_ADDRESS" == "0.0.0.0" ]]; then
+        display_host="localhost"
+    else
+        display_host="$MARIADB_BIND_ADDRESS"
+    fi
+
+    # Create the help message with Gum styling
+    gum style \
+        --border rounded \
+        --border-foreground 240 \
+        --padding "1 2" \
+        --margin "1 0" \
+        --width 96 \
+        "$(gum style --foreground 42 --bold 'This is a  F l o x  MariaDB Environment')
+
+👉  Service Management:
+    $(gum style --foreground 49 'flox activate -s')      Start MariaDB at activation
+    $(gum style --foreground 49 'mariadbstart')          Start MariaDB post activation
+    $(gum style --foreground 49 'mariadbstop')           Stop MariaDB post activation
+    $(gum style --foreground 49 'mariadbrestart')        Restart MariaDB post activation
+
+👉  Configuration:
+    $(gum style --foreground 49 'mariadbconfigure')      Reconfigure MariaDB post activation
+
+👉  Documentation:
+    $(gum style --foreground 49 'helpf')                 View environment documentation
+
+👉  Connection:
+    $(gum style --foreground 49 'mysql -u root -p')      Connect to MariaDB (password: $MARIADB_ROOT_PASSWORD)
+
+👉  Connection Details:
+    Host:     $(gum style --foreground 49 "${display_host}")
+    Port:     $(gum style --foreground 49 "${MARIADB_PORT}")
+    Database: $(gum style --foreground 49 "${MARIADB_DATABASE}")
+    Socket:   $(gum style --foreground 49 "${MARIADB_SOCKET}")"
+
+    echo ""
+}
+
+# it's tautological!
+main() {
+    first_run_setup
+
+    mariadb_setup
+
+    show_mariadb_help
+}
+
+# runnit all
+main
+
+# Fetch README if missing
+
+  # Fetch README.md if not present
+  README_FILE="$FLOX_ENV_PROJECT/README.md"
+  if [ ! -f "$README_FILE" ]; then
+    if curl -fsSL https://raw.githubusercontent.com/barstoolbluz/floxenvs/main/mariadb/README.md -o "$README_FILE" 2>/dev/null; then
+      echo "✓ Downloaded README.md (use 'helpf' to view)"
+    fi
+  fi
+'''
+
+[profile]
+common = '''
+'''
+
+bash = '''
+source "${FLOX_ENV_CACHE}/mariadb.config" 2>/dev/null || true
+mariadbstart() { flox services start mariadb; }
+mariadbstop() { flox services stop mariadb; }
+mariadbrestart() { flox services restart mariadb; }
+mariadbconfigure() {
+  flox services stop mariadb
+  source "${FLOX_ENV_CACHE}/mariadb.config" 2>/dev/null || true
+  reconfigure_mariadb
+  flox services start mariadb
+}
+export -f mariadbstart mariadbstop mariadbrestart mariadbconfigure
+unset -f debug_log initialize_mariadb start_mariadb stop_mariadb
+unset -f set_root_password create_database check_first_run
+unset -f load_config prompt_for_config display_mariadb_config_ui main
+
+# View environment documentation
+
+  helpf() {
+    local README_FILE="$FLOX_ENV_PROJECT/README.md"
+    local README_URL="https://raw.githubusercontent.com/barstoolbluz/floxenvs/main/mariadb/README.md"
+
+    if [ "$1" = "--help" ]; then
+      echo "Usage: helpf [OPTIONS]"
+      echo ""
+      echo "View environment documentation"
+      echo ""
+      echo "Options:"
+      echo "  --force    Force download fresh copy from GitHub"
+      echo "  --help     Show this help message"
+      echo ""
+      echo "The README is cached locally and only downloaded if missing."
+      return 0
+    fi
+
+    if [ "$1" = "--force" ]; then
+      echo "Fetching latest README.md from GitHub..."
+      if curl -fsSL "$README_URL" -o "$README_FILE"; then
+        echo "✓ Downloaded README.md"
+      else
+        echo "✗ Failed to download README.md"
+        return 1
+      fi
+    elif [ ! -f "$README_FILE" ]; then
+      echo "README.md not found, downloading..."
+      if curl -fsSL "$README_URL" -o "$README_FILE"; then
+        echo "✓ Downloaded README.md"
+      else
+        echo "✗ Failed to download README.md"
+        return 1
+      fi
+    fi
+
+    if [ -f "$README_FILE" ]; then
+      bat --style=auto --paging=always "$README_FILE"
+    else
+      echo "✗ README.md not found at $README_FILE"
+      return 1
+    fi
+  }
+  export -f helpf
+'''
+
+zsh = '''
+source "${FLOX_ENV_CACHE}/mariadb.config" 2>/dev/null || true
+mariadbstart() { flox services start mariadb; }
+mariadbstop() { flox services stop mariadb; }
+mariadbrestart() { flox services restart mariadb; }
+mariadbconfigure() {
+  flox services stop mariadb
+  source "${FLOX_ENV_CACHE}/mariadb.config" 2>/dev/null || true
+  reconfigure_mariadb
+  flox services start mariadb
+}
+unset -f "debug_log" "initialize_mariadb" "start_mariadb" "stop_mariadb"
+unset -f "set_root_password" "create_database" "check_first_run"
+unset -f "load_config" "prompt_for_config" "display_mariadb_config_ui" "main"
+
+# View environment documentation
+
+  helpf() {
+    local README_FILE="$FLOX_ENV_PROJECT/README.md"
+    local README_URL="https://raw.githubusercontent.com/barstoolbluz/floxenvs/main/mariadb/README.md"
+
+    if [ "$1" = "--help" ]; then
+      echo "Usage: helpf [OPTIONS]"
+      echo ""
+      echo "View environment documentation"
+      echo ""
+      echo "Options:"
+      echo "  --force    Force download fresh copy from GitHub"
+      echo "  --help     Show this help message"
+      echo ""
+      echo "The README is cached locally and only downloaded if missing."
+      return 0
+    fi
+
+    if [ "$1" = "--force" ]; then
+      echo "Fetching latest README.md from GitHub..."
+      if curl -fsSL "$README_URL" -o "$README_FILE"; then
+        echo "✓ Downloaded README.md"
+      else
+        echo "✗ Failed to download README.md"
+        return 1
+      fi
+    elif [ ! -f "$README_FILE" ]; then
+      echo "README.md not found, downloading..."
+      if curl -fsSL "$README_URL" -o "$README_FILE"; then
+        echo "✓ Downloaded README.md"
+      else
+        echo "✗ Failed to download README.md"
+        return 1
+      fi
+    fi
+
+    if [ -f "$README_FILE" ]; then
+      bat --style=auto --paging=always "$README_FILE"
+    else
+      echo "✗ README.md not found at $README_FILE"
+      return 1
+    fi
+  }
+'''
+
+fish = '''
+source "$FLOX_ENV_CACHE/mariadb.config" 2>/dev/null || true
+
+function mariadbstart
+    flox services start mariadb
+end
+
+function mariadbstop
+    flox services stop mariadb
+end
+
+function mariadbrestart
+    flox services restart mariadb
+end
+
+function mariadbconfigure
+    flox services stop mariadb
+    source "$FLOX_ENV_CACHE/mariadb.config" 2>/dev/null || true
+    reconfigure_mariadb
+    flox services start mariadb
+end
+
+functions -e debug_log initialize_mariadb start_mariadb stop_mariadb
+functions -e set_root_password create_database check_first_run
+functions -e load_config prompt_for_config display_mariadb_config_ui main
+
+# View environment documentationend
+
+  # Fetch README if missing or --force specified
+  if test "$force_fetch" = true; or test ! -s "$README_FILE"
+    if curl -fsSL "$README_URL" -o "$README_FILE" 2>/dev/null
+      test "$force_fetch" = true; and echo "README refreshed from $README_URL"
+    else
+      echo "Warning: Failed to fetch README from $README_URL"
+      test ! -s "$README_FILE"; and return 1
+    end
+  end
+
+  # Display with bat (if available) or cat
+  if command -v bat >/dev/null 2>&1
+    bat --paging=always "$README_FILE"
+  else
+    cat "$README_FILE"
+  end
+end
+
+function helpf
+    set README_FILE "$FLOX_ENV_PROJECT/README.md"
+    set README_URL "https://raw.githubusercontent.com/barstoolbluz/floxenvs/main/mariadb/README.md"
+
+    if test "$argv[1]" = "--help"
+        echo "Usage: helpf [OPTIONS]"
+        echo ""
+        echo "View environment documentation"
+        echo ""
+        echo "Options:"
+        echo "  --force    Force download fresh copy from GitHub"
+        echo "  --help     Show this help message"
+        echo ""
+        echo "The README is cached locally and only downloaded if missing."
+        return 0
+    end
+
+    if test "$argv[1]" = "--force"
+        echo "Fetching latest README.md from GitHub..."
+        if curl -fsSL "$README_URL" -o "$README_FILE"
+            echo "✓ Downloaded README.md"
+        else
+            echo "✗ Failed to download README.md"
+            return 1
+        end
+    else if not test -f "$README_FILE"
+        echo "README.md not found, downloading..."
+        if curl -fsSL "$README_URL" -o "$README_FILE"
+            echo "✓ Downloaded README.md"
+        else
+            echo "✗ Failed to download README.md"
+            return 1
+        end
+    end
+
+    if test -f "$README_FILE"
+        bat --style=auto --paging=always "$README_FILE"
+    else
+        echo "✗ README.md not found at $README_FILE"
+        return 1
+    end
+end
+'''
+
+[services]
+mariadb.command = "mysqld --datadir=$MARIADB_DATADIR --socket=$MARIADB_SOCKET --bind-address=$MARIADB_BIND_ADDRESS --port=$MARIADB_PORT --log-error=$MARIADB_LOG_ERROR"
+
+[options]
+systems = [
+  "aarch64-darwin",
+  "aarch64-linux",
+  "x86_64-darwin",
+  "x86_64-linux",
+]
