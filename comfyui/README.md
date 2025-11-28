@@ -232,7 +232,7 @@ flox upgrade
 flox edit
 
 # Then restart the environment
-flox activate
+flox activate -s
 ```
 
 ## Troubleshooting
