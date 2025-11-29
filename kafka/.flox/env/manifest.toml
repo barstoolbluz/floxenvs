@@ -353,7 +353,7 @@ download_readme() {
   local readme_path="$FLOX_ENV_PROJECT/README.md"
 
   if [ ! -f "$readme_path" ] || [ ! -s "$readme_path" ]; then
-    curl -sL "https://raw.githubusercontent.com/barstoolbluz/floxenvs/main/kafka-headless/README.md" > "$readme_path" 2>/dev/null
+    curl -sL "https://raw.githubusercontent.com/barstoolbluz/floxenvs/main/kafka/README.md" > "$readme_path" 2>/dev/null
   fi
 }
 
@@ -390,7 +390,7 @@ echo "Run 'helpf' to view the README for this environment."
 bash = '''
 helpf() {
   local README_FILE="$FLOX_ENV_PROJECT/README.md"
-  local README_URL="https://raw.githubusercontent.com/barstoolbluz/floxenvs/main/kafka-headless/README.md"
+  local README_URL="https://raw.githubusercontent.com/barstoolbluz/floxenvs/main/kafka/README.md"
 
   if [ "$1" = "--help" ]; then
     echo "Usage: helpf [OPTIONS]"
@@ -435,7 +435,7 @@ helpf() {
 zsh = '''
 helpf() {
   local README_FILE="$FLOX_ENV_PROJECT/README.md"
-  local README_URL="https://raw.githubusercontent.com/barstoolbluz/floxenvs/main/kafka-headless/README.md"
+  local README_URL="https://raw.githubusercontent.com/barstoolbluz/floxenvs/main/kafka/README.md"
 
   if [ "$1" = "--help" ]; then
     echo "Usage: helpf [OPTIONS]"
@@ -475,6 +475,51 @@ helpf() {
     return 1
   fi
 }
+'''
+
+fish = '''
+function helpf
+  set README_FILE "$FLOX_ENV_PROJECT/README.md"
+  set README_URL "https://raw.githubusercontent.com/barstoolbluz/floxenvs/main/kafka/README.md"
+
+  if test "$argv[1]" = "--help"
+    echo "Usage: helpf [OPTIONS]"
+    echo ""
+    echo "View environment documentation"
+    echo ""
+    echo "Options:"
+    echo "  --force    Force download fresh copy from GitHub"
+    echo "  --help     Show this help message"
+    echo ""
+    echo "The README is cached locally and only downloaded if missing."
+    return 0
+  end
+
+  if test "$argv[1]" = "--force"
+    echo "Fetching latest README.md from GitHub..."
+    if curl -fsSL "$README_URL" -o "$README_FILE"
+      echo "✓ Downloaded README.md"
+    else
+      echo "✗ Failed to download README.md"
+      return 1
+    end
+  else if not test -f "$README_FILE"
+    echo "README.md not found, downloading..."
+    if curl -fsSL "$README_URL" -o "$README_FILE"
+      echo "✓ Downloaded README.md"
+    else
+      echo "✗ Failed to download README.md"
+      return 1
+    end
+  end
+
+  if test -f "$README_FILE"
+    bat --style=auto --paging=always "$README_FILE"
+  else
+    echo "✗ README.md not found at $README_FILE"
+    return 1
+  end
+end
 '''
 
 ## Services ----------------------------------------------------------
@@ -641,15 +686,196 @@ ENDOFCONSUMER
                 esac
                 ;;
             "producer")
-                # Client mode implementations would continue here
-                # Similar to original script
+                # generates producer client.properties
+                cat > "$client_props_file" <<-ENDOFPRODUCER
+bootstrap.servers=$BOOTSTRAP_SERVERS
+acks=all
+retries=0
+batch.size=16384
+linger.ms=1
+buffer.memory=33554432
+key.serializer=org.apache.kafka.common.serialization.StringSerializer
+value.serializer=org.apache.kafka.common.serialization.StringSerializer
+ENDOFPRODUCER
+
+                # exports critical env vars
+                export BOOTSTRAP_SERVERS
+                export KAFKA_TOPICS
+
+                case "$KAFKA_MESSAGE_PROCESSING_MODE" in
+                    "echo")
+                        echo "Producer in echo mode - waiting for stdin input..." | tee -a "$log_file"
+                        env BOOTSTRAP_SERVERS="$BOOTSTRAP_SERVERS" KAFKA_TOPICS="$KAFKA_TOPICS" \
+                            kafka-console-producer.sh --bootstrap-server "$BOOTSTRAP_SERVERS" \
+                            --topic "$KAFKA_TOPICS" \
+                            --producer.config "$client_props_file" \
+                            2>&1 | tee -a "$log_file"
+                        ;;
+                    "file")
+                        input_file="$KAFKA_MESSAGE_OUTPUT_DIR/producer_input_${client_id}.txt"
+                        if [ -f "$input_file" ]; then
+                            env BOOTSTRAP_SERVERS="$BOOTSTRAP_SERVERS" KAFKA_TOPICS="$KAFKA_TOPICS" \
+                                kafka-console-producer.sh --bootstrap-server "$BOOTSTRAP_SERVERS" \
+                                --topic "$KAFKA_TOPICS" \
+                                --producer.config "$client_props_file" \
+                                < "$input_file" \
+                                2>&1 | tee -a "$log_file"
+                        else
+                            echo "ERROR: Producer input file not found: $input_file" | tee -a "$log_file"
+                            echo "Please create the file with messages to send: $input_file" | tee -a "$log_file"
+                            exit 1
+                        fi
+                        ;;
+                    "script")
+                        script_file="$KAFKA_SCRIPTS_DIR/generate_messages.sh"
+                        if [ -x "$script_file" ]; then
+                            "$script_file" 2>> "$log_file" | env BOOTSTRAP_SERVERS="$BOOTSTRAP_SERVERS" KAFKA_TOPICS="$KAFKA_TOPICS" \
+                                kafka-console-producer.sh --bootstrap-server "$BOOTSTRAP_SERVERS" \
+                                --topic "$KAFKA_TOPICS" \
+                                --producer.config "$client_props_file" \
+                                2>&1 | tee -a "$log_file"
+                        else
+                            echo "ERROR: Message generation script not found or not executable: $script_file" | tee -a "$log_file"
+                            exit 1
+                        fi
+                        ;;
+                esac
+                ;;
+            "both")
+                # runs producer and consumer in separate processes / starts consumer in background
+                (
+                    cat > "${client_props_file}_consumer" <<-ENDOFBOTHCONSUMER
+bootstrap.servers=$BOOTSTRAP_SERVERS
+group.id=flox-consumer-group-$client_id
+auto.offset.reset=earliest
+enable.auto.commit=true
+auto.commit.interval.ms=1000
+key.deserializer=org.apache.kafka.common.serialization.StringDeserializer
+value.deserializer=org.apache.kafka.common.serialization.StringDeserializer
+ENDOFBOTHCONSUMER
+
+                    case "$KAFKA_MESSAGE_PROCESSING_MODE" in
+                        "echo")
+                            env BOOTSTRAP_SERVERS="$BOOTSTRAP_SERVERS" KAFKA_TOPICS="$KAFKA_TOPICS" \
+                                kafka-console-consumer.sh --bootstrap-server "$BOOTSTRAP_SERVERS" \
+                                --topic "$KAFKA_TOPICS" \
+                                --consumer.config "${client_props_file}_consumer" \
+                                2>&1 | tee -a "${log_file}_consumer" &
+                            ;;
+                        "file")
+                            output_file="$KAFKA_MESSAGE_OUTPUT_DIR/client_${client_id}_consumer_messages.txt"
+                            if [ "$KAFKA_FILE_APPEND" = "true" ]; then
+                                env BOOTSTRAP_SERVERS="$BOOTSTRAP_SERVERS" KAFKA_TOPICS="$KAFKA_TOPICS" \
+                                    kafka-console-consumer.sh --bootstrap-server "$BOOTSTRAP_SERVERS" \
+                                    --topic "$KAFKA_TOPICS" \
+                                    --consumer.config "${client_props_file}_consumer" \
+                                    2>> "${log_file}_consumer" >> "$output_file" &
+                            else
+                                env BOOTSTRAP_SERVERS="$BOOTSTRAP_SERVERS" KAFKA_TOPICS="$KAFKA_TOPICS" \
+                                    kafka-console-consumer.sh --bootstrap-server "$BOOTSTRAP_SERVERS" \
+                                    --topic "$KAFKA_TOPICS" \
+                                    --consumer.config "${client_props_file}_consumer" \
+                                    2>> "${log_file}_consumer" > "$output_file" &
+                            fi
+                            ;;
+                        "script")
+                            script_file="$KAFKA_SCRIPTS_DIR/process_messages.sh"
+                            if [ -x "$script_file" ]; then
+                                env BOOTSTRAP_SERVERS="$BOOTSTRAP_SERVERS" KAFKA_TOPICS="$KAFKA_TOPICS" \
+                                    kafka-console-consumer.sh --bootstrap-server "$BOOTSTRAP_SERVERS" \
+                                    --topic "$KAFKA_TOPICS" \
+                                    --consumer.config "${client_props_file}_consumer" \
+                                    2>> "${log_file}_consumer" | "$script_file" 2>&1 | tee -a "${log_file}_consumer" &
+                            else
+                                echo "ERROR: Processing script not found or not executable: $script_file" | tee -a "${log_file}_consumer"
+                                exit 1
+                            fi
+                            ;;
+                    esac
+                ) &
+                CONSUMER_PID=$!
+
+                # starts the producer
+                (
+                    # generates producer properties
+                    cat > "${client_props_file}_producer" <<-ENDOFBOTHPRODUCER
+bootstrap.servers=$BOOTSTRAP_SERVERS
+acks=all
+retries=0
+batch.size=16384
+linger.ms=1
+buffer.memory=33554432
+key.serializer=org.apache.kafka.common.serialization.StringSerializer
+value.serializer=org.apache.kafka.common.serialization.StringSerializer
+ENDOFBOTHPRODUCER
+
+                    case "$KAFKA_MESSAGE_PROCESSING_MODE" in
+                        "echo")
+                            echo "Producer in echo mode - waiting for stdin input..." | tee -a "${log_file}_producer"
+                            env BOOTSTRAP_SERVERS="$BOOTSTRAP_SERVERS" KAFKA_TOPICS="$KAFKA_TOPICS" \
+                                kafka-console-producer.sh --bootstrap-server "$BOOTSTRAP_SERVERS" \
+                                --topic "$KAFKA_TOPICS" \
+                                --producer.config "${client_props_file}_producer" \
+                                2>&1 | tee -a "${log_file}_producer"
+                            ;;
+                        "file")
+                            input_file="$KAFKA_MESSAGE_OUTPUT_DIR/producer_input_${client_id}.txt"
+                            if [ -f "$input_file" ]; then
+                                env BOOTSTRAP_SERVERS="$BOOTSTRAP_SERVERS" KAFKA_TOPICS="$KAFKA_TOPICS" \
+                                    kafka-console-producer.sh --bootstrap-server "$BOOTSTRAP_SERVERS" \
+                                    --topic "$KAFKA_TOPICS" \
+                                    --producer.config "${client_props_file}_producer" \
+                                    < "$input_file" \
+                                    2>&1 | tee -a "${log_file}_producer"
+                            else
+                                echo "ERROR: Producer input file not found: $input_file" | tee -a "${log_file}_producer"
+                                echo "Please create the file with messages to send: $input_file" | tee -a "${log_file}_producer"
+                                exit 1
+                            fi
+                            ;;
+                        "script")
+                            script_file="$KAFKA_SCRIPTS_DIR/generate_messages.sh"
+                            if [ -x "$script_file" ]; then
+                                "$script_file" 2>> "${log_file}_producer" | env BOOTSTRAP_SERVERS="$BOOTSTRAP_SERVERS" KAFKA_TOPICS="$KAFKA_TOPICS" \
+                                    kafka-console-producer.sh --bootstrap-server "$BOOTSTRAP_SERVERS" \
+                                    --topic "$KAFKA_TOPICS" \
+                                    --producer.config "${client_props_file}_producer" \
+                                    2>&1 | tee -a "${log_file}_producer"
+                            else
+                                echo "ERROR: Message generation script not found or not executable: $script_file" | tee -a "${log_file}_producer"
+                                exit 1
+                            fi
+                            ;;
+                    esac
+                ) &
+                PRODUCER_PID=$!
+
+                # waits for both processes
+                wait $CONSUMER_PID $PRODUCER_PID
                 ;;
         esac
     }
-    
-    # Original client mode logic would continue here
-    # ...
-    
+
+    # starts client instances
+    for ((i=1; i<=KAFKA_CLIENT_COUNT; i++)); do
+        if [ "$KAFKA_CLIENT_PARALLEL" = "true" ]; then
+            run_client_instance $i &
+            client_pids+=($!)
+            echo "Started client instance $i in background (PID: ${client_pids[-1]})" | tee -a "$FLOX_ENV_CACHE/kafka-logs/service.log"
+        else
+            echo "Starting client instance $i in foreground" | tee -a "$FLOX_ENV_CACHE/kafka-logs/service.log"
+            run_client_instance $i
+        fi
+    done
+
+    # waits for background processes if running in parallel
+    if [ "$KAFKA_CLIENT_PARALLEL" = "true" ]; then
+        echo "Waiting for all client instances to complete..." | tee -a "$FLOX_ENV_CACHE/kafka-logs/service.log"
+        wait ${client_pids[@]}
+    fi
+
+    echo "All client instances completed" | tee -a "$FLOX_ENV_CACHE/kafka-logs/service.log"
+
 else
     # handles broker/controller mode logic
     echo "Starting Kafka in $KAFKA_MODE mode" | tee -a "$FLOX_ENV_CACHE/kafka-logs/startup.log"

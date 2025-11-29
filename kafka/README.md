@@ -1,6 +1,6 @@
 # 🚀 Flox Environment for Apache Kafka Event Streaming
 
-This `kafka-headless` environment is designed for CI, headless setups, or scripted workflows—i.e., any non-interactive context.
+This `kafka` environment is designed for CI, headless setups, or scripted workflows—i.e., any non-interactive context.
 
 ## ✨ Features
 
@@ -39,7 +39,7 @@ Get started with:
 
 ```sh
 # Clone the repo
-git clone https://github.com/barstoolbluz/floxenvs && cd floxenvs/kafka-headless
+git clone https://github.com/barstoolbluz/floxenvs && cd floxenvs/kafka
 
 # Activate the environment
 flox activate -s # uses hard-coded defaults (kraft-combined mode)
@@ -158,7 +158,7 @@ KAFKA_MODE=client CLIENT_TYPE=consumer BOOTSTRAP_SERVERS="localhost:9092" KAFKA_
 
 ### Using Flox Environment Composition
 
-Flox v1.4+ supports environment composition, allowing you to create a customized environment that builds upon `kafka-headless`. The env vars you define in `[vars]` override those hard-coded into `kafka-headless`.
+Flox v1.4+ supports environment composition, allowing you to create a customized environment that builds upon `kafka`. The env vars you define in `[vars]` override those hard-coded into `kafka`.
 
 ```toml
 # manifest.toml for your composed environment
@@ -177,7 +177,7 @@ KAFKA_HEAP_OPTS="-Xmx512M -Xms512M"
  
 [include]
 environments = [
-    { remote = "barstoolbluz/kafka-headless" }
+    { remote = "barstoolbluz/kafka" }
 ]
  
 [options]
@@ -191,7 +191,7 @@ systems = [
 
 This approach allows you to:
 - Customize the Kafka configuration
-- Reuse the `kafka-headless` environment without modifying it
+- Reuse the `kafka` environment without modifying it
 - Create different compositions for different deployment scenarios
 
 ### Managing Your Kafka Cluster

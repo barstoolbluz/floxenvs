@@ -1,6 +1,6 @@
 # 🚀 Flox Environment for Neo4j Graph Database
 
-This `neo4j-headless` environment is designed for CI, headless setups, or scripted workflows—i.e., any non-interactive context.
+This `neo4j` environment is designed for CI, headless setups, or scripted workflows—i.e., any non-interactive context.
 
 ## ✨ Features
 
@@ -31,7 +31,7 @@ Get started with:
 
 ```sh
 # Clone the repo
-git clone https://github.com/barstoolbluz/floxenvs && cd floxenvs/neo4j-headless
+git clone https://github.com/barstoolbluz/floxenvs && cd floxenvs/neo4j
 
 # Activate the environment with defaults
 flox activate -s

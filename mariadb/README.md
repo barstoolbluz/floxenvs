@@ -1,6 +1,6 @@
 # 🦭 Flox Environment for MariaDB (Headless)
 
-This `mariadb-headless` environment is designed for CI, headless setups, or scripted workflows—i.e., any non-interactive context.
+This `mariadb` environment is designed for CI, headless setups, or scripted workflows—i.e., any non-interactive context.
 
 The [`mariadb`](https://github.com/barstoolbluz/floxenvs/tree/main/mariadb/) environment is better for local, interactive use—especially when users need help configuring things step by step.
 
@@ -19,7 +19,7 @@ The [`mariadb`](https://github.com/barstoolbluz/floxenvs/tree/main/mariadb/) env
 ### Basic Usage (Defaults)
 
 ```bash
-cd mariadb-headless
+cd mariadb
 flox activate -s
 # MariaDB on 127.0.0.1:13307, root password: mariadbpass
 ```
@@ -219,9 +219,9 @@ tail -f $MARIADB_LOG_ERROR
 
 ## 🔗 Related Environments
 
-- **[mariadb](../mariadb/)** - Interactive version with wizard
-- **[mysql-headless](../mysql-headless/)** - MySQL 8.0 headless variant
-- **[postgres-headless](../postgres-headless/)** - PostgreSQL headless variant
+- **[mariadb-local](../mariadb-local/)** - Interactive version with wizard
+- **[mysql](../mysql/)** - MySQL 8.0 headless variant
+- **[postgres](../postgres/)** - PostgreSQL headless variant
 
 ## 📚 Resources
 

@@ -111,11 +111,13 @@ KAFKA_TIMEOUT=2 flox activate
 
 ### Configuration Persistence
 
-- Configuration saved to: `$FLOX_ENV_CACHE/config/kafka_config.sh`
-- Kafka data stored in: `$FLOX_ENV_CACHE/data/kafka-logs/`
-- Server logs available at: `$FLOX_ENV_CACHE/logs/kafka.log`
+- Configuration saved to: `$FLOX_ENV_CACHE/kafka_config.sh`
+- Kafka data stored in: `$FLOX_ENV_CACHE/data/kafka/`
+- Server logs available at: `$FLOX_ENV_CACHE/kafka-logs/`
 
 ## Helper Functions
+
+> **⚠️ IMPORTANT**: The helper functions listed below require `helper-functions.sh` which is **not currently included** in this repository. These commands will not work until this file is added. You can use the standard Kafka command-line tools (e.g., `kafka-topics.sh`, `kafka-console-producer.sh`, etc.) directly instead.
 
 Convenient commands available in all shells (bash/zsh/fish):
 
@@ -277,16 +279,21 @@ rm -rf "$FLOX_ENV_CACHE/data/kafka-logs"
 
 ```
 $FLOX_ENV_CACHE/
-├── config/
-│   ├── kafka_config.sh          # Saved configuration
-│   ├── server.properties        # Kafka server config
-│   └── controller.properties    # Controller config (if applicable)
+├── kafka_config.sh              # Saved configuration (root level)
+├── kafka-config/                # Kafka config directory
+│   ├── kraft.properties         # Active Kafka properties
+│   ├── kraft.properties.base    # Base properties template
+│   ├── cluster_id               # Cluster ID file
+│   └── client_*.properties      # Client-specific properties
+├── kafka-logs/                  # Kafka service logs
+│   ├── startup.log              # Service startup logs
+│   ├── service.log              # Service runtime logs
+│   └── client_*.log             # Client-specific logs
 ├── data/
-│   └── kafka-logs/              # Kafka data and metadata
-├── logs/
-│   └── kafka.log                # Server logs
-└── helper-functions/
-    └── helper-functions.sh      # Helper function definitions
+│   └── kafka/                   # Kafka data and metadata
+│       └── meta.properties      # KRaft metadata
+├── kafka-message-output/        # Client message outputs (file mode)
+└── kafka-scripts/               # Custom processing scripts
 ```
 
 ## Advanced Usage

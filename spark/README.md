@@ -1,6 +1,6 @@
 # 🔥 Flox Environment for Apache Spark Cluster Computing
 
-This `spark-headless` environment is designed for CI, headless setups, or scripted workflows—i.e., any non-interactive context.
+This `spark` environment is designed for CI, headless setups, or scripted workflows—i.e., any non-interactive context.
 
 The [`spark`](https://github.com/barstoolbluz/floxenvs/tree/main/spark/) environment is better for local, interactive use—especially when users need help configuring things step by step.
 
@@ -41,7 +41,7 @@ Get started with:
 
 ```sh
 # Clone the repo
-git clone https://github.com/barstoolbluz/floxenvs && cd floxenvs/spark-headless
+git clone https://github.com/barstoolbluz/floxenvs && cd floxenvs/spark
 
 # Activate the environment
 flox activate -s # uses hard-coded defaults; see below for injecting env vars and activating

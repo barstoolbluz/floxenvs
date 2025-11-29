@@ -1,4 +1,4 @@
-# nginx-headless - Composable Nginx Environment
+# nginx - Composable Nginx Environment
 
 A headless, runtime-configurable nginx environment designed for automation, composition, and production deployments.
 
@@ -21,7 +21,7 @@ A headless, runtime-configurable nginx environment designed for automation, comp
 ### Reverse Proxy (Default)
 
 ```bash
-cd nginx-headless
+cd nginx
 flox activate -s
 ```
 
@@ -518,7 +518,7 @@ flox activate -s
 # myapp/.flox/env/manifest.toml
 [include]
 environments = [
-  { remote = "yourorg/nginx-headless" },
+  { remote = "yourorg/nginx" },
 ]
 
 [hook]
@@ -534,9 +534,9 @@ export NGINX_BACKEND_PORT="3000"
 # fullstack/.flox/env/manifest.toml
 [include]
 environments = [
-  { remote = "yourorg/nginx-headless" },
-  { remote = "yourorg/postgres-headless" },
-  { remote = "yourorg/redis-headless" },
+  { remote = "yourorg/nginx" },
+  { remote = "yourorg/postgres" },
+  { remote = "yourorg/redis" },
 ]
 
 [hook]
@@ -711,9 +711,9 @@ flox activate -s
 
 ## Related Environments
 
-- **ollama-headless** - AI/ML inference server (works well with nginx proxy)
-- **postgres-headless** - PostgreSQL database
-- **redis-headless** - Redis cache/session store
+- **ollama** - AI/ML inference server (works well with nginx proxy)
+- **postgres** - PostgreSQL database
+- **redis** - Redis cache/session store
 
 ## Resources
 

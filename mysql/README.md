@@ -1,6 +1,6 @@
 # 🐬 Flox Environment for MySQL 8.0 (Headless)
 
-This `mysql-headless` environment is designed for CI, headless setups, or scripted workflows—i.e., any non-interactive context.
+This `mysql` environment is designed for CI, headless setups, or scripted workflows—i.e., any non-interactive context.
 
 The [`mysql`](https://github.com/barstoolbluz/floxenvs/tree/main/mysql/) environment is better for local, interactive use—especially when users need help configuring things step by step.
 
@@ -19,7 +19,7 @@ The [`mysql`](https://github.com/barstoolbluz/floxenvs/tree/main/mysql/) environ
 ### Basic Usage (Defaults)
 
 ```bash
-cd mysql-headless
+cd mysql
 flox activate -s
 # MySQL on 127.0.0.1:13306, root password: mysqlpass
 ```
@@ -196,9 +196,9 @@ tail -f $MYSQL_LOG_ERROR
 
 ## 🔗 Related Environments
 
-- **[mysql](../mysql/)** - Interactive version with wizard
-- **[mariadb-headless](../mariadb-headless/)** - MariaDB headless variant
-- **[postgres-headless](../postgres-headless/)** - PostgreSQL headless variant
+- **[mysql-local](../mysql-local/)** - Interactive version with wizard
+- **[mariadb](../mariadb/)** - MariaDB headless variant
+- **[postgres](../postgres/)** - PostgreSQL headless variant
 
 ## 📚 Resources
 

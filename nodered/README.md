@@ -18,7 +18,7 @@ Production-ready Node-RED environment with zero interaction, configured entirely
 ### Basic Deployment
 
 ```bash
-cd nodered-headless
+cd nodered
 flox activate -s
 ```
 
@@ -31,7 +31,7 @@ Dashboard at: `http://localhost:1880/ui`
 ### Production Deployment
 
 ```bash
-cd nodered-headless
+cd nodered
 
 NODERED_PORT=80 \
 NODERED_ADMIN_PASSWORD="secure-password" \
@@ -416,7 +416,7 @@ jobs:
 
       - name: Deploy Node-RED
         run: |
-          cd nodered-headless
+          cd nodered
           NODERED_FLOW_FILE=flows.json \
           NODERED_ADMIN_PASSWORD_HASH=${{ secrets.NODERED_ADMIN_HASH }} \
           NODERED_CONTEXT_STORAGE=redis \
@@ -432,7 +432,7 @@ deploy:
   stage: deploy
   script:
     - curl -fsSL https://downloads.flox.dev/by-env/stable/install | bash
-    - cd nodered-headless
+    - cd nodered
     - |
       NODERED_EDITOR_DISABLED=true \
       NODERED_CONTEXT_STORAGE=redis \
@@ -450,11 +450,11 @@ FROM ubuntu:22.04
 RUN curl -fsSL https://downloads.flox.dev/by-env/stable/install | bash
 
 # Copy Node-RED environment
-COPY nodered-headless /app/nodered-headless
-WORKDIR /app/nodered-headless
+COPY nodered /app/nodered
+WORKDIR /app/nodered
 
 # Copy flows
-COPY flows.json /app/nodered-headless/.flox/cache/nodered-data/
+COPY flows.json /app/nodered/.flox/cache/nodered-data/
 
 # Expose port
 EXPOSE 1880
@@ -566,7 +566,7 @@ NODERED_LOG_METRICS=true
 
 ## Git Workflow (Without Projects Feature)
 
-The headless environment has Projects feature disabled by default (best for CI/CD). Use direct Git workflow:
+This environment has Projects feature disabled by default (best for CI/CD). Use direct Git workflow:
 
 ### Initial Setup
 
@@ -715,13 +715,13 @@ REDIS_PORT=6379
 ## Composed Environments
 
 This environment includes:
-- **redis-headless** - Redis 7.x server (used for context storage if configured)
+- **redis** - Redis 7.x server (used for context storage if configured)
 
 ## Related Environments
 
-- **nodered** - Interactive environment with configuration wizard
-- **redis** / **redis-headless** - Redis cache/queue
-- **n8n** / **n8n-headless** - Alternative workflow automation (cloud SaaS focused)
+- **nodered-local** - Interactive environment with configuration wizard
+- **redis** / **redis-local** - Redis cache/queue
+- **n8n** / **n8n-local** - Alternative workflow automation (cloud SaaS focused)
 
 ## Resources
 

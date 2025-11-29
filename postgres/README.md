@@ -1,6 +1,6 @@
 # 🐘 Flox Environment for PostgreSQL (Headless)
 
-This `postgres-headless` environment is designed for CI, headless setups, or scripted workflows—i.e., any non-interactive context.
+This `postgres` environment is designed for CI, headless setups, or scripted workflows—i.e., any non-interactive context.
 
 The [`postgres`](https://github.com/barstoolbluz/floxenvs/tree/main/postgres/) environment is better for local, interactive use—especially when users need help configuring their database step by step with interactive wizards.
 
@@ -32,10 +32,10 @@ The [`postgres`](https://github.com/barstoolbluz/floxenvs/tree/main/postgres/) e
 
 ```bash
 # Pull the environment
-flox pull --copy barstoolbluz/postgres-headless
+flox pull --copy barstoolbluz/postgres
 
 # Activate (without starting services)
-cd postgres-headless
+cd postgres
 flox activate
 
 # Or activate and start PostgreSQL immediately
@@ -329,13 +329,13 @@ psql -c "SELECT PostGIS_Version();"
 ```yaml
 - name: Setup PostgreSQL
   run: |
-    flox pull --copy barstoolbluz/postgres-headless
-    cd postgres-headless
+    flox pull --copy barstoolbluz/postgres
+    cd postgres
     POSTGRES_FSYNC=off PGDATABASE=testdb flox activate -s -- sleep 2
 
 - name: Run tests
   run: |
-    cd postgres-headless
+    cd postgres
     flox activate -- psql -c "SELECT version();"
     flox activate -- pytest tests/
 ```
@@ -345,8 +345,8 @@ psql -c "SELECT PostGIS_Version();"
 ```yaml
 test:
   before_script:
-    - flox pull --copy barstoolbluz/postgres-headless
-    - cd postgres-headless
+    - flox pull --copy barstoolbluz/postgres
+    - cd postgres
     - POSTGRES_FSYNC=off flox activate -s -- sleep 2
   script:
     - flox activate -- psql -c "CREATE TABLE test (id SERIAL);"

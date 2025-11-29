@@ -16,7 +16,7 @@ A fully-automated Redis environment for Flox configured entirely via environment
 
 ```bash
 # Default configuration
-cd redis-headless
+cd redis
 flox activate -s
 
 # Connect
@@ -395,8 +395,8 @@ This environment works well in containers:
 # Example Dockerfile pattern
 FROM nixos/nix
 RUN nix-env -iA nixpkgs.flox
-COPY redis-headless /app/redis-headless
-WORKDIR /app/redis-headless
+COPY redis /app/redis
+WORKDIR /app/redis
 ENV REDIS_HOST=0.0.0.0
 ENV REDIS_PORT=6379
 ENV REDIS_PASSWORD=containerpass

@@ -1,6 +1,6 @@
 # 🚀 Flox Environment for JupyterLab
 
-This `jupyterlab-headless` environment is designed for CI, headless setups, or scripted workflows—i.e., any non-interactive context.
+This `jupyterlab` environment is designed for CI, headless setups, or scripted workflows—i.e., any non-interactive context.
 
 ## ✨ Features
 
@@ -46,7 +46,7 @@ Get started with:
 
 ```sh
 # Clone the repo
-git clone https://github.com/barstoolbluz/floxenvs && cd floxenvs/jupyterlab-headless
+git clone https://github.com/barstoolbluz/floxenvs && cd floxenvs/jupyterlab
 
 # Activate the environment with defaults
 flox activate -s
@@ -159,7 +159,7 @@ JUPYTER_HOST=0.0.0.0 JUPYTER_PORT=9999 JUPYTER_SERVER_TOKEN=super-secure-token-1
 
 ### Using Flox Environment Composition
 
-Flox v1.4+ supports environment composition, allowing you to create a customized environment that builds upon `jupyterlab-headless`. The env vars you define in `[vars]` override those hard-coded into `jupyterlab-headless`.
+Flox v1.4+ supports environment composition, allowing you to create a customized environment that builds upon `jupyterlab`. The env vars you define in `[vars]` override those hard-coded into `jupyterlab`.
 
 ```toml
 # manifest.toml for your composed environment
@@ -174,7 +174,7 @@ INSTALL_REQUIREMENTS = "true"
 
 [include]
 environments = [
-    { remote = "barstoolbluz/jupyterlab-headless" }
+    { remote = "barstoolbluz/jupyterlab" }
 ]
 
 [options]
@@ -188,7 +188,7 @@ systems = [
 
 This approach allows you to:
 - Customize the JupyterLab configuration
-- Reuse the `jupyterlab-headless` environment without modifying it
+- Reuse the `jupyterlab` environment without modifying it
 - Create different compositions for different deployment scenarios
 - Version control your configuration without the base environment
 

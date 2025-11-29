@@ -1,6 +1,6 @@
 # 🚀 Flox Environment for KIND (Kubernetes in Docker)
 
-This `kind-headless` environment is designed for CI, headless setups, or scripted workflows—i.e., any non-interactive context.
+This `kind` environment is designed for CI, headless setups, or scripted workflows—i.e., any non-interactive context.
 
 The [`kind`](https://github.com/barstoolbluz/floxenvs/tree/main/kind/) environment is better for local, interactive use—especially when users need help configuring clusters step by step with interactive wizards.
 
@@ -39,10 +39,10 @@ Get started with:
 
 ```bash
 # Pull the environment
-flox pull --copy barstoolbluz/kind-headless
+flox pull --copy barstoolbluz/kind
 
 # Activate (without starting services)
-cd kind-headless
+cd kind
 flox activate
 
 # Or activate and start the cluster immediately

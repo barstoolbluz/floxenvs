@@ -17,7 +17,7 @@ Production-ready n8n environment with zero interaction, configured entirely via 
 ### Regular Mode (Single Process)
 
 ```bash
-cd n8n-headless
+cd n8n
 flox activate -s
 ```
 
@@ -28,7 +28,7 @@ Access n8n at `http://localhost:5678` with credentials:
 ### Queue Mode (Distributed Execution)
 
 ```bash
-cd n8n-headless
+cd n8n
 EXECUTIONS_MODE=queue flox activate -s
 ```
 
@@ -566,8 +566,8 @@ EXECUTIONS_TIMEOUT_MAX=7200  # 2 hours
 ## Composed Environments
 
 This environment includes:
-- **postgres-headless** - PostgreSQL 17.x database server
-- **redis-headless** - Redis 7.x message queue
+- **postgres** - PostgreSQL 17.x database server
+- **redis** - Redis 7.x message queue
 
 ## Migrating from n8n (Interactive)
 
@@ -587,7 +587,7 @@ $FLOX_ENV_CACHE/n8n-config/
 **To migrate**:
 1. Ensure encryption key is backed up
 2. Export workflows from interactive environment
-3. Activate headless environment with same `FLOX_ENV_CACHE`
+3. Activate this environment with same `FLOX_ENV_CACHE`
 4. Import workflows
 
 ## Environment Variables Reference
@@ -607,9 +607,9 @@ See [Configuration](#configuration) section above for complete list of 40+ envir
 
 ## Related Environments
 
-- **n8n** - Interactive environment with configuration wizard
-- **postgres** / **postgres-headless** - PostgreSQL database
-- **redis** / **redis-headless** - Redis cache/queue
+- **n8n-local** - Interactive environment with configuration wizard
+- **postgres** / **postgres-local** - PostgreSQL database
+- **redis** / **redis-local** - Redis cache/queue
 
 ## Resources
 
