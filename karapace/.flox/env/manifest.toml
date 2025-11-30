@@ -1,0 +1,97 @@
+## Flox Environment Manifest -----------------------------------------
+##
+##   Karapace - Apache Kafka Schema Registry & REST Proxy
+##
+##   Composable environment providing:
+##   - Schema Registry (port 8081)
+##   - REST Proxy (port 8082)
+##
+##   Usage:
+##   1. Standalone: flox activate -s
+##   2. Composed: Add to kafka environment via [include]
+##
+## -------------------------------------------------------------------
+version = 1
+
+## Install Packages --------------------------------------------------
+[install]
+curl.pkg-path = "curl"
+curl.pkg-group = "tools"
+
+jq.pkg-path = "jq"
+jq.pkg-group = "tools"
+
+## Environment Variables ---------------------------------------------
+[vars]
+KARAPACE_HOST = "0.0.0.0"
+KARAPACE_PORT = "8081"
+KARAPACE_BOOTSTRAP_URI = "localhost:9092"
+KARAPACE_TOPIC_NAME = "_schemas"
+KARAPACE_LOG_LEVEL = "INFO"
+KARAPACE_KARAPACE_REGISTRY = "true"
+KARAPACE_KARAPACE_REST = "false"
+
+## Activation Hook ---------------------------------------------------
+[hook]
+on-activate = '''
+# Source karapace virtualenv activation script
+KARAPACE_RESULT="/home/daedalus/dev/builds/build-karapace/result-karapace"
+
+if [ -f "$KARAPACE_RESULT/bin/activate" ]; then
+  source "$KARAPACE_RESULT/bin/activate"
+  export PATH="$KARAPACE_RESULT/bin:$PATH"
+else
+  echo "ERROR: Karapace build not found at $KARAPACE_RESULT"
+  echo "Please run: cd /home/daedalus/dev/builds/build-karapace && flox build karapace"
+  return 1
+fi
+
+# Create required directories
+mkdir -p "$FLOX_ENV_CACHE/karapace-logs"
+
+# Auto-detect Kafka connection from composed environment
+if [ -n "$KAFKA_HOST" ] && [ -n "$KAFKA_PORT" ]; then
+  export KARAPACE_BOOTSTRAP_URI="${KAFKA_HOST}:${KAFKA_PORT}"
+elif [ -n "$BOOTSTRAP_SERVERS" ]; then
+  export KARAPACE_BOOTSTRAP_URI="$BOOTSTRAP_SERVERS"
+fi
+
+echo "Karapace Configuration:"
+echo "  Bootstrap URI:    $KARAPACE_BOOTSTRAP_URI"
+echo "  Schema Registry:  http://${KARAPACE_HOST}:${KARAPACE_PORT}"
+echo ""
+echo "Services:"
+echo "  flox services start karapace-registry  # Start Schema Registry"
+echo "  flox services start                    # Start all services"
+echo ""
+echo "Override configuration:"
+echo "  KARAPACE_BOOTSTRAP_URI=kafka:9092 flox activate"
+'''
+
+## Services ----------------------------------------------------------
+[services]
+karapace-registry.command = '''
+# Source karapace virtualenv
+KARAPACE_RESULT="/home/daedalus/dev/builds/build-karapace/result-karapace"
+
+if [ -f "$KARAPACE_RESULT/bin/activate" ]; then
+  source "$KARAPACE_RESULT/bin/activate"
+else
+  echo "ERROR: Karapace build not found" | tee -a "$FLOX_ENV_CACHE/karapace-logs/registry-error.log"
+  exit 1
+fi
+
+# Log startup
+echo "Starting Karapace Schema Registry at $(date)" | tee -a "$FLOX_ENV_CACHE/karapace-logs/registry.log"
+echo "Bootstrap URI: $KARAPACE_BOOTSTRAP_URI" | tee -a "$FLOX_ENV_CACHE/karapace-logs/registry.log"
+echo "Listening on: ${KARAPACE_HOST}:${KARAPACE_PORT}" | tee -a "$FLOX_ENV_CACHE/karapace-logs/registry.log"
+
+# Start Schema Registry (configured via environment variables)
+exec karapace 2>&1 | tee -a "$FLOX_ENV_CACHE/karapace-logs/registry.log"
+'''
+
+## Other Environment Options -----------------------------------------
+[options]
+systems = [
+  "x86_64-linux",
+]
