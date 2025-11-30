@@ -23,13 +23,8 @@ jq.pkg-group = "tools"
 
 ## Environment Variables ---------------------------------------------
 [vars]
-KARAPACE_HOST = "0.0.0.0"
-KARAPACE_PORT = "8081"
+# Default Kafka connection (can be overridden at activation)
 KARAPACE_BOOTSTRAP_URI = "localhost:9092"
-KARAPACE_TOPIC_NAME = "_schemas"
-KARAPACE_LOG_LEVEL = "INFO"
-KARAPACE_KARAPACE_REGISTRY = "true"
-KARAPACE_KARAPACE_REST = "false"
 
 ## Activation Hook ---------------------------------------------------
 [hook]
@@ -46,49 +41,48 @@ else
   return 1
 fi
 
-# Create required directories
+# Create log directory
 mkdir -p "$FLOX_ENV_CACHE/karapace-logs"
 
-# Auto-detect Kafka connection from composed environment
-if [ -n "$KAFKA_HOST" ] && [ -n "$KAFKA_PORT" ]; then
-  export KARAPACE_BOOTSTRAP_URI="${KAFKA_HOST}:${KAFKA_PORT}"
-elif [ -n "$BOOTSTRAP_SERVERS" ]; then
-  export KARAPACE_BOOTSTRAP_URI="$BOOTSTRAP_SERVERS"
-fi
-
-echo "Karapace Configuration:"
-echo "  Bootstrap URI:    $KARAPACE_BOOTSTRAP_URI"
-echo "  Schema Registry:  http://${KARAPACE_HOST}:${KARAPACE_PORT}"
+echo "Karapace Schema Registry Environment"
+echo "  Bootstrap URI: $KARAPACE_BOOTSTRAP_URI"
 echo ""
-echo "Services:"
-echo "  flox services start karapace-registry  # Start Schema Registry"
-echo "  flox services start                    # Start all services"
+echo "Start service:"
+echo "  flox services start karapace-registry"
 echo ""
-echo "Override configuration:"
-echo "  KARAPACE_BOOTSTRAP_URI=kafka:9092 flox activate"
+echo "Override at activation:"
+echo "  KARAPACE_BOOTSTRAP_URI=kafka:9092 flox activate -s"
 '''
 
 ## Services ----------------------------------------------------------
-[services]
-karapace-registry.command = '''
+[services.karapace-registry]
+command = '''
 # Source karapace virtualenv
 KARAPACE_RESULT="/home/daedalus/dev/builds/build-karapace/result-karapace"
 
 if [ -f "$KARAPACE_RESULT/bin/activate" ]; then
   source "$KARAPACE_RESULT/bin/activate"
 else
-  echo "ERROR: Karapace build not found" | tee -a "$FLOX_ENV_CACHE/karapace-logs/registry-error.log"
+  echo "ERROR: Karapace build not found"
   exit 1
 fi
 
-# Log startup
-echo "Starting Karapace Schema Registry at $(date)" | tee -a "$FLOX_ENV_CACHE/karapace-logs/registry.log"
-echo "Bootstrap URI: $KARAPACE_BOOTSTRAP_URI" | tee -a "$FLOX_ENV_CACHE/karapace-logs/registry.log"
-echo "Listening on: ${KARAPACE_HOST}:${KARAPACE_PORT}" | tee -a "$FLOX_ENV_CACHE/karapace-logs/registry.log"
+# Auto-detect Kafka from composed environment
+if [ -n "$KAFKA_HOST" ] && [ -n "$KAFKA_PORT" ]; then
+  export KARAPACE_BOOTSTRAP_URI="${KAFKA_HOST}:${KAFKA_PORT}"
+elif [ -n "$BOOTSTRAP_SERVERS" ]; then
+  export KARAPACE_BOOTSTRAP_URI="$BOOTSTRAP_SERVERS"
+fi
 
-# Start Schema Registry (configured via environment variables)
-exec karapace 2>&1 | tee -a "$FLOX_ENV_CACHE/karapace-logs/registry.log"
+# Start Schema Registry
+exec karapace
 '''
+vars.KARAPACE_HOST = "0.0.0.0"
+vars.KARAPACE_PORT = "8081"
+vars.KARAPACE_TOPIC_NAME = "_schemas"
+vars.KARAPACE_LOG_LEVEL = "INFO"
+vars.KARAPACE_KARAPACE_REGISTRY = "true"
+vars.KARAPACE_KARAPACE_REST = "false"
 
 ## Other Environment Options -----------------------------------------
 [options]
