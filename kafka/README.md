@@ -158,41 +158,109 @@ KAFKA_MODE=client CLIENT_TYPE=consumer BOOTSTRAP_SERVERS="localhost:9092" KAFKA_
 
 ### Using Flox Environment Composition
 
-Flox v1.4+ supports environment composition, allowing you to create a customized environment that builds upon `kafka`. The env vars you define in `[vars]` override those hard-coded into `kafka`.
+Flox v1.4+ supports environment composition, allowing you to create customized environments that build upon `kafka` and combine it with other services.
 
+#### Compose with Karapace (Schema Registry + REST Proxy)
+
+Create a complete Kafka stack with schema management. The first example uses local Flox manifests:
+
+**kafka-stack/.flox/env/manifest.toml:**
 ```toml
-# manifest.toml for your composed environment
 version = 1
 
-[vars]
-KAFKA_MODE=kraft-broker
-KAFKA_NODE_ID=2
-KAFKA_HOST=localhost
-KAFKA_PORT=9092
-CONTROLLER_QUORUM="1@controller-host:9093"
-KAFKA_CLUSTER_ID="EBzt0KoZR5ynZ9hTiJQuFA"
-KAFKA_REPLICATION_FACTOR=1
-KAFKA_NUM_PARTITIONS=1
-KAFKA_HEAP_OPTS="-Xmx512M -Xms512M"
- 
+## When composing manifests that consume custom-built packages, it is sometimes
+## necessary to redeclare packages with package groups in the composing
+## manifest,even though they're already defined in the included environment.
+## Without this, Flox's dependency resolver will fail. For example:
+[install]
+karapace.pkg-path = "flox/karapace"
+karapace.pkg-group = "karapace"
+
 [include]
 environments = [
-    { remote = "barstoolbluz/kafka" }
+    { dir = "../kafka" },      # local kafka manifest
+    { dir = "../karapace" }    # local karapace manifest
 ]
- 
-[options]
-systems = [
-  "aarch64-darwin",
-  "aarch64-linux",
-  "x86_64-darwin",
-  "x86_64-linux",
+
+## In this case, the karapace manifest defines a custom-built package, along
+## with a karapace-specific package-group. In spite of this, we redefine a
+## package group override for karapace in the composing manifest.
+
+```
+
+The second example uses remote environments managed by FloxHub:
+
+**Remote composition (FloxHub):**
+```toml
+# kafka-stack/.flox/env/manifest.toml
+version = 1
+
+[include]
+environments = [
+    { remote = "floxrox/kafka" },
+    { remote = "floxrox/karapace" }
+]
+```
+The third example uses both local and remote environments:
+
+**Mixed (local + remote):**
+```toml
+version = 1
+
+[include]
+environments = [
+    { remote = "floxrox/kafka" },                     # Use published Kafka
+    { dir = "../karapace-custom", name = "karapace" } # Use local customized Karapace
 ]
 ```
 
-This approach allows you to:
-- Customize the Kafka configuration
-- Reuse the `kafka` environment without modifying it
+Usage:
+```bash
+cd kafka-stack
+flox activate -s
+
+# Start Kafka first
+flox services start kafka
+
+# Then start Karapace services (auto-detect Kafka connection)
+flox services start karapace-registry  # Schema Registry on port 8081
+flox services start karapace-rest      # REST Proxy on port 8082
+
+# Verify all services
+flox services status
+```
+
+#### Customize Kafka Configuration
+
+Override Kafka settings while using the published environment:
+
+```toml
+# my-kafka/.flox/env/manifest.toml
+version = 1
+
+[vars]
+KAFKA_MODE = "kraft-broker"
+KAFKA_NODE_ID = "2"
+KAFKA_HOST = "localhost"
+KAFKA_PORT = "9092"
+CONTROLLER_QUORUM = "1@controller-host:9093"
+KAFKA_CLUSTER_ID = "EBzt0KoZR5ynZ9hTiJQuFA"
+KAFKA_REPLICATION_FACTOR = "1"
+KAFKA_NUM_PARTITIONS = "1"
+KAFKA_HEAP_OPTS = "-Xmx512M -Xms512M"
+
+[include]
+environments = [
+    { remote = "floxrox/kafka" }
+]
+```
+
+This composition approach allows you to:
+- Combine Kafka with Schema Registry, monitoring tools, or clients
+- Customize configuration without modifying base environments
+- Use local environments during development, remote in production
 - Create different compositions for different deployment scenarios
+- Share complete stacks via FloxHub
 
 ### Managing Your Kafka Cluster
 

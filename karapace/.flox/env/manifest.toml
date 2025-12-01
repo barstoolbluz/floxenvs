@@ -14,41 +14,64 @@
 version = 1
 
 ## Install Packages --------------------------------------------------
+##
+## NOTE ON COMPOSITION: When this environment is included in another
+## environment via [include], you must redeclare karapace with its
+## package group in the composing manifest's [install] section:
+##
+##   [install]
+##   karapace.pkg-path = "flox/karapace"
+##   karapace.pkg-group = "karapace"
+##
+##   [include]
+##   environments = [
+##       { remote = "floxrox/kafka" },
+##       { remote = "floxrox/karapace" }
+##   ]
+##
+## This is a Flox requirement for package groups to be properly
+## recognized in composed environments.
+##
 [install]
+karapace.pkg-path = "flox/karapace"
+
 curl.pkg-path = "curl"
 curl.pkg-group = "tools"
 
 jq.pkg-path = "jq"
 jq.pkg-group = "tools"
 
+lsof.pkg-path = "lsof"
+lsof.pkg-group = "tools"
+
 ## Environment Variables ---------------------------------------------
 [vars]
-# Default Kafka connection (can be overridden at activation)
-KARAPACE_BOOTSTRAP_URI = "localhost:9092"
+# KARAPACE_BOOTSTRAP_URI can be set at activation or auto-detected from composed environments
 
 ## Activation Hook ---------------------------------------------------
 [hook]
 on-activate = '''
-# Source karapace virtualenv activation script
-KARAPACE_RESULT="/home/daedalus/dev/builds/build-karapace/result-karapace"
-
-if [ -f "$KARAPACE_RESULT/bin/activate" ]; then
-  source "$KARAPACE_RESULT/bin/activate"
-  export PATH="$KARAPACE_RESULT/bin:$PATH"
-else
-  echo "ERROR: Karapace build not found at $KARAPACE_RESULT"
-  echo "Please run: cd /home/daedalus/dev/builds/build-karapace && flox build karapace"
-  return 1
+# Set KARAPACE_BOOTSTRAP_URI if not already set, then export (for services to inherit)
+if [ -z "$KARAPACE_BOOTSTRAP_URI" ]; then
+  if [ -n "$KAFKA_HOST" ] && [ -n "$KAFKA_PORT" ]; then
+    KARAPACE_BOOTSTRAP_URI="${KAFKA_HOST}:${KAFKA_PORT}"
+  elif [ -n "$BOOTSTRAP_SERVERS" ]; then
+    KARAPACE_BOOTSTRAP_URI="$BOOTSTRAP_SERVERS"
+  else
+    KARAPACE_BOOTSTRAP_URI="localhost:9092"
+  fi
 fi
+export KARAPACE_BOOTSTRAP_URI
 
 # Create log directory
 mkdir -p "$FLOX_ENV_CACHE/karapace-logs"
 
-echo "Karapace Schema Registry Environment"
+echo "Karapace Environment - Schema Registry & REST Proxy"
 echo "  Bootstrap URI: $KARAPACE_BOOTSTRAP_URI"
 echo ""
-echo "Start service:"
-echo "  flox services start karapace-registry"
+echo "Start services:"
+echo "  flox services start karapace-registry  # Schema Registry (port 8081)"
+echo "  flox services start karapace-rest      # REST Proxy (port 8082)"
 echo ""
 echo "Override at activation:"
 echo "  KARAPACE_BOOTSTRAP_URI=kafka:9092 flox activate -s"
@@ -57,21 +80,25 @@ echo "  KARAPACE_BOOTSTRAP_URI=kafka:9092 flox activate -s"
 ## Services ----------------------------------------------------------
 [services.karapace-registry]
 command = '''
-# Source karapace virtualenv
-KARAPACE_RESULT="/home/daedalus/dev/builds/build-karapace/result-karapace"
-
-if [ -f "$KARAPACE_RESULT/bin/activate" ]; then
-  source "$KARAPACE_RESULT/bin/activate"
-else
-  echo "ERROR: Karapace build not found"
-  exit 1
+# Auto-detect Kafka from composed environment or use default
+if [ -z "$KARAPACE_BOOTSTRAP_URI" ]; then
+  if [ -n "$KAFKA_HOST" ] && [ -n "$KAFKA_PORT" ]; then
+    export KARAPACE_BOOTSTRAP_URI="${KAFKA_HOST}:${KAFKA_PORT}"
+  elif [ -n "$BOOTSTRAP_SERVERS" ]; then
+    export KARAPACE_BOOTSTRAP_URI="$BOOTSTRAP_SERVERS"
+  else
+    export KARAPACE_BOOTSTRAP_URI="localhost:9092"
+  fi
 fi
 
-# Auto-detect Kafka from composed environment
-if [ -n "$KAFKA_HOST" ] && [ -n "$KAFKA_PORT" ]; then
-  export KARAPACE_BOOTSTRAP_URI="${KAFKA_HOST}:${KAFKA_PORT}"
-elif [ -n "$BOOTSTRAP_SERVERS" ]; then
-  export KARAPACE_BOOTSTRAP_URI="$BOOTSTRAP_SERVERS"
+# Idempotent port check - kill any existing process on port 8081
+# This ensures clean restarts and prevents "address already in use" errors
+PORT=8081
+PID=$(lsof -ti :$PORT 2>/dev/null || true)
+if [ -n "$PID" ]; then
+  echo "Port $PORT already in use by PID $PID, killing..."
+  kill -9 $PID 2>/dev/null || true
+  sleep 1
 fi
 
 # Start Schema Registry
@@ -84,8 +111,43 @@ vars.KARAPACE_LOG_LEVEL = "INFO"
 vars.KARAPACE_KARAPACE_REGISTRY = "true"
 vars.KARAPACE_KARAPACE_REST = "false"
 
+[services.karapace-rest]
+command = '''
+# Auto-detect Kafka from composed environment or use default
+if [ -z "$KARAPACE_BOOTSTRAP_URI" ]; then
+  if [ -n "$KAFKA_HOST" ] && [ -n "$KAFKA_PORT" ]; then
+    export KARAPACE_BOOTSTRAP_URI="${KAFKA_HOST}:${KAFKA_PORT}"
+  elif [ -n "$BOOTSTRAP_SERVERS" ]; then
+    export KARAPACE_BOOTSTRAP_URI="$BOOTSTRAP_SERVERS"
+  else
+    export KARAPACE_BOOTSTRAP_URI="localhost:9092"
+  fi
+fi
+
+# Idempotent port check - kill any existing process on port 8082
+# This ensures clean restarts and prevents "address already in use" errors
+PORT=8082
+PID=$(lsof -ti :$PORT 2>/dev/null || true)
+if [ -n "$PID" ]; then
+  echo "Port $PORT already in use by PID $PID, killing..."
+  kill -9 $PID 2>/dev/null || true
+  sleep 1
+fi
+
+# Start REST Proxy
+exec karapace_rest_proxy
+'''
+vars.KARAPACE_HOST = "0.0.0.0"
+vars.KARAPACE_PORT = "8082"
+vars.KARAPACE_LOG_LEVEL = "INFO"
+vars.KARAPACE_KARAPACE_REGISTRY = "false"
+vars.KARAPACE_KARAPACE_REST = "true"
+
 ## Other Environment Options -----------------------------------------
 [options]
 systems = [
   "x86_64-linux",
+  "aarch64-linux",
+  "aarch64-darwin",
+  "x86_64-darwin",
 ]

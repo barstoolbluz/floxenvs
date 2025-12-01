@@ -10,32 +10,154 @@
       "jq": {
         "pkg-path": "jq",
         "pkg-group": "tools"
+      },
+      "karapace": {
+        "pkg-path": "flox/karapace"
+      },
+      "lsof": {
+        "pkg-path": "lsof",
+        "pkg-group": "tools"
       }
     },
-    "vars": {
-      "KARAPACE_BOOTSTRAP_URI": "localhost:9092",
-      "KARAPACE_HOST": "0.0.0.0",
-      "KARAPACE_KARAPACE_REGISTRY": "true",
-      "KARAPACE_KARAPACE_REST": "false",
-      "KARAPACE_LOG_LEVEL": "INFO",
-      "KARAPACE_PORT": "8081",
-      "KARAPACE_TOPIC_NAME": "_schemas"
-    },
     "hook": {
-      "on-activate": "# Source karapace virtualenv activation script\nKARAPACE_RESULT=\"/home/daedalus/dev/builds/build-karapace/result-karapace\"\n\nif [ -f \"$KARAPACE_RESULT/bin/activate\" ]; then\n  source \"$KARAPACE_RESULT/bin/activate\"\n  export PATH=\"$KARAPACE_RESULT/bin:$PATH\"\nelse\n  echo \"ERROR: Karapace build not found at $KARAPACE_RESULT\"\n  echo \"Please run: cd /home/daedalus/dev/builds/build-karapace && flox build karapace\"\n  return 1\nfi\n\n# Create required directories\nmkdir -p \"$FLOX_ENV_CACHE/karapace-logs\"\n\n# Auto-detect Kafka connection from composed environment\nif [ -n \"$KAFKA_HOST\" ] && [ -n \"$KAFKA_PORT\" ]; then\n  export KARAPACE_BOOTSTRAP_URI=\"${KAFKA_HOST}:${KAFKA_PORT}\"\nelif [ -n \"$BOOTSTRAP_SERVERS\" ]; then\n  export KARAPACE_BOOTSTRAP_URI=\"$BOOTSTRAP_SERVERS\"\nfi\n\necho \"Karapace Configuration:\"\necho \"  Bootstrap URI:    $KARAPACE_BOOTSTRAP_URI\"\necho \"  Schema Registry:  http://${KARAPACE_HOST}:${KARAPACE_PORT}\"\necho \"\"\necho \"Services:\"\necho \"  flox services start karapace-registry  # Start Schema Registry\"\necho \"  flox services start                    # Start all services\"\necho \"\"\necho \"Override configuration:\"\necho \"  KARAPACE_BOOTSTRAP_URI=kafka:9092 flox activate\"\n"
+      "on-activate": "# Set KARAPACE_BOOTSTRAP_URI if not already set, then export (for services to inherit)\nif [ -z \"$KARAPACE_BOOTSTRAP_URI\" ]; then\n  if [ -n \"$KAFKA_HOST\" ] && [ -n \"$KAFKA_PORT\" ]; then\n    KARAPACE_BOOTSTRAP_URI=\"${KAFKA_HOST}:${KAFKA_PORT}\"\n  elif [ -n \"$BOOTSTRAP_SERVERS\" ]; then\n    KARAPACE_BOOTSTRAP_URI=\"$BOOTSTRAP_SERVERS\"\n  else\n    KARAPACE_BOOTSTRAP_URI=\"localhost:9092\"\n  fi\nfi\nexport KARAPACE_BOOTSTRAP_URI\n\n# Create log directory\nmkdir -p \"$FLOX_ENV_CACHE/karapace-logs\"\n\necho \"Karapace Environment - Schema Registry & REST Proxy\"\necho \"  Bootstrap URI: $KARAPACE_BOOTSTRAP_URI\"\necho \"\"\necho \"Start services:\"\necho \"  flox services start karapace-registry  # Schema Registry (port 8081)\"\necho \"  flox services start karapace-rest      # REST Proxy (port 8082)\"\necho \"\"\necho \"Override at activation:\"\necho \"  KARAPACE_BOOTSTRAP_URI=kafka:9092 flox activate -s\"\n"
     },
     "options": {
       "systems": [
-        "x86_64-linux"
+        "x86_64-linux",
+        "aarch64-linux",
+        "aarch64-darwin",
+        "x86_64-darwin"
       ]
     },
     "services": {
       "karapace-registry": {
-        "command": "# Source karapace virtualenv\nKARAPACE_RESULT=\"/home/daedalus/dev/builds/build-karapace/result-karapace\"\n\nif [ -f \"$KARAPACE_RESULT/bin/activate\" ]; then\n  source \"$KARAPACE_RESULT/bin/activate\"\nelse\n  echo \"ERROR: Karapace build not found\" | tee -a \"$FLOX_ENV_CACHE/karapace-logs/registry-error.log\"\n  exit 1\nfi\n\n# Log startup\necho \"Starting Karapace Schema Registry at $(date)\" | tee -a \"$FLOX_ENV_CACHE/karapace-logs/registry.log\"\necho \"Bootstrap URI: $KARAPACE_BOOTSTRAP_URI\" | tee -a \"$FLOX_ENV_CACHE/karapace-logs/registry.log\"\necho \"Listening on: ${KARAPACE_HOST}:${KARAPACE_PORT}\" | tee -a \"$FLOX_ENV_CACHE/karapace-logs/registry.log\"\n\n# Start Schema Registry (configured via environment variables)\nexec karapace 2>&1 | tee -a \"$FLOX_ENV_CACHE/karapace-logs/registry.log\"\n"
+        "command": "# Auto-detect Kafka from composed environment or use default\nif [ -z \"$KARAPACE_BOOTSTRAP_URI\" ]; then\n  if [ -n \"$KAFKA_HOST\" ] && [ -n \"$KAFKA_PORT\" ]; then\n    export KARAPACE_BOOTSTRAP_URI=\"${KAFKA_HOST}:${KAFKA_PORT}\"\n  elif [ -n \"$BOOTSTRAP_SERVERS\" ]; then\n    export KARAPACE_BOOTSTRAP_URI=\"$BOOTSTRAP_SERVERS\"\n  else\n    export KARAPACE_BOOTSTRAP_URI=\"localhost:9092\"\n  fi\nfi\n\n# Idempotent port check - kill any existing process on port 8081\n# This ensures clean restarts and prevents \"address already in use\" errors\nPORT=8081\nPID=$(lsof -ti :$PORT 2>/dev/null || true)\nif [ -n \"$PID\" ]; then\n  echo \"Port $PORT already in use by PID $PID, killing...\"\n  kill -9 $PID 2>/dev/null || true\n  sleep 1\nfi\n\n# Start Schema Registry\nexec karapace\n",
+        "vars": {
+          "KARAPACE_HOST": "0.0.0.0",
+          "KARAPACE_KARAPACE_REGISTRY": "true",
+          "KARAPACE_KARAPACE_REST": "false",
+          "KARAPACE_LOG_LEVEL": "INFO",
+          "KARAPACE_PORT": "8081",
+          "KARAPACE_TOPIC_NAME": "_schemas"
+        }
+      },
+      "karapace-rest": {
+        "command": "# Auto-detect Kafka from composed environment or use default\nif [ -z \"$KARAPACE_BOOTSTRAP_URI\" ]; then\n  if [ -n \"$KAFKA_HOST\" ] && [ -n \"$KAFKA_PORT\" ]; then\n    export KARAPACE_BOOTSTRAP_URI=\"${KAFKA_HOST}:${KAFKA_PORT}\"\n  elif [ -n \"$BOOTSTRAP_SERVERS\" ]; then\n    export KARAPACE_BOOTSTRAP_URI=\"$BOOTSTRAP_SERVERS\"\n  else\n    export KARAPACE_BOOTSTRAP_URI=\"localhost:9092\"\n  fi\nfi\n\n# Idempotent port check - kill any existing process on port 8082\n# This ensures clean restarts and prevents \"address already in use\" errors\nPORT=8082\nPID=$(lsof -ti :$PORT 2>/dev/null || true)\nif [ -n \"$PID\" ]; then\n  echo \"Port $PORT already in use by PID $PID, killing...\"\n  kill -9 $PID 2>/dev/null || true\n  sleep 1\nfi\n\n# Start REST Proxy\nexec karapace_rest_proxy\n",
+        "vars": {
+          "KARAPACE_HOST": "0.0.0.0",
+          "KARAPACE_KARAPACE_REGISTRY": "false",
+          "KARAPACE_KARAPACE_REST": "true",
+          "KARAPACE_LOG_LEVEL": "INFO",
+          "KARAPACE_PORT": "8082"
+        }
       }
     }
   },
   "packages": [
+    {
+      "attr_path": "curl",
+      "broken": false,
+      "derivation": "/nix/store/kgfmzryw0lixdylf2vbf9vmcbzf49myh-curl-8.17.0.drv",
+      "description": "Command line tool for transferring files with URL syntax",
+      "install_id": "curl",
+      "license": "curl",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=2fad6eac6077f03fe109c4d4eb171cf96791faa4",
+      "name": "curl-8.17.0",
+      "pname": "curl",
+      "rev": "2fad6eac6077f03fe109c4d4eb171cf96791faa4",
+      "rev_count": 903292,
+      "rev_date": "2025-11-27T11:14:36Z",
+      "scrape_date": "2025-11-29T03:00:18.966985Z",
+      "stabilities": [
+        "unstable"
+      ],
+      "unfree": false,
+      "version": "8.17.0",
+      "outputs_to_install": [
+        "bin",
+        "man"
+      ],
+      "outputs": {
+        "bin": "/nix/store/qfwqcndy8bji6xww0gizclf2nqi2qpph-curl-8.17.0-bin",
+        "dev": "/nix/store/ydp55g2mbd6rk6lfw0krkk3jwgdiqj5d-curl-8.17.0-dev",
+        "devdoc": "/nix/store/8s884m82fmrbiyz8malglqc4sd632dkc-curl-8.17.0-devdoc",
+        "man": "/nix/store/rk815zvrhwzbi7c6d589v2mhxzyzb400-curl-8.17.0-man",
+        "out": "/nix/store/yxv8fxaz0fyhc31dv3rz89kc50zw5hgj-curl-8.17.0"
+      },
+      "system": "aarch64-darwin",
+      "group": "tools",
+      "priority": 5
+    },
+    {
+      "attr_path": "curl",
+      "broken": false,
+      "derivation": "/nix/store/y25g4k1wmvb3xc6smknlinmk91bycr1k-curl-8.17.0.drv",
+      "description": "Command line tool for transferring files with URL syntax",
+      "install_id": "curl",
+      "license": "curl",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=2fad6eac6077f03fe109c4d4eb171cf96791faa4",
+      "name": "curl-8.17.0",
+      "pname": "curl",
+      "rev": "2fad6eac6077f03fe109c4d4eb171cf96791faa4",
+      "rev_count": 903292,
+      "rev_date": "2025-11-27T11:14:36Z",
+      "scrape_date": "2025-11-29T03:15:57.174108Z",
+      "stabilities": [
+        "unstable"
+      ],
+      "unfree": false,
+      "version": "8.17.0",
+      "outputs_to_install": [
+        "bin",
+        "man"
+      ],
+      "outputs": {
+        "bin": "/nix/store/4x19j6zihdl6pya63xs8g360f2r614sx-curl-8.17.0-bin",
+        "debug": "/nix/store/5hmbdk99knmbg8b0fzh96bv6bkcf6v5i-curl-8.17.0-debug",
+        "dev": "/nix/store/iqs9mjscns3h5npgkrhgr5xa7qzwd0si-curl-8.17.0-dev",
+        "devdoc": "/nix/store/1fwncv08c8g78k3hj3cj375vx92ndrp8-curl-8.17.0-devdoc",
+        "man": "/nix/store/b29qbmbfvzkm34k0jnj8ykqg2gzj3rdy-curl-8.17.0-man",
+        "out": "/nix/store/b0a6qc92vybjiggh0kg387cg0zp3kl6j-curl-8.17.0"
+      },
+      "system": "aarch64-linux",
+      "group": "tools",
+      "priority": 5
+    },
+    {
+      "attr_path": "curl",
+      "broken": false,
+      "derivation": "/nix/store/gxz54yqn8kbjw4nabndcp1i7jiwkw15y-curl-8.17.0.drv",
+      "description": "Command line tool for transferring files with URL syntax",
+      "install_id": "curl",
+      "license": "curl",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=2fad6eac6077f03fe109c4d4eb171cf96791faa4",
+      "name": "curl-8.17.0",
+      "pname": "curl",
+      "rev": "2fad6eac6077f03fe109c4d4eb171cf96791faa4",
+      "rev_count": 903292,
+      "rev_date": "2025-11-27T11:14:36Z",
+      "scrape_date": "2025-11-29T03:31:59.590093Z",
+      "stabilities": [
+        "unstable"
+      ],
+      "unfree": false,
+      "version": "8.17.0",
+      "outputs_to_install": [
+        "bin",
+        "man"
+      ],
+      "outputs": {
+        "bin": "/nix/store/w2336wv560g1n58cwashmmczdn3bfkq1-curl-8.17.0-bin",
+        "dev": "/nix/store/39zfdgq9kg3mb4sycf8pj4pdssrzki6c-curl-8.17.0-dev",
+        "devdoc": "/nix/store/ipa7v9z7pjcnnv0fmdya1fldcxv0a28z-curl-8.17.0-devdoc",
+        "man": "/nix/store/i6xmhcan8g4abda7ivv20nvwxrsssjqj-curl-8.17.0-man",
+        "out": "/nix/store/x9gyg634fi8mgcyay9mqa1ral7xg72fm-curl-8.17.0"
+      },
+      "system": "x86_64-darwin",
+      "group": "tools",
+      "priority": 5
+    },
     {
       "attr_path": "curl",
       "broken": false,
@@ -74,6 +196,108 @@
     {
       "attr_path": "jq",
       "broken": false,
+      "derivation": "/nix/store/9bgzxxn2360npfnq3c690zdbqh2kaa3z-jq-1.8.1.drv",
+      "description": "Lightweight and flexible command-line JSON processor",
+      "install_id": "jq",
+      "license": "MIT",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=2fad6eac6077f03fe109c4d4eb171cf96791faa4",
+      "name": "jq-1.8.1",
+      "pname": "jq",
+      "rev": "2fad6eac6077f03fe109c4d4eb171cf96791faa4",
+      "rev_count": 903292,
+      "rev_date": "2025-11-27T11:14:36Z",
+      "scrape_date": "2025-11-29T03:00:34.565225Z",
+      "stabilities": [
+        "unstable"
+      ],
+      "unfree": false,
+      "version": "1.8.1",
+      "outputs_to_install": [
+        "bin",
+        "man"
+      ],
+      "outputs": {
+        "bin": "/nix/store/4hy1mm43nvmjpnyfsa80csbsg4wd8691-jq-1.8.1-bin",
+        "dev": "/nix/store/1l5dl9d9mcpm7i0r5bhb23xczlfd2i0i-jq-1.8.1-dev",
+        "doc": "/nix/store/baidiqpr2sqdv59asy5a3gajpfn8sqig-jq-1.8.1-doc",
+        "man": "/nix/store/054063ybv64v877qmqd55pl68hri679w-jq-1.8.1-man",
+        "out": "/nix/store/an0a5rm99xsaj4pqfnlwsnc288rb4chm-jq-1.8.1"
+      },
+      "system": "aarch64-darwin",
+      "group": "tools",
+      "priority": 5
+    },
+    {
+      "attr_path": "jq",
+      "broken": false,
+      "derivation": "/nix/store/yd49bj50r82w85c6wbb28yhy7gf46gcs-jq-1.8.1.drv",
+      "description": "Lightweight and flexible command-line JSON processor",
+      "install_id": "jq",
+      "license": "MIT",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=2fad6eac6077f03fe109c4d4eb171cf96791faa4",
+      "name": "jq-1.8.1",
+      "pname": "jq",
+      "rev": "2fad6eac6077f03fe109c4d4eb171cf96791faa4",
+      "rev_count": 903292,
+      "rev_date": "2025-11-27T11:14:36Z",
+      "scrape_date": "2025-11-29T03:16:17.743286Z",
+      "stabilities": [
+        "unstable"
+      ],
+      "unfree": false,
+      "version": "1.8.1",
+      "outputs_to_install": [
+        "bin",
+        "man"
+      ],
+      "outputs": {
+        "bin": "/nix/store/3rmzb92a65vp55dmmzmh2qygq5wkdmb8-jq-1.8.1-bin",
+        "dev": "/nix/store/xqy22d0ny10bcsczlgg02ni5lgp5zjc8-jq-1.8.1-dev",
+        "doc": "/nix/store/36zp3bh3q76jq8pix9g9j54v36ddz20n-jq-1.8.1-doc",
+        "man": "/nix/store/44gwjhi00hwkpy0csxjnm1h5zcsbvymw-jq-1.8.1-man",
+        "out": "/nix/store/h7qs29xm3i5zq058g0r0a0f8qzwfwpfv-jq-1.8.1"
+      },
+      "system": "aarch64-linux",
+      "group": "tools",
+      "priority": 5
+    },
+    {
+      "attr_path": "jq",
+      "broken": false,
+      "derivation": "/nix/store/ffrbnyjhcsi5ypagfzbg7nzzg4wjdckh-jq-1.8.1.drv",
+      "description": "Lightweight and flexible command-line JSON processor",
+      "install_id": "jq",
+      "license": "MIT",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=2fad6eac6077f03fe109c4d4eb171cf96791faa4",
+      "name": "jq-1.8.1",
+      "pname": "jq",
+      "rev": "2fad6eac6077f03fe109c4d4eb171cf96791faa4",
+      "rev_count": 903292,
+      "rev_date": "2025-11-27T11:14:36Z",
+      "scrape_date": "2025-11-29T03:32:14.915647Z",
+      "stabilities": [
+        "unstable"
+      ],
+      "unfree": false,
+      "version": "1.8.1",
+      "outputs_to_install": [
+        "bin",
+        "man"
+      ],
+      "outputs": {
+        "bin": "/nix/store/0kz2h1wisnvpmavfra6n8fi0x2brhfg6-jq-1.8.1-bin",
+        "dev": "/nix/store/w96fml250mbz0p0an0f7p6zfblrpz0pn-jq-1.8.1-dev",
+        "doc": "/nix/store/k388l1qgp6dcn80njl1by9x5i2jy8i0m-jq-1.8.1-doc",
+        "man": "/nix/store/8xvsm6pzpya6jc3vfmxagxj46iz9hix9-jq-1.8.1-man",
+        "out": "/nix/store/30wa9jl18hjfi5756chyg4kl1164d5wk-jq-1.8.1"
+      },
+      "system": "x86_64-darwin",
+      "group": "tools",
+      "priority": 5
+    },
+    {
+      "attr_path": "jq",
+      "broken": false,
       "derivation": "/nix/store/hb8kj788b0625hspyi9x9gi2xyzy281w-jq-1.8.1.drv",
       "description": "Lightweight and flexible command-line JSON processor",
       "install_id": "jq",
@@ -103,6 +327,246 @@
       },
       "system": "x86_64-linux",
       "group": "tools",
+      "priority": 5
+    },
+    {
+      "attr_path": "lsof",
+      "broken": false,
+      "derivation": "/nix/store/wk37a0vk535p4a4wdfn78brhz6dyzv9r-lsof-4.99.5.drv",
+      "description": "Tool to list open files",
+      "install_id": "lsof",
+      "license": "lsof",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=2fad6eac6077f03fe109c4d4eb171cf96791faa4",
+      "name": "lsof-4.99.5",
+      "pname": "lsof",
+      "rev": "2fad6eac6077f03fe109c4d4eb171cf96791faa4",
+      "rev_count": 903292,
+      "rev_date": "2025-11-27T11:14:36Z",
+      "scrape_date": "2025-11-29T03:00:37.612383Z",
+      "stabilities": [
+        "unstable"
+      ],
+      "unfree": false,
+      "version": "4.99.5",
+      "outputs_to_install": [
+        "out"
+      ],
+      "outputs": {
+        "out": "/nix/store/0d5ryn3mjig2x92zl1rrpjd03s6fy579-lsof-4.99.5"
+      },
+      "system": "aarch64-darwin",
+      "group": "tools",
+      "priority": 5
+    },
+    {
+      "attr_path": "lsof",
+      "broken": false,
+      "derivation": "/nix/store/zybppqp5j77dvqm8mvpjq01hc9ffmwp3-lsof-4.99.5.drv",
+      "description": "Tool to list open files",
+      "install_id": "lsof",
+      "license": "lsof",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=2fad6eac6077f03fe109c4d4eb171cf96791faa4",
+      "name": "lsof-4.99.5",
+      "pname": "lsof",
+      "rev": "2fad6eac6077f03fe109c4d4eb171cf96791faa4",
+      "rev_count": 903292,
+      "rev_date": "2025-11-27T11:14:36Z",
+      "scrape_date": "2025-11-29T03:16:26.734892Z",
+      "stabilities": [
+        "unstable"
+      ],
+      "unfree": false,
+      "version": "4.99.5",
+      "outputs_to_install": [
+        "out"
+      ],
+      "outputs": {
+        "out": "/nix/store/nqkjhcvsic8vj4d8n4mpl0v75ck0iydp-lsof-4.99.5"
+      },
+      "system": "aarch64-linux",
+      "group": "tools",
+      "priority": 5
+    },
+    {
+      "attr_path": "lsof",
+      "broken": false,
+      "derivation": "/nix/store/7zjkzadp42jak6dycny9qkb6idq88mly-lsof-4.99.5.drv",
+      "description": "Tool to list open files",
+      "install_id": "lsof",
+      "license": "lsof",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=2fad6eac6077f03fe109c4d4eb171cf96791faa4",
+      "name": "lsof-4.99.5",
+      "pname": "lsof",
+      "rev": "2fad6eac6077f03fe109c4d4eb171cf96791faa4",
+      "rev_count": 903292,
+      "rev_date": "2025-11-27T11:14:36Z",
+      "scrape_date": "2025-11-29T03:32:17.831315Z",
+      "stabilities": [
+        "unstable"
+      ],
+      "unfree": false,
+      "version": "4.99.5",
+      "outputs_to_install": [
+        "out"
+      ],
+      "outputs": {
+        "out": "/nix/store/cw0zk44nqz2mfmxljnvv2lqavkw7y725-lsof-4.99.5"
+      },
+      "system": "x86_64-darwin",
+      "group": "tools",
+      "priority": 5
+    },
+    {
+      "attr_path": "lsof",
+      "broken": false,
+      "derivation": "/nix/store/9bkh9h1bir5k8jaxl2w809vysx8d9109-lsof-4.99.5.drv",
+      "description": "Tool to list open files",
+      "install_id": "lsof",
+      "license": "lsof",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=2fad6eac6077f03fe109c4d4eb171cf96791faa4",
+      "name": "lsof-4.99.5",
+      "pname": "lsof",
+      "rev": "2fad6eac6077f03fe109c4d4eb171cf96791faa4",
+      "rev_count": 903292,
+      "rev_date": "2025-11-27T11:14:36Z",
+      "scrape_date": "2025-11-29T03:48:33.261026Z",
+      "stabilities": [
+        "unstable"
+      ],
+      "unfree": false,
+      "version": "4.99.5",
+      "outputs_to_install": [
+        "out"
+      ],
+      "outputs": {
+        "out": "/nix/store/yw6vva7kxdvqc7mrvnwkl1hzsbkm641d-lsof-4.99.5"
+      },
+      "system": "x86_64-linux",
+      "group": "tools",
+      "priority": 5
+    },
+    {
+      "attr_path": "karapace",
+      "broken": false,
+      "derivation": "/nix/store/1xarvrq24yqhk51kmv3lzdjppsxxia0y-karapace-5.0.3.drv",
+      "description": "Karapace - Apache Kafka Schema Registry & REST Proxy",
+      "install_id": "karapace",
+      "license": "Apache-2.0",
+      "locked_url": "https://github.com/barstoolbluz/build-karapace.git?rev=83df6f3023b57a11232b51386c5149a5bcf0f773",
+      "name": "karapace-5.0.3",
+      "pname": "karapace",
+      "rev": "83df6f3023b57a11232b51386c5149a5bcf0f773",
+      "rev_count": 15,
+      "rev_date": "2025-11-30T20:19:08Z",
+      "scrape_date": "2025-11-30T21:19:36.679582847Z",
+      "stabilities": [
+        "stable",
+        "staging",
+        "unstable"
+      ],
+      "unfree": false,
+      "version": "5.0.3",
+      "outputs_to_install": [
+        "out"
+      ],
+      "outputs": {
+        "out": "/nix/store/jmv3cwi6n6byk90j802v55w25di023b6-karapace-5.0.3"
+      },
+      "system": "aarch64-darwin",
+      "group": "toplevel",
+      "priority": 5
+    },
+    {
+      "attr_path": "karapace",
+      "broken": false,
+      "derivation": "/nix/store/71ifaiqkazdv3srsrbxajxaj75m0kfpw-karapace-5.0.3.drv",
+      "description": "Karapace - Apache Kafka Schema Registry & REST Proxy",
+      "install_id": "karapace",
+      "license": "Apache-2.0",
+      "locked_url": "https://github.com/barstoolbluz/build-karapace.git?rev=2196c104051310fc39a8d467e4db2908f6c4c12c",
+      "name": "karapace-5.0.3",
+      "pname": "karapace",
+      "rev": "2196c104051310fc39a8d467e4db2908f6c4c12c",
+      "rev_count": 19,
+      "rev_date": "2025-11-30T21:08:01Z",
+      "scrape_date": "2025-11-30T21:19:36.679584810Z",
+      "stabilities": [
+        "stable",
+        "staging",
+        "unstable"
+      ],
+      "unfree": false,
+      "version": "5.0.3",
+      "outputs_to_install": [
+        "out"
+      ],
+      "outputs": {
+        "out": "/nix/store/jnzk8xjb62x7r7dq0sbf8ph0frr77a0k-karapace-5.0.3"
+      },
+      "system": "aarch64-linux",
+      "group": "toplevel",
+      "priority": 5
+    },
+    {
+      "attr_path": "karapace",
+      "broken": false,
+      "derivation": "/nix/store/5fiqfh8sslg2hw64l0n1vz6g0k1rslf0-karapace-5.0.3.drv",
+      "description": "Karapace - Apache Kafka Schema Registry & REST Proxy",
+      "install_id": "karapace",
+      "license": "Apache-2.0",
+      "locked_url": "https://github.com/barstoolbluz/build-karapace.git?rev=c5da868b4119b2bb46326f63df4521360bd2d879",
+      "name": "karapace-5.0.3",
+      "pname": "karapace",
+      "rev": "c5da868b4119b2bb46326f63df4521360bd2d879",
+      "rev_count": 16,
+      "rev_date": "2025-11-30T20:28:59Z",
+      "scrape_date": "2025-11-30T21:19:36.679585231Z",
+      "stabilities": [
+        "stable",
+        "staging",
+        "unstable"
+      ],
+      "unfree": false,
+      "version": "5.0.3",
+      "outputs_to_install": [
+        "out"
+      ],
+      "outputs": {
+        "out": "/nix/store/51n3wbvfklq81i3k2r7wniv3px0phsw6-karapace-5.0.3"
+      },
+      "system": "x86_64-darwin",
+      "group": "toplevel",
+      "priority": 5
+    },
+    {
+      "attr_path": "karapace",
+      "broken": false,
+      "derivation": "/nix/store/9xgsslhsbnb5yg936fyrx913npr1nj24-karapace-5.0.3.drv",
+      "description": "Karapace - Apache Kafka Schema Registry & REST Proxy",
+      "install_id": "karapace",
+      "license": "Apache-2.0",
+      "locked_url": "https://github.com/barstoolbluz/build-karapace?rev=fa8209566f0fac3e37af36e01c8117f3a651c9fb",
+      "name": "karapace-5.0.3",
+      "pname": "karapace",
+      "rev": "fa8209566f0fac3e37af36e01c8117f3a651c9fb",
+      "rev_count": 8,
+      "rev_date": "2025-11-30T19:51:50Z",
+      "scrape_date": "2025-11-30T21:19:36.679585761Z",
+      "stabilities": [
+        "stable",
+        "staging",
+        "unstable"
+      ],
+      "unfree": false,
+      "version": "5.0.3",
+      "outputs_to_install": [
+        "out"
+      ],
+      "outputs": {
+        "out": "/nix/store/dr10x5zbaxnj1qcy0lh8pvcs53mwz96n-karapace-5.0.3"
+      },
+      "system": "x86_64-linux",
+      "group": "toplevel",
       "priority": 5
     }
   ]

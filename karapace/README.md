@@ -34,22 +34,109 @@ flox services logs karapace-rest
 
 ### Composed with Kafka
 
-Create a master environment that includes both Kafka and Karapace:
+Create a composing environment that includes both Kafka and Karapace. You can use local environments, remote environments from FloxHub, or mix both.
+
+#### Local Composition
 
 **kafka-with-schema-registry/.flox/env/manifest.toml:**
 ```toml
+version = 1
+
+## When composing manifests that consume custom-built packages, it is sometimes
+## necessary to redeclare packages with package groups in the composing
+## manifest,even though they're already defined in the included environment.
+## Without this, Flox's dependency resolver will fail. For example:
+[install]
+karapace.pkg-path = "flox/karapace"
+karapace.pkg-group = "karapace"
+
 [include]
 environments = [
-    { dir = "../kafka" },
-    { dir = "../karapace" }
+    { dir = "../kafka" },      # local kafka manifest
+    { dir = "../karapace" }    # local karapace manifest
 ]
-```
 
+## In this case, the karapace manifest defines a custom-built package, along
+## with a karapace-specific package-group. In spite of this, we redefine a
+## package group override for karapace in the composing manifest.
+```
 Then activate and start all services:
 
 ```bash
 cd kafka-with-schema-registry
-flox activate -s  # Activates and starts Kafka + Karapace services
+flox activate -s
+
+# Start Kafka first
+flox services start kafka
+
+# Then start Karapace (auto-detects Kafka connection)
+flox services start karapace-registry
+flox services start karapace-rest
+
+# Check all services
+flox services status
+```
+
+#### Remote Composition (FloxHub)
+
+Pull environments directly from FloxHub:
+
+**kafka-stack/.flox/env/manifest.toml:**
+```toml
+version = 1
+
+## Again: redeclare package groups when composing
+[install]
+karapace.pkg-path = "flox/karapace"
+karapace.pkg-group = "karapace"
+
+[include]
+environments = [
+    { remote = "floxrox/kafka" },
+    { remote = "floxrox/karapace" }
+]
+```
+
+Usage:
+```bash
+cd kafka-stack
+flox activate -s
+flox services start kafka
+flox services start karapace-registry
+flox services start karapace-rest
+```
+
+#### Mixed Local and Remote
+
+Customize one environment locally while using the other from FloxHub:
+
+```toml
+version = 1
+
+[install]
+karapace.pkg-path = "flox/karapace"
+karapace.pkg-group = "karapace"
+
+[include]
+environments = [
+    { remote = "floxrox/kafka" },                          # Use published Kafka
+    { dir = "../karapace-custom", name = "karapace" }      # Use local customized Karapace
+]
+```
+
+Or the reverse:
+```toml
+version = 1
+
+[install]
+karapace.pkg-path = "flox/karapace"
+karapace.pkg-group = "karapace"
+
+[include]
+environments = [
+    { dir = "../kafka-local", name = "kafka" },      # Use local Kafka configuration
+    { remote = "floxrox/karapace" }                  # Use published Karapace
+]
 ```
 
 ## Configuration
@@ -82,6 +169,31 @@ When composed with `kafka` or `kafka-local`, Karapace automatically detects Kafk
 - Reads `$KAFKA_HOST` and `$KAFKA_PORT` from Kafka environment
 - Falls back to `$BOOTSTRAP_SERVERS` if available
 - Uses `localhost:9092` as final default
+
+### Package Group Composition Behavior
+
+**IMPORTANT**: When composing environments that use package groups, you must redeclare the package with its package group in the composing manifest's `[install]` section, even though it's already defined in the included environment.
+
+This is a Flox composition requirement. Without the package group redefinition, the package may not be properly recognized in the composed environment.
+
+**Example**:
+```toml
+version = 1
+
+# Must redeclare karapace with its package group
+[install]
+karapace.pkg-path = "flox/karapace"
+karapace.pkg-group = "karapace"
+
+# Even though the karapace environment already defines this
+[include]
+environments = [
+    { dir = "/path/to/kafka" },
+    { dir = "/path/to/karapace" }
+]
+```
+
+This pattern applies to both local (`dir`) and remote (`remote`) environment inclusion.
 
 ## Usage Examples
 
@@ -201,6 +313,17 @@ Logs stored in `$FLOX_ENV_CACHE/karapace-logs/`:
   ```
 
 - **Kafka**: Requires running Kafka cluster (compose with `kafka` or `kafka-local` environment)
+
+## Service Behavior
+
+### Idempotent Port Management
+
+Both Karapace services implement idempotent port checking to ensure clean restarts:
+
+- **Schema Registry (port 8081)**: Automatically kills any existing process on port 8081 before starting
+- **REST Proxy (port 8082)**: Automatically kills any existing process on port 8082 before starting
+
+This prevents "address already in use" errors when restarting services or recovering from crashed processes. The service commands check for existing processes using `lsof` and terminate them with `kill -9` before binding to the port.
 
 ## Troubleshooting
 
