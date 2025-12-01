@@ -108,9 +108,10 @@ mkvenv() {
     [ -d ".venv" ] && case $(gum choose --header "A virtual environment (.venv) already exists. Choose an action:" "Quit" "Replace .venv" "Create new virtual environment") in
         "Quit") return 0 ;;
         "Replace .venv") rm -rf .venv ;;
-        "Create new virtual environment") 
+        "Create new virtual environment")
             name=$(gum input --placeholder "Enter name") || return 1
             [ -z "$name" ] && return 1
+            [ -d "$name" ] && { echo "Directory $name already exists"; return 1; }
             python3 -m venv "$name" && source "$name/bin/activate"
             return 0 ;;
     esac
@@ -134,8 +135,10 @@ aktivate() {
 
 pist() {
     readarray -t venvs < <(find . -name "activate" -type f | sed 's|/bin/activate$||')
-    [ ${#venvs[@]} -eq 0 ] && mkvenv
-    [[ "$VIRTUAL_ENV" ]] || aktivate
+    if [ ${#venvs[@]} -eq 0 ]; then
+        mkvenv || return 1
+    fi
+    [[ "$VIRTUAL_ENV" ]] || aktivate || return 1
     pip install -r "${1:-requirements.txt}"
 }
 
@@ -150,14 +153,20 @@ qwit() {
 freezereqs() {
     [[ "$VIRTUAL_ENV" ]] || { echo "No active virtual environment found."; return 1; }
     local output_file="${1:-requirements.txt}"
-    [[ -f "$output_file" ]] && gum confirm "File $output_file already exists. Overwrite?" || return 1
+    if [[ -f "$output_file" ]]; then
+        gum confirm "File $output_file already exists. Overwrite?" || return 1
+    fi
     pip freeze > "$output_file" && echo "$(gum style --foreground 82 "✓") Requirements saved to $output_file"
 }
 
 mkprojekt() {
     local project_name=$(gum input --placeholder "Project name") || return 1
     [[ -z "$project_name" ]] && return 1
-    [[ -d "$project_name" ]] && gum confirm "Directory $project_name already exists. Use it anyway?" || mkdir -p "$project_name"
+    if [[ -d "$project_name" ]]; then
+        gum confirm "Directory $project_name already exists. Use it anyway?" || return 1
+    else
+        mkdir -p "$project_name"
+    fi
     cd "$project_name" || return 1
     gum confirm "Create a virtual environment in $project_name?" || return 0
     python3 -m venv .venv && source .venv/bin/activate
@@ -203,7 +212,7 @@ EOF
 }
 
 chkupdates() {
-    [[ "$VIRTUAL_ENV" ]] || aktivate
+    [[ "$VIRTUAL_ENV" ]] || aktivate || return 1
     local outdated=$(pip list --outdated --format=columns)
     [[ -z "$outdated" ]] && echo "$(gum style --foreground 82 "✓") All packages are up to date." && return 0
     
@@ -217,7 +226,7 @@ chkupdates() {
 }
 
 lint() {
-    [[ "$VIRTUAL_ENV" ]] || aktivate
+    [[ "$VIRTUAL_ENV" ]] || aktivate || return 1
     local files=()
     
     if [[ $# -eq 0 ]]; then
@@ -247,8 +256,8 @@ lint() {
 }
 
 run() {
-    [[ "$VIRTUAL_ENV" ]] || aktivate
-    
+    [[ "$VIRTUAL_ENV" ]] || aktivate || return 1
+
     # If a file is specified, run it directly with proper quoting
     if [[ -n "$1" ]]; then
         if [[ -f "$1" ]]; then
@@ -324,9 +333,10 @@ mkvenv() {
     [[ -d ".venv" ]] && case $(gum choose --header "A virtual environment (.venv) already exists. Choose an action:" "Quit" "Replace .venv" "Create new virtual environment") in
         "Quit") return 0 ;;
         "Replace .venv") rm -rf .venv ;;
-        "Create new virtual environment") 
+        "Create new virtual environment")
             name=$(gum input --placeholder "Enter name") || return 1
             [[ -z "$name" ]] && return 1
+            [[ -d "$name" ]] && { echo "Directory $name already exists"; return 1; }
             python3 -m venv "$name" && source "$name/bin/activate"
             return 0 ;;
     esac
@@ -350,8 +360,10 @@ aktivate() {
 
 pist() {
     local venvs=("${(@f)$(find . -name "activate" -type f | sed 's|/bin/activate$||')}")
-    [[ ${#venvs} -eq 0 ]] && mkvenv
-    [[ "$VIRTUAL_ENV" ]] || aktivate
+    if [[ ${#venvs} -eq 0 ]]; then
+        mkvenv || return 1
+    fi
+    [[ "$VIRTUAL_ENV" ]] || aktivate || return 1
     pip install -r "${1:-requirements.txt}"
 }
 
@@ -366,14 +378,20 @@ qwit() {
 freezereqs() {
     [[ "$VIRTUAL_ENV" ]] || { echo "No active virtual environment found."; return 1; }
     local output_file="${1:-requirements.txt}"
-    [[ -f "$output_file" ]] && gum confirm "File $output_file already exists. Overwrite?" || return 1
+    if [[ -f "$output_file" ]]; then
+        gum confirm "File $output_file already exists. Overwrite?" || return 1
+    fi
     pip freeze > "$output_file" && echo "$(gum style --foreground 82 "✓") Requirements saved to $output_file"
 }
 
 mkprojekt() {
     local project_name=$(gum input --placeholder "Project name") || return 1
     [[ -z "$project_name" ]] && return 1
-    [[ -d "$project_name" ]] && gum confirm "Directory $project_name already exists. Use it anyway?" || mkdir -p "$project_name"
+    if [[ -d "$project_name" ]]; then
+        gum confirm "Directory $project_name already exists. Use it anyway?" || return 1
+    else
+        mkdir -p "$project_name"
+    fi
     cd "$project_name" || return 1
     gum confirm "Create a virtual environment in $project_name?" || return 0
     python3 -m venv .venv && source .venv/bin/activate
@@ -419,7 +437,7 @@ EOF
 }
 
 chkupdates() {
-    [[ "$VIRTUAL_ENV" ]] || aktivate
+    [[ "$VIRTUAL_ENV" ]] || aktivate || return 1
     local outdated=$(pip list --outdated --format=columns)
     [[ -z "$outdated" ]] && echo "$(gum style --foreground 82 "✓") All packages are up to date." && return 0
     
@@ -433,7 +451,7 @@ chkupdates() {
 }
 
 lint() {
-    [[ "$VIRTUAL_ENV" ]] || aktivate
+    [[ "$VIRTUAL_ENV" ]] || aktivate || return 1
     local files=()
     
     if [[ $# -eq 0 ]]; then
@@ -463,8 +481,8 @@ lint() {
 }
 
 run() {
-    [[ "$VIRTUAL_ENV" ]] || aktivate
-    
+    [[ "$VIRTUAL_ENV" ]] || aktivate || return 1
+
     # If a file is specified, run it directly with proper quoting
     if [[ -n "$1" ]]; then
         if [[ -f "$1" ]]; then
@@ -544,6 +562,10 @@ function mkvenv
             case "Create new virtual environment"
                 set name (gum input --placeholder "Enter name"); or return 1
                 test -z "$name"; and return 1
+                if test -d "$name"
+                    echo "Directory $name already exists"
+                    return 1
+                end
                 python3 -m venv "$name"; and source "$name/bin/activate.fish"
                 return 0
         end
@@ -574,9 +596,15 @@ end
 
 function pist
     set venvs (find . -name "activate.fish" -type f | sed 's|/bin/activate.fish$||')
-    test (count $venvs) -eq 0; and mkvenv
-    set -q VIRTUAL_ENV; or aktivate
-    pip install -r "$argv[1]"
+    if test (count $venvs) -eq 0
+        mkvenv; or return 1
+    end
+    if not set -q VIRTUAL_ENV
+        aktivate; or return 1
+    end
+    set requirements_file $argv[1]
+    or set requirements_file "requirements.txt"
+    pip install -r "$requirements_file"
 end
 
 function qwit
@@ -584,16 +612,30 @@ function qwit
 end
 
 function freezereqs
-    set -q VIRTUAL_ENV; or echo "No active virtual environment found."; and return 1
-    set output_file $argv[1]; or set output_file "requirements.txt"
-    test -f "$output_file"; and gum confirm "File $output_file already exists. Overwrite?"; or return 1
+    if not set -q VIRTUAL_ENV
+        echo "No active virtual environment found."
+        return 1
+    end
+    set output_file $argv[1]
+    or set output_file "requirements.txt"
+    if test -f "$output_file"
+        if not gum confirm "File $output_file already exists. Overwrite?"
+            return 1
+        end
+    end
     pip freeze > "$output_file"; and echo (gum style --foreground 82 "✓") "Requirements saved to $output_file"
 end
 
 function mkprojekt
     set project_name (gum input --placeholder "Project name"); or return 1
     test -z "$project_name"; and return 1
-    test -d "$project_name"; and gum confirm "Directory $project_name already exists. Use it anyway?"; or mkdir -p "$project_name"
+    if test -d "$project_name"
+        if not gum confirm "Directory $project_name already exists. Use it anyway?"
+            return 1
+        end
+    else
+        mkdir -p "$project_name"
+    end
     cd "$project_name"; or return 1
     gum confirm "Create a virtual environment in $project_name?"; or return 0
     python3 -m venv .venv; and source .venv/bin/activate.fish
@@ -636,8 +678,10 @@ htmlcov/
     echo (gum style --foreground 82 "✓") "Project $project_name set up successfully"
 end
 
-function checkupdates
-    set -q VIRTUAL_ENV; or aktivate
+function chkupdates
+    if not set -q VIRTUAL_ENV
+        aktivate; or return 1
+    end
     set outdated (pip list --outdated --format=columns)
     test -z "$outdated"; and echo (gum style --foreground 82 "✓") "All packages are up to date."; and return 0
     echo "Outdated packages:"; echo "$outdated"
@@ -650,7 +694,9 @@ function checkupdates
 end
 
 function lint
-    set -q VIRTUAL_ENV; or aktivate
+    if not set -q VIRTUAL_ENV
+        aktivate; or return 1
+    end
     set files
     test (count $argv) -eq 0; and set files (find . -name "*.py" -not -path "*/\.*" -not -path "*/venv/*" -not -path "*/.venv/*"); or set files $argv
     set missing_tools
@@ -668,7 +714,9 @@ function lint
 end
 
 function run
-    set -q VIRTUAL_ENV; or aktivate
+    if not set -q VIRTUAL_ENV
+        aktivate; or return 1
+    end
     if test (count $argv) -gt 0
         test -f "$argv[1]"; and python "$argv[1]"; and return; or echo "File '$argv[1]' not found."; and return 1
     end
