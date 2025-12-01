@@ -35,16 +35,16 @@ Perfect for automation and CI/CD:
 
 ### How to Choose
 Environments marked with ⚡ have both variants available:
-- Choose the **base name** (e.g., `postgres`) for interactive wizard-driven setup
-- Choose the **-headless variant** (e.g., `postgres-headless`) for automation and scripting
+- Choose the **base name** (e.g., `postgres`) for automation and scripting (headless, no interaction required)
+- Choose the **-local variant** (e.g., `postgres-local`) for interactive wizard-driven setup
 
 **Example:**
 ```bash
-# Interactive - wizard guides you through configuration
-cd postgres && flox activate
+# Headless - configure via environment variables, no interaction
+cd postgres && PGPORT=5432 PGDATABASE=mydb flox activate -s
 
-# Headless - configure via environment variables
-cd postgres-headless && PGPORT=5432 PGDATABASE=mydb flox activate -s
+# Interactive - wizard guides you through configuration
+cd postgres-local && flox activate
 ```
 
 ## 📦 Available Environments
@@ -56,41 +56,45 @@ cd postgres-headless && PGPORT=5432 PGDATABASE=mydb flox activate -s
 - [**xplatform-cli-tools**](./xplatform-cli-tools) - AWS CLI, GitHub CLI, and Git with 1Password integration
 
 ### Databases ⚡
-- [**postgres**](./postgres) / [**postgres-headless**](./postgres-headless) - PostgreSQL 16 with PostGIS extension
-- [**mysql**](./mysql) / [**mysql-headless**](./mysql-headless) - MySQL 8.0 database
-- [**mariadb**](./mariadb) / [**mariadb-headless**](./mariadb-headless) - MariaDB database
-- [**redis**](./redis) / [**redis-headless**](./redis-headless) - Redis in-memory data store
-- [**neo4j**](./neo4j) / [**neo4j-headless**](./neo4j-headless) - Neo4j graph database
+- [**postgres**](./postgres) / [**postgres-local**](./postgres-local) - PostgreSQL 16 with PostGIS extension
+- [**mysql**](./mysql) / [**mysql-local**](./mysql-local) - MySQL 8.0 database
+- [**mariadb**](./mariadb) / [**mariadb-local**](./mariadb-local) - MariaDB database
+- [**redis**](./redis) / [**redis-local**](./redis-local) - Redis in-memory data store
+- [**neo4j**](./neo4j) / [**neo4j-local**](./neo4j-local) - Neo4j graph database
 
 ### Data Analytics & BI
 - [**postgres-metabase**](./postgres-metabase) - PostgreSQL + Metabase BI platform
 - [**harlequin-postgres**](./harlequin-postgres) - PostgreSQL + Harlequin terminal-based SQL IDE
 
 ### Distributed Computing & Streaming ⚡
-- [**spark**](./spark) / [**spark-headless**](./spark-headless) - Apache Spark cluster computing
-- [**kafka**](./kafka) / [**kafka-headless**](./kafka-headless) - Apache Kafka streaming platform
+- [**spark**](./spark) / [**spark-local**](./spark-local) - Apache Spark cluster computing
+- [**kafka**](./kafka) / [**kafka-local**](./kafka-local) - Apache Kafka streaming platform
+- [**karapace**](./karapace) - Schema Registry & REST Proxy for Apache Kafka (Confluent API compatible, composable with kafka environments)
 
 ### Container Runtime & Orchestration ⚡
-- [**colima-headless**](./colima-headless) - Docker-compatible container runtime (alternative to Docker Desktop)
-- [**kind**](./kind) / [**kind-headless**](./kind-headless) - Kubernetes in Docker with essential K8s tools
+- [**colima**](./colima) - Docker-compatible container runtime (alternative to Docker Desktop)
+- [**kind**](./kind) / [**kind-local**](./kind-local) - Kubernetes in Docker with essential K8s tools
 
 ### Web Servers & Reverse Proxies ⚡
-- [**nginx**](./nginx) / [**nginx-headless**](./nginx-headless) - nginx reverse proxy with port/path-based routing and WebSocket support (interactive wizard) or multi-mode server with SSL, rate limiting, caching, and security features (headless)
+- [**nginx**](./nginx) / [**nginx-local**](./nginx-local) - nginx reverse proxy with port/path-based routing and WebSocket support (interactive wizard) or multi-mode server with SSL, rate limiting, caching, and security features (headless)
 
 ### CI/CD & Automation
-- [**jenkins-headless**](./jenkins-headless) - Jenkins CI/CD server with JCasC and Kubernetes agent support (headless, automation-ready)
+- [**jenkins**](./jenkins) - Jenkins CI/CD server with JCasC and Kubernetes agent support (headless, automation-ready)
 - [**jenkins-full-stack**](./jenkins-full-stack) - Production Jenkins with nginx reverse proxy (WebSocket, gzip, SSL, rate limiting)
 
 ### Workflow Orchestration
 - [**airflow-local-dev**](./airflow-local-dev) - Apache Airflow 3.1.1 with LocalExecutor, CeleryExecutor, and KubernetesExecutor
 - [**airflow-k8s-executor**](./airflow-k8s-executor) - Airflow Kubernetes executor with RBAC and pod templates
 - [**airflow-stack**](./airflow-stack) - Enterprise Airflow stack with production-grade PostgreSQL, Redis, and Kubernetes
-- [**dagster-headless**](./dagster-headless) - Dagster 1.12.0 orchestration platform with optional PostgreSQL support (headless, composable)
-- [**n8n**](./n8n) / [**n8n-headless**](./n8n-headless) - n8n workflow automation with PostgreSQL, Redis, and queue mode ⚡
-- [**nodered**](./nodered) / [**nodered-headless**](./nodered-headless) - Node-RED low-code programming for IoT and event-driven apps ⚡
+- [**dagster**](./dagster) - Dagster 1.12.0 orchestration platform with optional PostgreSQL support (headless, composable)
+- [**prefect**](./prefect) - Prefect 3.5.0 orchestration platform with optional PostgreSQL support (headless, composable)
+- [**temporal**](./temporal) - Temporal 1.29.1 orchestration platform with optional PostgreSQL support (headless, composable)
+- [**temporal-ui**](./temporal-ui) - Temporal UI v2.43.3 web interface for monitoring and managing Temporal workflows
+- [**n8n**](./n8n) / [**n8n-local**](./n8n-local) - n8n workflow automation with PostgreSQL, Redis, and queue mode ⚡
+- [**nodered**](./nodered) / [**nodered-local**](./nodered-local) - Node-RED low-code programming for IoT and event-driven apps ⚡
 
 ### Data Science & Notebooks ⚡
-- [**jupyterlab**](./jupyterlab) / [**jupyterlab-headless**](./jupyterlab-headless) - JupyterLab notebook environment
+- [**jupyterlab**](./jupyterlab) / [**jupyterlab-local**](./jupyterlab-local) - JupyterLab notebook environment
 
 ### Python Development
 - [**python310**](./python310) - Python 3.10 with smart venv management
@@ -101,8 +105,8 @@ cd postgres-headless && PGPORT=5432 PGDATABASE=mydb flox activate -s
 
 ### AI & Machine Learning
 - [**comfyui**](./comfyui) - ComfyUI node-based AI image generation with CUDA/Metal support, model downloads, and custom node dependencies
-- [**ollama-headless**](./ollama-headless) - Ollama LLM runtime with CUDA support (headless, composable)
-- [**open-webui**](./open-webui) - Web UI for Ollama (includes ollama-headless)
+- [**ollama**](./ollama) - Ollama LLM runtime with CUDA support (headless, composable)
+- [**open-webui**](./open-webui) - Web UI for Ollama (includes ollama)
 - [**wsl2-ollama**](./wsl2-ollama) - Ollama LLM runtime optimized for WSL2
 
 ## 🚀 Getting Started
@@ -120,14 +124,14 @@ cd postgres-headless && PGPORT=5432 PGDATABASE=mydb flox activate -s
 
 **For local development (interactive):**
 ```bash
-cd postgres
+cd postgres-local
 flox activate
 # Follow the interactive wizard to configure PostgreSQL
 ```
 
 **For CI/CD or automation (headless):**
 ```bash
-cd postgres-headless
+cd postgres
 PGPORT=5432 PGDATABASE=mydb flox activate -s
 # Starts immediately with your configuration
 ```
