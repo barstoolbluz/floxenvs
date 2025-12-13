@@ -3,20 +3,14 @@
   "manifest": {
     "version": 1,
     "install": {
-      "ollama": {
-        "pkg-path": "ollama",
-        "systems": [
-          "x86_64-darwin",
-          "aarch64-darwin"
-        ]
+      "bat": {
+        "pkg-path": "bat"
       },
-      "ollama-cuda": {
-        "flake": "github:barstoolbluz/ollama-cuda",
-        "priority": 7,
-        "systems": [
-          "x86_64-linux",
-          "aarch64-linux"
-        ]
+      "curl": {
+        "pkg-path": "curl"
+      },
+      "ollama-ui": {
+        "pkg-path": "nextjs-ollama-llm-ui"
       },
       "open-webui": {
         "pkg-path": "open-webui"
@@ -28,19 +22,19 @@
       "DEFAULT_MODELS_PROVIDER_DEFAULT": "ollama",
       "DO_NOT_TRACK_DEFAULT": "true",
       "HOST_DEFAULT": "0.0.0.0",
+      "NEXT_PUBLIC_OLLAMA_URL": "http://localhost:11434",
       "OLLAMA_API_BASE_URL_DEFAULT": "http://127.0.0.1:11434",
       "OLLAMA_BASE_URL_DEFAULT": "http://127.0.0.1:11434",
-      "OLLAMA_MODELS_DIR": "$FLOX_ENV_CACHE/models",
       "PORT_DEFAULT": "8080",
       "SCARF_NO_ANALYTICS_DEFAULT": "true"
     },
     "hook": {
-      "on-activate": "# Create required directories\nmkdir -p \"$FLOX_ENV_CACHE/models\"\n\n# === SERVER CONFIGURATION ===\nexport OLLAMA_HOST=\"${OLLAMA_HOST:-127.0.0.1:11434}\"\nexport OLLAMA_MODELS=\"${OLLAMA_MODELS:-$FLOX_ENV_CACHE/models}\"\nexport OLLAMA_ORIGINS=\"${OLLAMA_ORIGINS:-}\"  # Use Ollama defaults\n\n# === PERFORMANCE & MEMORY ===\nexport OLLAMA_CONTEXT_LENGTH=\"${OLLAMA_CONTEXT_LENGTH:-}\"  # Default: 4096\nexport OLLAMA_KEEP_ALIVE=\"${OLLAMA_KEEP_ALIVE:-}\"  # Default: 5m\nexport OLLAMA_MAX_LOADED_MODELS=\"${OLLAMA_MAX_LOADED_MODELS:-}\"  # Default: auto (3 * GPU count)\nexport OLLAMA_NUM_PARALLEL=\"${OLLAMA_NUM_PARALLEL:-}\"  # Default: 1\nexport OLLAMA_MAX_QUEUE=\"${OLLAMA_MAX_QUEUE:-}\"  # Default: 512\nexport OLLAMA_LOAD_TIMEOUT=\"${OLLAMA_LOAD_TIMEOUT:-}\"  # Default: 5m\n\n# === GPU CONFIGURATION ===\nexport OLLAMA_FLASH_ATTENTION=\"${OLLAMA_FLASH_ATTENTION:-}\"  # Experimental\nexport OLLAMA_KV_CACHE_TYPE=\"${OLLAMA_KV_CACHE_TYPE:-}\"  # Default: f16\nexport OLLAMA_GPU_OVERHEAD=\"${OLLAMA_GPU_OVERHEAD:-}\"  # Default: 0\nexport CUDA_VISIBLE_DEVICES=\"${CUDA_VISIBLE_DEVICES:-}\"  # Limit visible GPUs\n\n# === ADVANCED / EXPERIMENTAL ===\nexport OLLAMA_DEBUG=\"${OLLAMA_DEBUG:-0}\"  # 0 = disabled, 1 = enabled\nexport OLLAMA_SCHED_SPREAD=\"${OLLAMA_SCHED_SPREAD:-}\"  # Schedule across all GPUs\nexport OLLAMA_NOPRUNE=\"${OLLAMA_NOPRUNE:-}\"  # Don't prune model blobs\nexport OLLAMA_LLM_LIBRARY=\"${OLLAMA_LLM_LIBRARY:-}\"  # Bypass autodetection\nexport OLLAMA_AUTH=\"${OLLAMA_AUTH:-}\"  # Experimental authentication\n\n# === DISPLAY CONFIGURATION ===\necho \"\"\necho \"✅ Ollama environment ready (headless mode)\"\necho \"\"\necho \"Server:\"\necho \"  Host: ${OLLAMA_HOST}\"\necho \"  Models: ${OLLAMA_MODELS}\"\necho \"\"\necho \"Commands:\"\necho \"  flox activate -s        Start Ollama service\"\necho \"  ollama pull <model>     Download a model\"\necho \"  ollama list             List local models\"\necho \"  ollama-info             Show configuration\"\necho \"  ollama-health           Test API endpoint\"\necho \"\"\necho \"Examples:\"\necho \"  ollama pull llama2\"\necho \"  OLLAMA_HOST=0.0.0.0:11434 flox activate -s\"\necho \"\"\n\n  # exports config + support for runtime override\n  export OLLAMA_BASE_URL=\"${OLLAMA_BASE_URL:-$OLLAMA_BASE_URL_DEFAULT}\"\n  export OLLAMA_API_BASE_URL=\"${OLLAMA_API_BASE_URL:-$OLLAMA_API_BASE_URL_DEFAULT}\"\n  export HOST=\"${HOST:-$HOST_DEFAULT}\"\n  export PORT=\"${PORT:-$PORT_DEFAULT}\"\n  export DEFAULT_MODELS_PROVIDER=\"${DEFAULT_MODELS_PROVIDER:-$DEFAULT_MODELS_PROVIDER_DEFAULT}\"\n  export DEFAULT_CONNECTION_NAME=\"${DEFAULT_CONNECTION_NAME:-$DEFAULT_CONNECTION_NAME_DEFAULT}\"\n  export SCARF_NO_ANALYTICS=\"${SCARF_NO_ANALYTICS:-$SCARF_NO_ANALYTICS_DEFAULT}\"\n  export DO_NOT_TRACK=\"${DO_NOT_TRACK:-$DO_NOT_TRACK_DEFAULT}\"\n  export ANONYMIZED_TELEMETRY=\"${ANONYMIZED_TELEMETRY:-$ANONYMIZED_TELEMETRY_DEFAULT}\"\n\n  # sets up data directories in $FLOX_ENV_CACHE\n  WEBUI_DATA_DIR=\"$FLOX_ENV_CACHE/openwebui\"\n  mkdir -p \"$WEBUI_DATA_DIR/cache\"\n  mkdir -p \"$WEBUI_DATA_DIR/data\"\n  mkdir -p \"$FLOX_ENV_CACHE/logs\"\n\n  # exports derived paths (users can override)\n  export DATA_DIR=\"${DATA_DIR:-$WEBUI_DATA_DIR/data}\"\n  export CACHE_DIR=\"${CACHE_DIR:-$WEBUI_DATA_DIR/cache}\"\n  export HF_HOME=\"${HF_HOME:-$WEBUI_DATA_DIR/cache/huggingface}\"\n  export SENTENCE_TRANSFORMERS_HOME=\"${SENTENCE_TRANSFORMERS_HOME:-$WEBUI_DATA_DIR/cache/sentence_transformers}\"\n  export TIKTOKEN_CACHE_DIR=\"${TIKTOKEN_CACHE_DIR:-$WEBUI_DATA_DIR/cache/tiktoken}\"\n  export WHISPER_MODEL_DIR=\"${WHISPER_MODEL_DIR:-$WEBUI_DATA_DIR/cache/whisper}\"\n\n  # generates 256-bit key if not exists\n  KEY_FILE=\"$WEBUI_DATA_DIR/webui_secret_key\"\n  if [ -z \"$WEBUI_SECRET_KEY\" ]; then\n    if [ ! -e \"$KEY_FILE\" ]; then\n      head -c 32 /dev/random | base64 > \"$KEY_FILE\"\n    fi\n    export WEBUI_SECRET_KEY=$(cat \"$KEY_FILE\")\n  fi\n\n  # returns to project directory\n  cd \"$FLOX_ENV_PROJECT\"\n"
+      "on-activate": "export NEXT_CACHE_DIR=\"$FLOX_ENV_CACHE/next\"\nmkdir -p $NEXT_CACHE_DIR\n\n  # Fetch README   # exports config + support for runtime override\n  export OLLAMA_BASE_URL=\"${OLLAMA_BASE_URL:-$OLLAMA_BASE_URL_DEFAULT}\"\n  export OLLAMA_API_BASE_URL=\"${OLLAMA_API_BASE_URL:-$OLLAMA_API_BASE_URL_DEFAULT}\"\n  export HOST=\"${HOST:-$HOST_DEFAULT}\"\n  export PORT=\"${PORT:-$PORT_DEFAULT}\"\n  export DEFAULT_MODELS_PROVIDER=\"${DEFAULT_MODELS_PROVIDER:-$DEFAULT_MODELS_PROVIDER_DEFAULT}\"\n  export DEFAULT_CONNECTION_NAME=\"${DEFAULT_CONNECTION_NAME:-$DEFAULT_CONNECTION_NAME_DEFAULT}\"\n  export SCARF_NO_ANALYTICS=\"${SCARF_NO_ANALYTICS:-$SCARF_NO_ANALYTICS_DEFAULT}\"\n  export DO_NOT_TRACK=\"${DO_NOT_TRACK:-$DO_NOT_TRACK_DEFAULT}\"\n  export ANONYMIZED_TELEMETRY=\"${ANONYMIZED_TELEMETRY:-$ANONYMIZED_TELEMETRY_DEFAULT}\"\n\n  # sets up data directories in $FLOX_ENV_CACHE\n  WEBUI_DATA_DIR=\"$FLOX_ENV_CACHE/openwebui\"\n  mkdir -p \"$WEBUI_DATA_DIR/cache\"\n  mkdir -p \"$WEBUI_DATA_DIR/data\"\n  mkdir -p \"$FLOX_ENV_CACHE/logs\"\n\n  # exports derived paths (users can override)\n  export DATA_DIR=\"${DATA_DIR:-$WEBUI_DATA_DIR/data}\"\n  export CACHE_DIR=\"${CACHE_DIR:-$WEBUI_DATA_DIR/cache}\"\n  export HF_HOME=\"${HF_HOME:-$WEBUI_DATA_DIR/cache/huggingface}\"\n  export SENTENCE_TRANSFORMERS_HOME=\"${SENTENCE_TRANSFORMERS_HOME:-$WEBUI_DATA_DIR/cache/sentence_transformers}\"\n  export TIKTOKEN_CACHE_DIR=\"${TIKTOKEN_CACHE_DIR:-$WEBUI_DATA_DIR/cache/tiktoken}\"\n  export WHISPER_MODEL_DIR=\"${WHISPER_MODEL_DIR:-$WEBUI_DATA_DIR/cache/whisper}\"\n\n  # generates 256-bit key if not exists\n  KEY_FILE=\"$WEBUI_DATA_DIR/webui_secret_key\"\n  if [ -z \"$WEBUI_SECRET_KEY\" ]; then\n    if [ ! -e \"$KEY_FILE\" ]; then\n      head -c 32 /dev/random | base64 > \"$KEY_FILE\"\n    fi\n    export WEBUI_SECRET_KEY=$(cat \"$KEY_FILE\")\n  fi\n\n  # returns to project directory\n  cd \"$FLOX_ENV_PROJECT\"\n\n  echo \"\"\n  echo \"✅ open-webui environment ready\"\n  echo \"\"\n  echo \"Type 'helpf' to view the full README\"\n  echo \"\"\n\n  # Fetch README.md if not present\n  README_FILE=\"$FLOX_ENV_PROJECT/README.md\"\n  if [ ! -f \"$README_FILE\" ]; then\n    if curl -fsSL https://raw.githubusercontent.com/barstoolbluz/floxenvs/main/open-webui/README.md -o \"$README_FILE\" 2>/dev/null; then\n      echo \"✓ Downloaded README.md (use 'helpf' to view)\"\n    fi\n  fi\n"
     },
     "profile": {
-      "bash": "ollama-info() {\n    echo \"Ollama Headless Environment Configuration\"\n    echo \"\"\n    echo \"Server:\"\n    echo \"  Host: ${OLLAMA_HOST}\"\n    echo \"  Models: ${OLLAMA_MODELS}\"\n    echo \"\"\n    echo \"Performance:\"\n    if [ -n \"$OLLAMA_CONTEXT_LENGTH\" ]; then\n        echo \"  Context Length: ${OLLAMA_CONTEXT_LENGTH}\"\n    else\n        echo \"  Context Length: 4096 (default)\"\n    fi\n    if [ -n \"$OLLAMA_KEEP_ALIVE\" ]; then\n        echo \"  Keep Alive: ${OLLAMA_KEEP_ALIVE}\"\n    else\n        echo \"  Keep Alive: 5m (default)\"\n    fi\n    if [ -n \"$OLLAMA_NUM_PARALLEL\" ]; then\n        echo \"  Num Parallel: ${OLLAMA_NUM_PARALLEL}\"\n    else\n        echo \"  Num Parallel: 1 (default)\"\n    fi\n    if [ -n \"$OLLAMA_MAX_QUEUE\" ]; then\n        echo \"  Max Queue: ${OLLAMA_MAX_QUEUE}\"\n    else\n        echo \"  Max Queue: 512 (default)\"\n    fi\n    if [ -n \"$OLLAMA_MAX_LOADED_MODELS\" ]; then\n        echo \"  Max Loaded Models: ${OLLAMA_MAX_LOADED_MODELS}\"\n    else\n        echo \"  Max Loaded Models: auto (default)\"\n    fi\n    echo \"\"\n    echo \"GPU:\"\n    if [ -n \"$OLLAMA_FLASH_ATTENTION\" ]; then\n        echo \"  Flash Attention: enabled\"\n    else\n        echo \"  Flash Attention: disabled (default)\"\n    fi\n    if [ -n \"$OLLAMA_KV_CACHE_TYPE\" ]; then\n        echo \"  KV Cache Type: ${OLLAMA_KV_CACHE_TYPE}\"\n    else\n        echo \"  KV Cache Type: f16 (default)\"\n    fi\n    if [ -n \"$CUDA_VISIBLE_DEVICES\" ]; then\n        echo \"  CUDA Devices: ${CUDA_VISIBLE_DEVICES}\"\n    else\n        echo \"  CUDA Devices: all (default)\"\n    fi\n    echo \"\"\n    if [ \"$OLLAMA_DEBUG\" = \"1\" ]; then\n        echo \"Debug: enabled\"\n    else\n        echo \"Debug: disabled\"\n    fi\n    echo \"\"\n    echo \"Commands:\"\n    echo \"  ollama pull <model>       Download a model\"\n    echo \"  ollama list               List local models\"\n    echo \"  ollama ps                 List running models\"\n    echo \"  flox services status      Check service status\"\n    echo \"  flox services logs ollama View Ollama logs\"\n    echo \"  ollama-health             Test API endpoint\"\n    echo \"\"\n    echo \"Runtime Override Examples:\"\n    echo \"  OLLAMA_HOST=0.0.0.0:11434 flox activate -s\"\n    echo \"  OLLAMA_NUM_PARALLEL=4 flox activate -s\"\n    echo \"  OLLAMA_DEBUG=1 flox activate -s\"\n}\nexport -f ollama-info\n\nollama-health() {\n    local HOST=\"${OLLAMA_HOST:-127.0.0.1:11434}\"\n    # Remove http:// or https:// prefix if present\n    HOST=\"${HOST#http://}\"\n    HOST=\"${HOST#https://}\"\n\n    if curl -s \"http://${HOST}/\" | grep -q \"Ollama is running\"; then\n        echo \"✅ Ollama API is healthy at http://${HOST}\"\n        return 0\n    else\n        echo \"❌ Ollama API is not responding at http://${HOST}\"\n        echo \"   Try: flox services status\"\n        return 1\n    fi\n}\nexport -f ollama-health\n\n# displays config info\nwebui_info() {\n  echo \"======================================\"\n  echo \"  OpenWebUI Configuration\"\n  echo \"======================================\"\n  echo \"\"\n  echo \"Data Directory:\"\n  echo \"  $FLOX_ENV_CACHE/openwebui\"\n  echo \"\"\n  echo \"Services:\"\n  echo \"  OpenWebUI: http://$HOST:$PORT\"\n  echo \"  Ollama:    $OLLAMA_BASE_URL\"\n  echo \"\"\n  echo \"Quick Commands:\"\n  echo \"  webui_info     - Show this information\"\n  echo \"  webui_status   - Check service status\"\n  echo \"  webui_logs     - Tail service logs\"\n  echo \"  ollama_status  - Check Ollama connectivity\"\n  echo \"  ollama-info    - Show Ollama configuration\"\n  echo \"  ollama-health  - Test Ollama API health\"\n  echo \"\"\n}\nexport -f webui_info\n\n# checks service status\nwebui_status() {\n  flox services status\n}\nexport -f webui_status\n\n# tails service logs\nwebui_logs() {\n  tail -f \"$FLOX_ENV_CACHE/logs/openwebui.log\"\n}\nexport -f webui_logs\n\n# checks ollama connection (uses ollama-health from ollama-headless)\nollama_status() {\n  if command -v ollama-health >/dev/null 2>&1; then\n    ollama-health\n  else\n    echo -n \"Checking Ollama at $OLLAMA_BASE_URL ... \"\n    if curl -sf \"$OLLAMA_BASE_URL/api/tags\" >/dev/null 2>&1; then\n      echo \"✓ Connected\"\n      return 0\n    else\n      echo \"✗ Cannot connect\"\n      echo \"Make sure Ollama is running with: flox activate -s\"\n      return 1\n    fi\n  fi\n}\nexport -f ollama_status\n",
-      "zsh": "ollama-info() {\n    echo \"Ollama Headless Environment Configuration\"\n    echo \"\"\n    echo \"Server:\"\n    echo \"  Host: ${OLLAMA_HOST}\"\n    echo \"  Models: ${OLLAMA_MODELS}\"\n    echo \"\"\n    echo \"Performance:\"\n    if [ -n \"$OLLAMA_CONTEXT_LENGTH\" ]; then\n        echo \"  Context Length: ${OLLAMA_CONTEXT_LENGTH}\"\n    else\n        echo \"  Context Length: 4096 (default)\"\n    fi\n    if [ -n \"$OLLAMA_KEEP_ALIVE\" ]; then\n        echo \"  Keep Alive: ${OLLAMA_KEEP_ALIVE}\"\n    else\n        echo \"  Keep Alive: 5m (default)\"\n    fi\n    if [ -n \"$OLLAMA_NUM_PARALLEL\" ]; then\n        echo \"  Num Parallel: ${OLLAMA_NUM_PARALLEL}\"\n    else\n        echo \"  Num Parallel: 1 (default)\"\n    fi\n    if [ -n \"$OLLAMA_MAX_QUEUE\" ]; then\n        echo \"  Max Queue: ${OLLAMA_MAX_QUEUE}\"\n    else\n        echo \"  Max Queue: 512 (default)\"\n    fi\n    if [ -n \"$OLLAMA_MAX_LOADED_MODELS\" ]; then\n        echo \"  Max Loaded Models: ${OLLAMA_MAX_LOADED_MODELS}\"\n    else\n        echo \"  Max Loaded Models: auto (default)\"\n    fi\n    echo \"\"\n    echo \"GPU:\"\n    if [ -n \"$OLLAMA_FLASH_ATTENTION\" ]; then\n        echo \"  Flash Attention: enabled\"\n    else\n        echo \"  Flash Attention: disabled (default)\"\n    fi\n    if [ -n \"$OLLAMA_KV_CACHE_TYPE\" ]; then\n        echo \"  KV Cache Type: ${OLLAMA_KV_CACHE_TYPE}\"\n    else\n        echo \"  KV Cache Type: f16 (default)\"\n    fi\n    if [ -n \"$CUDA_VISIBLE_DEVICES\" ]; then\n        echo \"  CUDA Devices: ${CUDA_VISIBLE_DEVICES}\"\n    else\n        echo \"  CUDA Devices: all (default)\"\n    fi\n    echo \"\"\n    if [ \"$OLLAMA_DEBUG\" = \"1\" ]; then\n        echo \"Debug: enabled\"\n    else\n        echo \"Debug: disabled\"\n    fi\n    echo \"\"\n    echo \"Commands:\"\n    echo \"  ollama pull <model>       Download a model\"\n    echo \"  ollama list               List local models\"\n    echo \"  ollama ps                 List running models\"\n    echo \"  flox services status      Check service status\"\n    echo \"  flox services logs ollama View Ollama logs\"\n    echo \"  ollama-health             Test API endpoint\"\n    echo \"\"\n    echo \"Runtime Override Examples:\"\n    echo \"  OLLAMA_HOST=0.0.0.0:11434 flox activate -s\"\n    echo \"  OLLAMA_NUM_PARALLEL=4 flox activate -s\"\n    echo \"  OLLAMA_DEBUG=1 flox activate -s\"\n}\n\nollama-health() {\n    local HOST=\"${OLLAMA_HOST:-127.0.0.1:11434}\"\n    # Remove http:// or https:// prefix if present\n    HOST=\"${HOST#http://}\"\n    HOST=\"${HOST#https://}\"\n\n    if curl -s \"http://${HOST}/\" | grep -q \"Ollama is running\"; then\n        echo \"✅ Ollama API is healthy at http://${HOST}\"\n        return 0\n    else\n        echo \"❌ Ollama API is not responding at http://${HOST}\"\n        echo \"   Try: flox services status\"\n        return 1\n    fi\n}\n\n# displays config info\nwebui_info() {\n  echo \"======================================\"\n  echo \"  OpenWebUI Configuration\"\n  echo \"======================================\"\n  echo \"\"\n  echo \"Data Directory:\"\n  echo \"  $FLOX_ENV_CACHE/openwebui\"\n  echo \"\"\n  echo \"Services:\"\n  echo \"  OpenWebUI: http://$HOST:$PORT\"\n  echo \"  Ollama:    $OLLAMA_BASE_URL\"\n  echo \"\"\n  echo \"Quick Commands:\"\n  echo \"  webui_info     - Show this information\"\n  echo \"  webui_status   - Check service status\"\n  echo \"  webui_logs     - Tail service logs\"\n  echo \"  ollama_status  - Check Ollama connectivity\"\n  echo \"  ollama-info    - Show Ollama configuration\"\n  echo \"  ollama-health  - Test Ollama API health\"\n  echo \"\"\n}\n\n# checks service status\nwebui_status() {\n  flox services status\n}\n\n# tails service logs\nwebui_logs() {\n  tail -f \"$FLOX_ENV_CACHE/logs/openwebui.log\"\n}\n\n# checks ollama connection (uses ollama-health from ollama-headless)\nollama_status() {\n  if command -v ollama-health >/dev/null 2>&1; then\n    ollama-health\n  else\n    echo -n \"Checking Ollama at $OLLAMA_BASE_URL ... \"\n    if curl -sf \"$OLLAMA_BASE_URL/api/tags\" >/dev/null 2>&1; then\n      echo \"✓ Connected\"\n      return 0\n    else\n      echo \"✗ Cannot connect\"\n      echo \"Make sure Ollama is running with: flox activate -s\"\n      return 1\n    fi\n  fi\n}\n",
-      "fish": "function ollama-info\n    echo \"Ollama Headless Environment Configuration\"\n    echo \"\"\n    echo \"Server:\"\n    echo \"  Host: $OLLAMA_HOST\"\n    echo \"  Models: $OLLAMA_MODELS\"\n    echo \"\"\n    echo \"Performance:\"\n    if test -n \"$OLLAMA_CONTEXT_LENGTH\"\n        echo \"  Context Length: $OLLAMA_CONTEXT_LENGTH\"\n    else\n        echo \"  Context Length: 4096 (default)\"\n    end\n    if test -n \"$OLLAMA_KEEP_ALIVE\"\n        echo \"  Keep Alive: $OLLAMA_KEEP_ALIVE\"\n    else\n        echo \"  Keep Alive: 5m (default)\"\n    end\n    if test -n \"$OLLAMA_NUM_PARALLEL\"\n        echo \"  Num Parallel: $OLLAMA_NUM_PARALLEL\"\n    else\n        echo \"  Num Parallel: 1 (default)\"\n    end\n    if test -n \"$OLLAMA_MAX_QUEUE\"\n        echo \"  Max Queue: $OLLAMA_MAX_QUEUE\"\n    else\n        echo \"  Max Queue: 512 (default)\"\n    end\n    if test -n \"$OLLAMA_MAX_LOADED_MODELS\"\n        echo \"  Max Loaded Models: $OLLAMA_MAX_LOADED_MODELS\"\n    else\n        echo \"  Max Loaded Models: auto (default)\"\n    end\n    echo \"\"\n    echo \"GPU:\"\n    if test -n \"$OLLAMA_FLASH_ATTENTION\"\n        echo \"  Flash Attention: enabled\"\n    else\n        echo \"  Flash Attention: disabled (default)\"\n    end\n    if test -n \"$OLLAMA_KV_CACHE_TYPE\"\n        echo \"  KV Cache Type: $OLLAMA_KV_CACHE_TYPE\"\n    else\n        echo \"  KV Cache Type: f16 (default)\"\n    end\n    if test -n \"$CUDA_VISIBLE_DEVICES\"\n        echo \"  CUDA Devices: $CUDA_VISIBLE_DEVICES\"\n    else\n        echo \"  CUDA Devices: all (default)\"\n    end\n    echo \"\"\n    if test \"$OLLAMA_DEBUG\" = \"1\"\n        echo \"Debug: enabled\"\n    else\n        echo \"Debug: disabled\"\n    end\n    echo \"\"\n    echo \"Commands:\"\n    echo \"  ollama pull <model>       Download a model\"\n    echo \"  ollama list               List local models\"\n    echo \"  ollama ps                 List running models\"\n    echo \"  flox services status      Check service status\"\n    echo \"  flox services logs ollama View Ollama logs\"\n    echo \"  ollama-health             Test API endpoint\"\n    echo \"\"\n    echo \"Runtime Override Examples:\"\n    echo \"  OLLAMA_HOST=0.0.0.0:11434 flox activate -s\"\n    echo \"  OLLAMA_NUM_PARALLEL=4 flox activate -s\"\n    echo \"  OLLAMA_DEBUG=1 flox activate -s\"\nend\n\nfunction ollama-health\n    set -l HOST (string replace -r '^https?://' '' $OLLAMA_HOST)\n\n    if curl -s \"http://$HOST/\" | grep -q \"Ollama is running\"\n        echo \"✅ Ollama API is healthy at http://$HOST\"\n        return 0\n    else\n        echo \"❌ Ollama API is not responding at http://$HOST\"\n        echo \"   Try: flox services status\"\n        return 1\n    end\nend\n\n# displays config info\nfunction webui_info\n  echo \"======================================\"\n  echo \"  OpenWebUI Configuration\"\n  echo \"======================================\"\n  echo \"\"\n  echo \"Data Directory:\"\n  echo \"  $FLOX_ENV_CACHE/openwebui\"\n  echo \"\"\n  echo \"Services:\"\n  echo \"  OpenWebUI: http://$HOST:$PORT\"\n  echo \"  Ollama:    $OLLAMA_BASE_URL\"\n  echo \"\"\n  echo \"Quick Commands:\"\n  echo \"  webui_info     - Show this information\"\n  echo \"  webui_status   - Check service status\"\n  echo \"  webui_logs     - Tail service logs\"\n  echo \"  ollama_status  - Check Ollama connectivity\"\n  echo \"  ollama-info    - Show Ollama configuration\"\n  echo \"  ollama-health  - Test Ollama API health\"\n  echo \"\"\nend\n\n# checks service status\nfunction webui_status\n  flox services status\nend\n\n# tails service logs\nfunction webui_logs\n  tail -f \"$FLOX_ENV_CACHE/logs/openwebui.log\"\nend\n\n# checks ollama connection (uses ollama-health from ollama-headless)\nfunction ollama_status\n  if command -v ollama-health >/dev/null 2>&1\n    ollama-health\n  else\n    echo -n \"Checking Ollama at $OLLAMA_BASE_URL ... \"\n    if curl -sf \"$OLLAMA_BASE_URL/api/tags\" >/dev/null 2>&1\n      echo \"✓ Connected\"\n      return 0\n    else\n      echo \"✗ Cannot connect\"\n      echo \"Make sure Ollama is running with: flox activate -s\"\n      return 1\n    end\n  end\nend\n"
+      "bash": "\n# displays config info\nwebui_info() {\n  echo \"======================================\"\n  echo \"  OpenWebUI Configuration\"\n  echo \"======================================\"\n  echo \"\"\n  echo \"Data Directory:\"\n  echo \"  $FLOX_ENV_CACHE/openwebui\"\n  echo \"\"\n  echo \"Services:\"\n  echo \"  OpenWebUI: http://$HOST:$PORT\"\n  echo \"  Ollama:    $OLLAMA_BASE_URL\"\n  echo \"\"\n  echo \"Quick Commands:\"\n  echo \"  webui_info     - Show this information\"\n  echo \"  webui_status   - Check service status\"\n  echo \"  webui_logs     - Tail service logs\"\n  echo \"  ollama_status  - Check Ollama connectivity\"\n  echo \"  ollama-info    - Show Ollama configuration\"\n  echo \"  ollama-health  - Test Ollama API health\"\n  echo \"  helpf          - View full README documentation\"\n  echo \"\"\n}\nexport -f webui_info\n\n# checks service status\nwebui_status() {\n  flox services status\n}\nexport -f webui_status\n\n# tails service logs\nwebui_logs() {\n  tail -f \"$FLOX_ENV_CACHE/logs/openwebui.log\"\n}\nexport -f webui_logs\n\n# checks ollama connection (uses ollama-health from ollama-headless)\nollama_status() {\n  if command -v ollama-health >/dev/null 2>&1; then\n    ollama-health\n  else\n    echo -n \"Checking Ollama at $OLLAMA_BASE_URL ... \"\n    if curl -sf \"$OLLAMA_BASE_URL/api/tags\" >/dev/null 2>&1; then\n      echo \"✓ Connected\"\n      return 0\n    else\n      echo \"✗ Cannot connect\"\n      echo \"Make sure Ollama is running with: flox activate -s\"\n      return 1\n    fi\n  fi\n}\nexport -f ollama_status\n\n  helpf() {\n    local README_FILE=\"$FLOX_ENV_PROJECT/README.md\"\n    local README_URL=\"https://raw.githubusercontent.com/barstoolbluz/floxenvs/main/open-webui/README.md\"\n\n    if [ \"$1\" = \"--help\" ]; then\n      echo \"Usage: helpf [OPTIONS]\"\n      echo \"\"\n      echo \"View environment documentation\"\n      echo \"\"\n      echo \"Options:\"\n      echo \"  --force    Force download fresh copy from GitHub\"\n      echo \"  --help     Show this help message\"\n      echo \"\"\n      echo \"The README is cached locally and only downloaded if missing.\"\n      return 0\n    fi\n\n    if [ \"$1\" = \"--force\" ]; then\n      echo \"Fetching latest README.md from GitHub...\"\n      if curl -fsSL \"$README_URL\" -o \"$README_FILE\"; then\n        echo \"✓ Downloaded README.md\"\n      else\n        echo \"✗ Failed to download README.md\"\n        return 1\n      fi\n    elif [ ! -f \"$README_FILE\" ]; then\n      echo \"README.md not found, downloading...\"\n      if curl -fsSL \"$README_URL\" -o \"$README_FILE\"; then\n        echo \"✓ Downloaded README.md\"\n      else\n        echo \"✗ Failed to download README.md\"\n        return 1\n      fi\n    fi\n\n    if [ -f \"$README_FILE\" ]; then\n      bat --style=auto --paging=always \"$README_FILE\"\n    else\n      echo \"✗ README.md not found at $README_FILE\"\n      return 1\n    fi\n  }\n  export -f helpf\n",
+      "zsh": "\n# displays config info\nwebui_info() {\n  echo \"======================================\"\n  echo \"  OpenWebUI Configuration\"\n  echo \"======================================\"\n  echo \"\"\n  echo \"Data Directory:\"\n  echo \"  $FLOX_ENV_CACHE/openwebui\"\n  echo \"\"\n  echo \"Services:\"\n  echo \"  OpenWebUI: http://$HOST:$PORT\"\n  echo \"  Ollama:    $OLLAMA_BASE_URL\"\n  echo \"\"\n  echo \"Quick Commands:\"\n  echo \"  webui_info     - Show this information\"\n  echo \"  webui_status   - Check service status\"\n  echo \"  webui_logs     - Tail service logs\"\n  echo \"  ollama_status  - Check Ollama connectivity\"\n  echo \"  ollama-info    - Show Ollama configuration\"\n  echo \"  ollama-health  - Test Ollama API health\"\n  echo \"  helpf          - View full README documentation\"\n  echo \"\"\n}\n\n# checks service status\nwebui_status() {\n  flox services status\n}\n\n# tails service logs\nwebui_logs() {\n  tail -f \"$FLOX_ENV_CACHE/logs/openwebui.log\"\n}\n\n# checks ollama connection (uses ollama-health from ollama-headless)\nollama_status() {\n  if command -v ollama-health >/dev/null 2>&1; then\n    ollama-health\n  else\n    echo -n \"Checking Ollama at $OLLAMA_BASE_URL ... \"\n    if curl -sf \"$OLLAMA_BASE_URL/api/tags\" >/dev/null 2>&1; then\n      echo \"✓ Connected\"\n      return 0\n    else\n      echo \"✗ Cannot connect\"\n      echo \"Make sure Ollama is running with: flox activate -s\"\n      return 1\n    fi\n  fi\n}\n\n  helpf() {\n    local README_FILE=\"$FLOX_ENV_PROJECT/README.md\"\n    local README_URL=\"https://raw.githubusercontent.com/barstoolbluz/floxenvs/main/open-webui/README.md\"\n\n    if [ \"$1\" = \"--help\" ]; then\n      echo \"Usage: helpf [OPTIONS]\"\n      echo \"\"\n      echo \"View environment documentation\"\n      echo \"\"\n      echo \"Options:\"\n      echo \"  --force    Force download fresh copy from GitHub\"\n      echo \"  --help     Show this help message\"\n      echo \"\"\n      echo \"The README is cached locally and only downloaded if missing.\"\n      return 0\n    fi\n\n    if [ \"$1\" = \"--force\" ]; then\n      echo \"Fetching latest README.md from GitHub...\"\n      if curl -fsSL \"$README_URL\" -o \"$README_FILE\"; then\n        echo \"✓ Downloaded README.md\"\n      else\n        echo \"✗ Failed to download README.md\"\n        return 1\n      fi\n    elif [ ! -f \"$README_FILE\" ]; then\n      echo \"README.md not found, downloading...\"\n      if curl -fsSL \"$README_URL\" -o \"$README_FILE\"; then\n        echo \"✓ Downloaded README.md\"\n      else\n        echo \"✗ Failed to download README.md\"\n        return 1\n      fi\n    fi\n\n    if [ -f \"$README_FILE\" ]; then\n      bat --style=auto --paging=always \"$README_FILE\"\n    else\n      echo \"✗ README.md not found at $README_FILE\"\n      return 1\n    fi\n  }\n",
+      "fish": "\n# displays config info\nfunction webui_info\n  echo \"======================================\"\n  echo \"  OpenWebUI Configuration\"\n  echo \"======================================\"\n  echo \"\"\n  echo \"Data Directory:\"\n  echo \"  $FLOX_ENV_CACHE/openwebui\"\n  echo \"\"\n  echo \"Services:\"\n  echo \"  OpenWebUI: http://$HOST:$PORT\"\n  echo \"  Ollama:    $OLLAMA_BASE_URL\"\n  echo \"\"\n  echo \"Quick Commands:\"\n  echo \"  webui_info     - Show this information\"\n  echo \"  webui_status   - Check service status\"\n  echo \"  webui_logs     - Tail service logs\"\n  echo \"  ollama_status  - Check Ollama connectivity\"\n  echo \"  ollama-info    - Show Ollama configuration\"\n  echo \"  ollama-health  - Test Ollama API health\"\n  echo \"  helpf          - View full README documentation\"\n  echo \"\"\nend\n\n# checks service status\nfunction webui_status\n  flox services status\nend\n\n# tails service logs\nfunction webui_logs\n  tail -f \"$FLOX_ENV_CACHE/logs/openwebui.log\"\nend\n\n# checks ollama connection (uses ollama-health from ollama-headless)\nfunction ollama_status\n  if command -v ollama-health >/dev/null 2>&1\n    ollama-health\n  else\n    echo -n \"Checking Ollama at $OLLAMA_BASE_URL ... \"\n    if curl -sf \"$OLLAMA_BASE_URL/api/tags\" >/dev/null 2>&1\n      echo \"✓ Connected\"\n      return 0\n    else\n      echo \"✗ Cannot connect\"\n      echo \"Make sure Ollama is running with: flox activate -s\"\n      return 1\n    end\n  end\nend\n\nfunction helpf\n    set README_FILE \"$FLOX_ENV_PROJECT/README.md\"\n    set README_URL \"https://raw.githubusercontent.com/barstoolbluz/floxenvs/main/open-webui/README.md\"\n\n    if test \"$argv[1]\" = \"--help\"\n        echo \"Usage: helpf [OPTIONS]\"\n        echo \"\"\n        echo \"View environment documentation\"\n        echo \"\"\n        echo \"Options:\"\n        echo \"  --force    Force download fresh copy from GitHub\"\n        echo \"  --help     Show this help message\"\n        echo \"\"\n        echo \"The README is cached locally and only downloaded if missing.\"\n        return 0\n    end\n\n    if test \"$argv[1]\" = \"--force\"\n        echo \"Fetching latest README.md from GitHub...\"\n        if curl -fsSL \"$README_URL\" -o \"$README_FILE\"\n            echo \"✓ Downloaded README.md\"\n        else\n            echo \"✗ Failed to download README.md\"\n            return 1\n        end\n    else if not test -f \"$README_FILE\"\n        echo \"README.md not found, downloading...\"\n        if curl -fsSL \"$README_URL\" -o \"$README_FILE\"\n            echo \"✓ Downloaded README.md\"\n        else\n            echo \"✗ Failed to download README.md\"\n            return 1\n        end\n    end\n\n    if test -f \"$README_FILE\"\n        bat --style=auto --paging=always \"$README_FILE\"\n    else\n        echo \"✗ README.md not found at $README_FILE\"\n        return 1\n    end\nend\n"
     },
     "options": {
       "systems": [
@@ -48,11 +42,14 @@
         "aarch64-linux",
         "x86_64-darwin",
         "x86_64-linux"
-      ]
+      ],
+      "allow": {
+        "licenses": []
+      }
     },
     "services": {
-      "ollama": {
-        "command": "ollama serve"
+      "ollama-ui": {
+        "command": "# wait for ollama to be ready\nuntil ollama list; do sleep 1; done\n\nnextjs-ollama-llm-ui\n"
       },
       "openwebui": {
         "command": "  mkdir -p \"$FLOX_ENV_CACHE/logs\"\n  exec open-webui serve --host \"$HOST\" --port \"$PORT\" 2>&1 | tee -a \"$FLOX_ENV_CACHE/logs/openwebui.log\"\n"
@@ -61,15 +58,15 @@
   },
   "packages": [
     {
-      "attr_path": "ollama",
+      "attr_path": "bat",
       "broken": false,
-      "derivation": "/nix/store/3jrr2lwrmdyq5wmvf5md5y5jhjd55hj2-ollama-0.4.5.drv",
-      "description": "Get up and running with large language models locally",
-      "install_id": "ollama",
-      "license": "MIT",
+      "derivation": "/nix/store/ia91qsp3a4xncvki3af6kc636364pqzj-bat-0.24.0.drv",
+      "description": "Cat(1) clone with syntax highlighting and Git integration",
+      "install_id": "bat",
+      "license": "[ Apache-2.0, MIT ]",
       "locked_url": "https://github.com/flox/nixpkgs?rev=55d15ad12a74eb7d4646254e13638ad0c4128776",
-      "name": "ollama-0.4.5",
-      "pname": "ollama",
+      "name": "bat-0.24.0",
+      "pname": "bat",
       "rev": "55d15ad12a74eb7d4646254e13638ad0c4128776",
       "rev_count": 716003,
       "rev_date": "2024-12-03T07:54:31Z",
@@ -79,27 +76,27 @@
         "unstable"
       ],
       "unfree": false,
-      "version": "0.4.5",
+      "version": "0.24.0",
       "outputs_to_install": [
         "out"
       ],
       "outputs": {
-        "out": "/nix/store/054v6bdmk6wxbams7qz87rw54dyb6kxx-ollama-0.4.5"
+        "out": "/nix/store/5q3jij0wd0k455bfan3kxwmlsxha4vvf-bat-0.24.0"
       },
       "system": "aarch64-darwin",
       "group": "toplevel",
       "priority": 5
     },
     {
-      "attr_path": "ollama",
+      "attr_path": "bat",
       "broken": false,
-      "derivation": "/nix/store/h4n64jkgx3z5n2d8dvlsqxk7vi9g5xgc-ollama-0.4.5.drv",
-      "description": "Get up and running with large language models locally",
-      "install_id": "ollama",
-      "license": "MIT",
+      "derivation": "/nix/store/aypd7vyh2c9xnj2f73a4f9g4jyn80kka-bat-0.24.0.drv",
+      "description": "Cat(1) clone with syntax highlighting and Git integration",
+      "install_id": "bat",
+      "license": "[ Apache-2.0, MIT ]",
       "locked_url": "https://github.com/flox/nixpkgs?rev=55d15ad12a74eb7d4646254e13638ad0c4128776",
-      "name": "ollama-0.4.5",
-      "pname": "ollama",
+      "name": "bat-0.24.0",
+      "pname": "bat",
       "rev": "55d15ad12a74eb7d4646254e13638ad0c4128776",
       "rev_count": 716003,
       "rev_date": "2024-12-03T07:54:31Z",
@@ -109,14 +106,336 @@
         "unstable"
       ],
       "unfree": false,
-      "version": "0.4.5",
+      "version": "0.24.0",
       "outputs_to_install": [
         "out"
       ],
       "outputs": {
-        "out": "/nix/store/sk0k42pl03c64jjk2r5i1mq1drp5mpg1-ollama-0.4.5"
+        "out": "/nix/store/sg9ihsijd9mws8ib8p3m71rid3znmm08-bat-0.24.0"
+      },
+      "system": "aarch64-linux",
+      "group": "toplevel",
+      "priority": 5
+    },
+    {
+      "attr_path": "bat",
+      "broken": false,
+      "derivation": "/nix/store/7nmafxb88k5rl2bc8y2p3hjygfblm8gs-bat-0.24.0.drv",
+      "description": "Cat(1) clone with syntax highlighting and Git integration",
+      "install_id": "bat",
+      "license": "[ Apache-2.0, MIT ]",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=55d15ad12a74eb7d4646254e13638ad0c4128776",
+      "name": "bat-0.24.0",
+      "pname": "bat",
+      "rev": "55d15ad12a74eb7d4646254e13638ad0c4128776",
+      "rev_count": 716003,
+      "rev_date": "2024-12-03T07:54:31Z",
+      "scrape_date": "2024-12-04T03:55:34Z",
+      "stabilities": [
+        "staging",
+        "unstable"
+      ],
+      "unfree": false,
+      "version": "0.24.0",
+      "outputs_to_install": [
+        "out"
+      ],
+      "outputs": {
+        "out": "/nix/store/xpvx99kslai1054085ys1fbmvpz5zv7y-bat-0.24.0"
       },
       "system": "x86_64-darwin",
+      "group": "toplevel",
+      "priority": 5
+    },
+    {
+      "attr_path": "bat",
+      "broken": false,
+      "derivation": "/nix/store/ls08sisnhiyybsx3sbh8hbwm9fvryjsb-bat-0.24.0.drv",
+      "description": "Cat(1) clone with syntax highlighting and Git integration",
+      "install_id": "bat",
+      "license": "[ Apache-2.0, MIT ]",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=55d15ad12a74eb7d4646254e13638ad0c4128776",
+      "name": "bat-0.24.0",
+      "pname": "bat",
+      "rev": "55d15ad12a74eb7d4646254e13638ad0c4128776",
+      "rev_count": 716003,
+      "rev_date": "2024-12-03T07:54:31Z",
+      "scrape_date": "2024-12-04T03:55:34Z",
+      "stabilities": [
+        "staging",
+        "unstable"
+      ],
+      "unfree": false,
+      "version": "0.24.0",
+      "outputs_to_install": [
+        "out"
+      ],
+      "outputs": {
+        "out": "/nix/store/28gvmy0w40b0dslxzmvqb6d4pigjjc4v-bat-0.24.0"
+      },
+      "system": "x86_64-linux",
+      "group": "toplevel",
+      "priority": 5
+    },
+    {
+      "attr_path": "curl",
+      "broken": false,
+      "derivation": "/nix/store/9prb1w9v1bs7204ma5g6mgy4dnf1dcbb-curl-8.11.0.drv",
+      "description": "Command line tool for transferring files with URL syntax",
+      "install_id": "curl",
+      "license": "curl",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=55d15ad12a74eb7d4646254e13638ad0c4128776",
+      "name": "curl-8.11.0",
+      "pname": "curl",
+      "rev": "55d15ad12a74eb7d4646254e13638ad0c4128776",
+      "rev_count": 716003,
+      "rev_date": "2024-12-03T07:54:31Z",
+      "scrape_date": "2024-12-04T03:55:34Z",
+      "stabilities": [
+        "staging",
+        "unstable"
+      ],
+      "unfree": false,
+      "version": "8.11.0",
+      "outputs_to_install": [
+        "bin",
+        "man"
+      ],
+      "outputs": {
+        "bin": "/nix/store/78b40bakdk6ldzd2cnzqqc6k2ffq6q80-curl-8.11.0-bin",
+        "dev": "/nix/store/x8qcqapnc2656j9pmhycqw5gjsg8wj95-curl-8.11.0-dev",
+        "devdoc": "/nix/store/3jkma0k7qwx82djlzac798hnhky6s2mw-curl-8.11.0-devdoc",
+        "man": "/nix/store/p28ziicmg9c8y0j7zlhfab3cz2jl84jq-curl-8.11.0-man",
+        "out": "/nix/store/j39kv1qva1ndbbfc6b7rqipz5fs9pnvc-curl-8.11.0"
+      },
+      "system": "aarch64-darwin",
+      "group": "toplevel",
+      "priority": 5
+    },
+    {
+      "attr_path": "curl",
+      "broken": false,
+      "derivation": "/nix/store/m5qsrq5d3ix0y4hkzwcmjhizzsqi0sf3-curl-8.11.0.drv",
+      "description": "Command line tool for transferring files with URL syntax",
+      "install_id": "curl",
+      "license": "curl",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=55d15ad12a74eb7d4646254e13638ad0c4128776",
+      "name": "curl-8.11.0",
+      "pname": "curl",
+      "rev": "55d15ad12a74eb7d4646254e13638ad0c4128776",
+      "rev_count": 716003,
+      "rev_date": "2024-12-03T07:54:31Z",
+      "scrape_date": "2024-12-04T03:55:34Z",
+      "stabilities": [
+        "staging",
+        "unstable"
+      ],
+      "unfree": false,
+      "version": "8.11.0",
+      "outputs_to_install": [
+        "bin",
+        "man"
+      ],
+      "outputs": {
+        "bin": "/nix/store/wq37ah6ayglskxv1viw204j246miz9mw-curl-8.11.0-bin",
+        "debug": "/nix/store/hz05x0jdczalgjxivm8m1ni56hamkrh1-curl-8.11.0-debug",
+        "dev": "/nix/store/8q0a3mgciq1alhn51ga7pcj491w42frm-curl-8.11.0-dev",
+        "devdoc": "/nix/store/081g6dj7mniw7fjzn5byf9vpzk36yg4h-curl-8.11.0-devdoc",
+        "man": "/nix/store/b8rfm1q2rakp4nml9l61s45v3pg2iah4-curl-8.11.0-man",
+        "out": "/nix/store/fqwkalsvg898sgf969bqpaz4blypx5gd-curl-8.11.0"
+      },
+      "system": "aarch64-linux",
+      "group": "toplevel",
+      "priority": 5
+    },
+    {
+      "attr_path": "curl",
+      "broken": false,
+      "derivation": "/nix/store/kdcr3ssg3ckxvyghv2pkf6fbz15y5b4c-curl-8.11.0.drv",
+      "description": "Command line tool for transferring files with URL syntax",
+      "install_id": "curl",
+      "license": "curl",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=55d15ad12a74eb7d4646254e13638ad0c4128776",
+      "name": "curl-8.11.0",
+      "pname": "curl",
+      "rev": "55d15ad12a74eb7d4646254e13638ad0c4128776",
+      "rev_count": 716003,
+      "rev_date": "2024-12-03T07:54:31Z",
+      "scrape_date": "2024-12-04T03:55:34Z",
+      "stabilities": [
+        "staging",
+        "unstable"
+      ],
+      "unfree": false,
+      "version": "8.11.0",
+      "outputs_to_install": [
+        "bin",
+        "man"
+      ],
+      "outputs": {
+        "bin": "/nix/store/d9hsgziq68q5qaasrm8rcmvvk7idry85-curl-8.11.0-bin",
+        "dev": "/nix/store/5vkqd75k1d4wk6dsgdzxsfv9p692abia-curl-8.11.0-dev",
+        "devdoc": "/nix/store/br90i57yq5fnqz9kc52lg0d8cpz5xkvi-curl-8.11.0-devdoc",
+        "man": "/nix/store/pri71vk0srs4174n79v3rrsasi0cfcl7-curl-8.11.0-man",
+        "out": "/nix/store/ppzjbkfncrrxmiyh5h32pdn4lk8bi4ba-curl-8.11.0"
+      },
+      "system": "x86_64-darwin",
+      "group": "toplevel",
+      "priority": 5
+    },
+    {
+      "attr_path": "curl",
+      "broken": false,
+      "derivation": "/nix/store/aghzbv1fia6f8wwyykg3lyixpq86fycs-curl-8.11.0.drv",
+      "description": "Command line tool for transferring files with URL syntax",
+      "install_id": "curl",
+      "license": "curl",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=55d15ad12a74eb7d4646254e13638ad0c4128776",
+      "name": "curl-8.11.0",
+      "pname": "curl",
+      "rev": "55d15ad12a74eb7d4646254e13638ad0c4128776",
+      "rev_count": 716003,
+      "rev_date": "2024-12-03T07:54:31Z",
+      "scrape_date": "2024-12-04T03:55:34Z",
+      "stabilities": [
+        "staging",
+        "unstable"
+      ],
+      "unfree": false,
+      "version": "8.11.0",
+      "outputs_to_install": [
+        "bin",
+        "man"
+      ],
+      "outputs": {
+        "bin": "/nix/store/r686j19q8zcnccpg5h9xlf7bvvs27b8s-curl-8.11.0-bin",
+        "debug": "/nix/store/j4l8vnw7cqpiw68mf0gxaqx98hw5fcpb-curl-8.11.0-debug",
+        "dev": "/nix/store/h269afcqsqykvbsnhrbpw9lghaff47dz-curl-8.11.0-dev",
+        "devdoc": "/nix/store/8xcjvalpnmcn6c6af3rhshl0ahnxw9dl-curl-8.11.0-devdoc",
+        "man": "/nix/store/rlls2vbms86vcrf7z2savrh0x0gbbk8h-curl-8.11.0-man",
+        "out": "/nix/store/ixq7chmml361204anwph16ll2njcf19d-curl-8.11.0"
+      },
+      "system": "x86_64-linux",
+      "group": "toplevel",
+      "priority": 5
+    },
+    {
+      "attr_path": "nextjs-ollama-llm-ui",
+      "broken": false,
+      "derivation": "/nix/store/njh0aqysblaa622scw70a82wsy74kaq2-nextjs-ollama-llm-ui-1.1.0.drv",
+      "description": "Simple chat web interface for Ollama LLMs",
+      "install_id": "ollama-ui",
+      "license": "MIT",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=55d15ad12a74eb7d4646254e13638ad0c4128776",
+      "name": "nextjs-ollama-llm-ui-1.1.0",
+      "pname": "nextjs-ollama-llm-ui",
+      "rev": "55d15ad12a74eb7d4646254e13638ad0c4128776",
+      "rev_count": 716003,
+      "rev_date": "2024-12-03T07:54:31Z",
+      "scrape_date": "2024-12-04T03:55:34Z",
+      "stabilities": [
+        "staging",
+        "unstable"
+      ],
+      "unfree": false,
+      "version": "1.1.0",
+      "outputs_to_install": [
+        "out"
+      ],
+      "outputs": {
+        "out": "/nix/store/fmfxmq7spr8hkqgsxsf3qzcr47hy413l-nextjs-ollama-llm-ui-1.1.0"
+      },
+      "system": "aarch64-darwin",
+      "group": "toplevel",
+      "priority": 5
+    },
+    {
+      "attr_path": "nextjs-ollama-llm-ui",
+      "broken": false,
+      "derivation": "/nix/store/ddz2mshdd8cw22my4lvxxvp97q4n7n30-nextjs-ollama-llm-ui-1.1.0.drv",
+      "description": "Simple chat web interface for Ollama LLMs",
+      "install_id": "ollama-ui",
+      "license": "MIT",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=55d15ad12a74eb7d4646254e13638ad0c4128776",
+      "name": "nextjs-ollama-llm-ui-1.1.0",
+      "pname": "nextjs-ollama-llm-ui",
+      "rev": "55d15ad12a74eb7d4646254e13638ad0c4128776",
+      "rev_count": 716003,
+      "rev_date": "2024-12-03T07:54:31Z",
+      "scrape_date": "2024-12-04T03:55:34Z",
+      "stabilities": [
+        "staging",
+        "unstable"
+      ],
+      "unfree": false,
+      "version": "1.1.0",
+      "outputs_to_install": [
+        "out"
+      ],
+      "outputs": {
+        "out": "/nix/store/5pznbkpvaqylhdya4apj3by8vs6rd7sc-nextjs-ollama-llm-ui-1.1.0"
+      },
+      "system": "aarch64-linux",
+      "group": "toplevel",
+      "priority": 5
+    },
+    {
+      "attr_path": "nextjs-ollama-llm-ui",
+      "broken": false,
+      "derivation": "/nix/store/ap2w12yz3y9qqvslr3bmv7izl8g6m89j-nextjs-ollama-llm-ui-1.1.0.drv",
+      "description": "Simple chat web interface for Ollama LLMs",
+      "install_id": "ollama-ui",
+      "license": "MIT",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=55d15ad12a74eb7d4646254e13638ad0c4128776",
+      "name": "nextjs-ollama-llm-ui-1.1.0",
+      "pname": "nextjs-ollama-llm-ui",
+      "rev": "55d15ad12a74eb7d4646254e13638ad0c4128776",
+      "rev_count": 716003,
+      "rev_date": "2024-12-03T07:54:31Z",
+      "scrape_date": "2024-12-04T03:55:34Z",
+      "stabilities": [
+        "staging",
+        "unstable"
+      ],
+      "unfree": false,
+      "version": "1.1.0",
+      "outputs_to_install": [
+        "out"
+      ],
+      "outputs": {
+        "out": "/nix/store/5nlgnfjvy4gqp0gdmw4ng4pp8fmyp4ln-nextjs-ollama-llm-ui-1.1.0"
+      },
+      "system": "x86_64-darwin",
+      "group": "toplevel",
+      "priority": 5
+    },
+    {
+      "attr_path": "nextjs-ollama-llm-ui",
+      "broken": false,
+      "derivation": "/nix/store/cyrpykk4fpm8q9lx395xggwy8zw9w3vx-nextjs-ollama-llm-ui-1.1.0.drv",
+      "description": "Simple chat web interface for Ollama LLMs",
+      "install_id": "ollama-ui",
+      "license": "MIT",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=55d15ad12a74eb7d4646254e13638ad0c4128776",
+      "name": "nextjs-ollama-llm-ui-1.1.0",
+      "pname": "nextjs-ollama-llm-ui",
+      "rev": "55d15ad12a74eb7d4646254e13638ad0c4128776",
+      "rev_count": 716003,
+      "rev_date": "2024-12-03T07:54:31Z",
+      "scrape_date": "2024-12-04T03:55:34Z",
+      "stabilities": [
+        "staging",
+        "unstable"
+      ],
+      "unfree": false,
+      "version": "1.1.0",
+      "outputs_to_install": [
+        "out"
+      ],
+      "outputs": {
+        "out": "/nix/store/v6b0xb36pvy7jvxsy6g9l1d5hijnp167-nextjs-ollama-llm-ui-1.1.0"
+      },
+      "system": "x86_64-linux",
       "group": "toplevel",
       "priority": 5
     },
@@ -243,70 +562,18 @@
       "system": "x86_64-linux",
       "group": "toplevel",
       "priority": 5
-    },
-    {
-      "install_id": "ollama-cuda",
-      "locked-url": "github:barstoolbluz/ollama-cuda/1fd7a44f65d61bf7f984d20f79bd20a9cd601d60?narHash=sha256-/2GdU2%2BtDzFd62/9QWgfMAezHmtS0o/ZdFm%2BDgxxe%2Bo%3D",
-      "flake-description": "Ollama with CUDA support for RTX 5090 (Blackwell) - RUNPATH stub fix for non-NixOS",
-      "locked-flake-attr-path": "packages.x86_64-linux.default",
-      "derivation": "/nix/store/68qvgmycs0cc469l8bcsg4qifj8098zc-ollama-0.12.6.drv",
-      "outputs": {
-        "out": "/nix/store/6b85km9zbmn47vbkdsdim6nryvpljyvw-ollama-0.12.6"
-      },
-      "output-names": [
-        "out"
-      ],
-      "outputs-to-install": [
-        "out"
-      ],
-      "requested-outputs-to-install": [],
-      "package-system": "x86_64-linux",
-      "system": "x86_64-linux",
-      "name": "ollama-0.12.6",
-      "pname": "ollama",
-      "version": "0.12.6",
-      "description": "Get up and running with large language models locally, using CUDA for NVIDIA GPU acceleration",
-      "licenses": [
-        "MIT"
-      ],
-      "broken": false,
-      "unfree": false,
-      "priority": 7
-    },
-    {
-      "install_id": "ollama-cuda",
-      "locked-url": "github:barstoolbluz/ollama-cuda/1fd7a44f65d61bf7f984d20f79bd20a9cd601d60?narHash=sha256-/2GdU2%2BtDzFd62/9QWgfMAezHmtS0o/ZdFm%2BDgxxe%2Bo%3D",
-      "flake-description": "Ollama with CUDA support for RTX 5090 (Blackwell) - RUNPATH stub fix for non-NixOS",
-      "locked-flake-attr-path": "packages.aarch64-linux.default",
-      "derivation": "/nix/store/5gqmb7dapk6cjzalls26bx3mfgh1gkz1-ollama-0.12.6.drv",
-      "outputs": {
-        "out": "/nix/store/96w0lwrwl80ncp97j7iwvpbdy98fs0xp-ollama-0.12.6"
-      },
-      "output-names": [
-        "out"
-      ],
-      "outputs-to-install": [
-        "out"
-      ],
-      "requested-outputs-to-install": [],
-      "package-system": "aarch64-linux",
-      "system": "aarch64-linux",
-      "name": "ollama-0.12.6",
-      "pname": "ollama",
-      "version": "0.12.6",
-      "description": "Get up and running with large language models locally, using CUDA for NVIDIA GPU acceleration",
-      "licenses": [
-        "MIT"
-      ],
-      "broken": false,
-      "unfree": false,
-      "priority": 7
     }
   ],
   "compose": {
     "composer": {
       "version": 1,
       "install": {
+        "bat": {
+          "pkg-path": "bat"
+        },
+        "curl": {
+          "pkg-path": "curl"
+        },
         "open-webui": {
           "pkg-path": "open-webui"
         }
@@ -323,12 +590,12 @@
         "SCARF_NO_ANALYTICS_DEFAULT": "true"
       },
       "hook": {
-        "on-activate": "  # exports config + support for runtime override\n  export OLLAMA_BASE_URL=\"${OLLAMA_BASE_URL:-$OLLAMA_BASE_URL_DEFAULT}\"\n  export OLLAMA_API_BASE_URL=\"${OLLAMA_API_BASE_URL:-$OLLAMA_API_BASE_URL_DEFAULT}\"\n  export HOST=\"${HOST:-$HOST_DEFAULT}\"\n  export PORT=\"${PORT:-$PORT_DEFAULT}\"\n  export DEFAULT_MODELS_PROVIDER=\"${DEFAULT_MODELS_PROVIDER:-$DEFAULT_MODELS_PROVIDER_DEFAULT}\"\n  export DEFAULT_CONNECTION_NAME=\"${DEFAULT_CONNECTION_NAME:-$DEFAULT_CONNECTION_NAME_DEFAULT}\"\n  export SCARF_NO_ANALYTICS=\"${SCARF_NO_ANALYTICS:-$SCARF_NO_ANALYTICS_DEFAULT}\"\n  export DO_NOT_TRACK=\"${DO_NOT_TRACK:-$DO_NOT_TRACK_DEFAULT}\"\n  export ANONYMIZED_TELEMETRY=\"${ANONYMIZED_TELEMETRY:-$ANONYMIZED_TELEMETRY_DEFAULT}\"\n\n  # sets up data directories in $FLOX_ENV_CACHE\n  WEBUI_DATA_DIR=\"$FLOX_ENV_CACHE/openwebui\"\n  mkdir -p \"$WEBUI_DATA_DIR/cache\"\n  mkdir -p \"$WEBUI_DATA_DIR/data\"\n  mkdir -p \"$FLOX_ENV_CACHE/logs\"\n\n  # exports derived paths (users can override)\n  export DATA_DIR=\"${DATA_DIR:-$WEBUI_DATA_DIR/data}\"\n  export CACHE_DIR=\"${CACHE_DIR:-$WEBUI_DATA_DIR/cache}\"\n  export HF_HOME=\"${HF_HOME:-$WEBUI_DATA_DIR/cache/huggingface}\"\n  export SENTENCE_TRANSFORMERS_HOME=\"${SENTENCE_TRANSFORMERS_HOME:-$WEBUI_DATA_DIR/cache/sentence_transformers}\"\n  export TIKTOKEN_CACHE_DIR=\"${TIKTOKEN_CACHE_DIR:-$WEBUI_DATA_DIR/cache/tiktoken}\"\n  export WHISPER_MODEL_DIR=\"${WHISPER_MODEL_DIR:-$WEBUI_DATA_DIR/cache/whisper}\"\n\n  # generates 256-bit key if not exists\n  KEY_FILE=\"$WEBUI_DATA_DIR/webui_secret_key\"\n  if [ -z \"$WEBUI_SECRET_KEY\" ]; then\n    if [ ! -e \"$KEY_FILE\" ]; then\n      head -c 32 /dev/random | base64 > \"$KEY_FILE\"\n    fi\n    export WEBUI_SECRET_KEY=$(cat \"$KEY_FILE\")\n  fi\n\n  # returns to project directory\n  cd \"$FLOX_ENV_PROJECT\"\n"
+        "on-activate": "  # Fetch README   # exports config + support for runtime override\n  export OLLAMA_BASE_URL=\"${OLLAMA_BASE_URL:-$OLLAMA_BASE_URL_DEFAULT}\"\n  export OLLAMA_API_BASE_URL=\"${OLLAMA_API_BASE_URL:-$OLLAMA_API_BASE_URL_DEFAULT}\"\n  export HOST=\"${HOST:-$HOST_DEFAULT}\"\n  export PORT=\"${PORT:-$PORT_DEFAULT}\"\n  export DEFAULT_MODELS_PROVIDER=\"${DEFAULT_MODELS_PROVIDER:-$DEFAULT_MODELS_PROVIDER_DEFAULT}\"\n  export DEFAULT_CONNECTION_NAME=\"${DEFAULT_CONNECTION_NAME:-$DEFAULT_CONNECTION_NAME_DEFAULT}\"\n  export SCARF_NO_ANALYTICS=\"${SCARF_NO_ANALYTICS:-$SCARF_NO_ANALYTICS_DEFAULT}\"\n  export DO_NOT_TRACK=\"${DO_NOT_TRACK:-$DO_NOT_TRACK_DEFAULT}\"\n  export ANONYMIZED_TELEMETRY=\"${ANONYMIZED_TELEMETRY:-$ANONYMIZED_TELEMETRY_DEFAULT}\"\n\n  # sets up data directories in $FLOX_ENV_CACHE\n  WEBUI_DATA_DIR=\"$FLOX_ENV_CACHE/openwebui\"\n  mkdir -p \"$WEBUI_DATA_DIR/cache\"\n  mkdir -p \"$WEBUI_DATA_DIR/data\"\n  mkdir -p \"$FLOX_ENV_CACHE/logs\"\n\n  # exports derived paths (users can override)\n  export DATA_DIR=\"${DATA_DIR:-$WEBUI_DATA_DIR/data}\"\n  export CACHE_DIR=\"${CACHE_DIR:-$WEBUI_DATA_DIR/cache}\"\n  export HF_HOME=\"${HF_HOME:-$WEBUI_DATA_DIR/cache/huggingface}\"\n  export SENTENCE_TRANSFORMERS_HOME=\"${SENTENCE_TRANSFORMERS_HOME:-$WEBUI_DATA_DIR/cache/sentence_transformers}\"\n  export TIKTOKEN_CACHE_DIR=\"${TIKTOKEN_CACHE_DIR:-$WEBUI_DATA_DIR/cache/tiktoken}\"\n  export WHISPER_MODEL_DIR=\"${WHISPER_MODEL_DIR:-$WEBUI_DATA_DIR/cache/whisper}\"\n\n  # generates 256-bit key if not exists\n  KEY_FILE=\"$WEBUI_DATA_DIR/webui_secret_key\"\n  if [ -z \"$WEBUI_SECRET_KEY\" ]; then\n    if [ ! -e \"$KEY_FILE\" ]; then\n      head -c 32 /dev/random | base64 > \"$KEY_FILE\"\n    fi\n    export WEBUI_SECRET_KEY=$(cat \"$KEY_FILE\")\n  fi\n\n  # returns to project directory\n  cd \"$FLOX_ENV_PROJECT\"\n\n  echo \"\"\n  echo \"✅ open-webui environment ready\"\n  echo \"\"\n  echo \"Type 'helpf' to view the full README\"\n  echo \"\"\n\n  # Fetch README.md if not present\n  README_FILE=\"$FLOX_ENV_PROJECT/README.md\"\n  if [ ! -f \"$README_FILE\" ]; then\n    if curl -fsSL https://raw.githubusercontent.com/barstoolbluz/floxenvs/main/open-webui/README.md -o \"$README_FILE\" 2>/dev/null; then\n      echo \"✓ Downloaded README.md (use 'helpf' to view)\"\n    fi\n  fi\n"
       },
       "profile": {
-        "bash": "# displays config info\nwebui_info() {\n  echo \"======================================\"\n  echo \"  OpenWebUI Configuration\"\n  echo \"======================================\"\n  echo \"\"\n  echo \"Data Directory:\"\n  echo \"  $FLOX_ENV_CACHE/openwebui\"\n  echo \"\"\n  echo \"Services:\"\n  echo \"  OpenWebUI: http://$HOST:$PORT\"\n  echo \"  Ollama:    $OLLAMA_BASE_URL\"\n  echo \"\"\n  echo \"Quick Commands:\"\n  echo \"  webui_info     - Show this information\"\n  echo \"  webui_status   - Check service status\"\n  echo \"  webui_logs     - Tail service logs\"\n  echo \"  ollama_status  - Check Ollama connectivity\"\n  echo \"  ollama-info    - Show Ollama configuration\"\n  echo \"  ollama-health  - Test Ollama API health\"\n  echo \"\"\n}\nexport -f webui_info\n\n# checks service status\nwebui_status() {\n  flox services status\n}\nexport -f webui_status\n\n# tails service logs\nwebui_logs() {\n  tail -f \"$FLOX_ENV_CACHE/logs/openwebui.log\"\n}\nexport -f webui_logs\n\n# checks ollama connection (uses ollama-health from ollama-headless)\nollama_status() {\n  if command -v ollama-health >/dev/null 2>&1; then\n    ollama-health\n  else\n    echo -n \"Checking Ollama at $OLLAMA_BASE_URL ... \"\n    if curl -sf \"$OLLAMA_BASE_URL/api/tags\" >/dev/null 2>&1; then\n      echo \"✓ Connected\"\n      return 0\n    else\n      echo \"✗ Cannot connect\"\n      echo \"Make sure Ollama is running with: flox activate -s\"\n      return 1\n    fi\n  fi\n}\nexport -f ollama_status\n",
-        "zsh": "# displays config info\nwebui_info() {\n  echo \"======================================\"\n  echo \"  OpenWebUI Configuration\"\n  echo \"======================================\"\n  echo \"\"\n  echo \"Data Directory:\"\n  echo \"  $FLOX_ENV_CACHE/openwebui\"\n  echo \"\"\n  echo \"Services:\"\n  echo \"  OpenWebUI: http://$HOST:$PORT\"\n  echo \"  Ollama:    $OLLAMA_BASE_URL\"\n  echo \"\"\n  echo \"Quick Commands:\"\n  echo \"  webui_info     - Show this information\"\n  echo \"  webui_status   - Check service status\"\n  echo \"  webui_logs     - Tail service logs\"\n  echo \"  ollama_status  - Check Ollama connectivity\"\n  echo \"  ollama-info    - Show Ollama configuration\"\n  echo \"  ollama-health  - Test Ollama API health\"\n  echo \"\"\n}\n\n# checks service status\nwebui_status() {\n  flox services status\n}\n\n# tails service logs\nwebui_logs() {\n  tail -f \"$FLOX_ENV_CACHE/logs/openwebui.log\"\n}\n\n# checks ollama connection (uses ollama-health from ollama-headless)\nollama_status() {\n  if command -v ollama-health >/dev/null 2>&1; then\n    ollama-health\n  else\n    echo -n \"Checking Ollama at $OLLAMA_BASE_URL ... \"\n    if curl -sf \"$OLLAMA_BASE_URL/api/tags\" >/dev/null 2>&1; then\n      echo \"✓ Connected\"\n      return 0\n    else\n      echo \"✗ Cannot connect\"\n      echo \"Make sure Ollama is running with: flox activate -s\"\n      return 1\n    fi\n  fi\n}\n",
-        "fish": "# displays config info\nfunction webui_info\n  echo \"======================================\"\n  echo \"  OpenWebUI Configuration\"\n  echo \"======================================\"\n  echo \"\"\n  echo \"Data Directory:\"\n  echo \"  $FLOX_ENV_CACHE/openwebui\"\n  echo \"\"\n  echo \"Services:\"\n  echo \"  OpenWebUI: http://$HOST:$PORT\"\n  echo \"  Ollama:    $OLLAMA_BASE_URL\"\n  echo \"\"\n  echo \"Quick Commands:\"\n  echo \"  webui_info     - Show this information\"\n  echo \"  webui_status   - Check service status\"\n  echo \"  webui_logs     - Tail service logs\"\n  echo \"  ollama_status  - Check Ollama connectivity\"\n  echo \"  ollama-info    - Show Ollama configuration\"\n  echo \"  ollama-health  - Test Ollama API health\"\n  echo \"\"\nend\n\n# checks service status\nfunction webui_status\n  flox services status\nend\n\n# tails service logs\nfunction webui_logs\n  tail -f \"$FLOX_ENV_CACHE/logs/openwebui.log\"\nend\n\n# checks ollama connection (uses ollama-health from ollama-headless)\nfunction ollama_status\n  if command -v ollama-health >/dev/null 2>&1\n    ollama-health\n  else\n    echo -n \"Checking Ollama at $OLLAMA_BASE_URL ... \"\n    if curl -sf \"$OLLAMA_BASE_URL/api/tags\" >/dev/null 2>&1\n      echo \"✓ Connected\"\n      return 0\n    else\n      echo \"✗ Cannot connect\"\n      echo \"Make sure Ollama is running with: flox activate -s\"\n      return 1\n    end\n  end\nend\n"
+        "bash": "\n# displays config info\nwebui_info() {\n  echo \"======================================\"\n  echo \"  OpenWebUI Configuration\"\n  echo \"======================================\"\n  echo \"\"\n  echo \"Data Directory:\"\n  echo \"  $FLOX_ENV_CACHE/openwebui\"\n  echo \"\"\n  echo \"Services:\"\n  echo \"  OpenWebUI: http://$HOST:$PORT\"\n  echo \"  Ollama:    $OLLAMA_BASE_URL\"\n  echo \"\"\n  echo \"Quick Commands:\"\n  echo \"  webui_info     - Show this information\"\n  echo \"  webui_status   - Check service status\"\n  echo \"  webui_logs     - Tail service logs\"\n  echo \"  ollama_status  - Check Ollama connectivity\"\n  echo \"  ollama-info    - Show Ollama configuration\"\n  echo \"  ollama-health  - Test Ollama API health\"\n  echo \"  helpf          - View full README documentation\"\n  echo \"\"\n}\nexport -f webui_info\n\n# checks service status\nwebui_status() {\n  flox services status\n}\nexport -f webui_status\n\n# tails service logs\nwebui_logs() {\n  tail -f \"$FLOX_ENV_CACHE/logs/openwebui.log\"\n}\nexport -f webui_logs\n\n# checks ollama connection (uses ollama-health from ollama-headless)\nollama_status() {\n  if command -v ollama-health >/dev/null 2>&1; then\n    ollama-health\n  else\n    echo -n \"Checking Ollama at $OLLAMA_BASE_URL ... \"\n    if curl -sf \"$OLLAMA_BASE_URL/api/tags\" >/dev/null 2>&1; then\n      echo \"✓ Connected\"\n      return 0\n    else\n      echo \"✗ Cannot connect\"\n      echo \"Make sure Ollama is running with: flox activate -s\"\n      return 1\n    fi\n  fi\n}\nexport -f ollama_status\n\n  helpf() {\n    local README_FILE=\"$FLOX_ENV_PROJECT/README.md\"\n    local README_URL=\"https://raw.githubusercontent.com/barstoolbluz/floxenvs/main/open-webui/README.md\"\n\n    if [ \"$1\" = \"--help\" ]; then\n      echo \"Usage: helpf [OPTIONS]\"\n      echo \"\"\n      echo \"View environment documentation\"\n      echo \"\"\n      echo \"Options:\"\n      echo \"  --force    Force download fresh copy from GitHub\"\n      echo \"  --help     Show this help message\"\n      echo \"\"\n      echo \"The README is cached locally and only downloaded if missing.\"\n      return 0\n    fi\n\n    if [ \"$1\" = \"--force\" ]; then\n      echo \"Fetching latest README.md from GitHub...\"\n      if curl -fsSL \"$README_URL\" -o \"$README_FILE\"; then\n        echo \"✓ Downloaded README.md\"\n      else\n        echo \"✗ Failed to download README.md\"\n        return 1\n      fi\n    elif [ ! -f \"$README_FILE\" ]; then\n      echo \"README.md not found, downloading...\"\n      if curl -fsSL \"$README_URL\" -o \"$README_FILE\"; then\n        echo \"✓ Downloaded README.md\"\n      else\n        echo \"✗ Failed to download README.md\"\n        return 1\n      fi\n    fi\n\n    if [ -f \"$README_FILE\" ]; then\n      bat --style=auto --paging=always \"$README_FILE\"\n    else\n      echo \"✗ README.md not found at $README_FILE\"\n      return 1\n    fi\n  }\n  export -f helpf\n",
+        "zsh": "\n# displays config info\nwebui_info() {\n  echo \"======================================\"\n  echo \"  OpenWebUI Configuration\"\n  echo \"======================================\"\n  echo \"\"\n  echo \"Data Directory:\"\n  echo \"  $FLOX_ENV_CACHE/openwebui\"\n  echo \"\"\n  echo \"Services:\"\n  echo \"  OpenWebUI: http://$HOST:$PORT\"\n  echo \"  Ollama:    $OLLAMA_BASE_URL\"\n  echo \"\"\n  echo \"Quick Commands:\"\n  echo \"  webui_info     - Show this information\"\n  echo \"  webui_status   - Check service status\"\n  echo \"  webui_logs     - Tail service logs\"\n  echo \"  ollama_status  - Check Ollama connectivity\"\n  echo \"  ollama-info    - Show Ollama configuration\"\n  echo \"  ollama-health  - Test Ollama API health\"\n  echo \"  helpf          - View full README documentation\"\n  echo \"\"\n}\n\n# checks service status\nwebui_status() {\n  flox services status\n}\n\n# tails service logs\nwebui_logs() {\n  tail -f \"$FLOX_ENV_CACHE/logs/openwebui.log\"\n}\n\n# checks ollama connection (uses ollama-health from ollama-headless)\nollama_status() {\n  if command -v ollama-health >/dev/null 2>&1; then\n    ollama-health\n  else\n    echo -n \"Checking Ollama at $OLLAMA_BASE_URL ... \"\n    if curl -sf \"$OLLAMA_BASE_URL/api/tags\" >/dev/null 2>&1; then\n      echo \"✓ Connected\"\n      return 0\n    else\n      echo \"✗ Cannot connect\"\n      echo \"Make sure Ollama is running with: flox activate -s\"\n      return 1\n    fi\n  fi\n}\n\n  helpf() {\n    local README_FILE=\"$FLOX_ENV_PROJECT/README.md\"\n    local README_URL=\"https://raw.githubusercontent.com/barstoolbluz/floxenvs/main/open-webui/README.md\"\n\n    if [ \"$1\" = \"--help\" ]; then\n      echo \"Usage: helpf [OPTIONS]\"\n      echo \"\"\n      echo \"View environment documentation\"\n      echo \"\"\n      echo \"Options:\"\n      echo \"  --force    Force download fresh copy from GitHub\"\n      echo \"  --help     Show this help message\"\n      echo \"\"\n      echo \"The README is cached locally and only downloaded if missing.\"\n      return 0\n    fi\n\n    if [ \"$1\" = \"--force\" ]; then\n      echo \"Fetching latest README.md from GitHub...\"\n      if curl -fsSL \"$README_URL\" -o \"$README_FILE\"; then\n        echo \"✓ Downloaded README.md\"\n      else\n        echo \"✗ Failed to download README.md\"\n        return 1\n      fi\n    elif [ ! -f \"$README_FILE\" ]; then\n      echo \"README.md not found, downloading...\"\n      if curl -fsSL \"$README_URL\" -o \"$README_FILE\"; then\n        echo \"✓ Downloaded README.md\"\n      else\n        echo \"✗ Failed to download README.md\"\n        return 1\n      fi\n    fi\n\n    if [ -f \"$README_FILE\" ]; then\n      bat --style=auto --paging=always \"$README_FILE\"\n    else\n      echo \"✗ README.md not found at $README_FILE\"\n      return 1\n    fi\n  }\n",
+        "fish": "\n# displays config info\nfunction webui_info\n  echo \"======================================\"\n  echo \"  OpenWebUI Configuration\"\n  echo \"======================================\"\n  echo \"\"\n  echo \"Data Directory:\"\n  echo \"  $FLOX_ENV_CACHE/openwebui\"\n  echo \"\"\n  echo \"Services:\"\n  echo \"  OpenWebUI: http://$HOST:$PORT\"\n  echo \"  Ollama:    $OLLAMA_BASE_URL\"\n  echo \"\"\n  echo \"Quick Commands:\"\n  echo \"  webui_info     - Show this information\"\n  echo \"  webui_status   - Check service status\"\n  echo \"  webui_logs     - Tail service logs\"\n  echo \"  ollama_status  - Check Ollama connectivity\"\n  echo \"  ollama-info    - Show Ollama configuration\"\n  echo \"  ollama-health  - Test Ollama API health\"\n  echo \"  helpf          - View full README documentation\"\n  echo \"\"\nend\n\n# checks service status\nfunction webui_status\n  flox services status\nend\n\n# tails service logs\nfunction webui_logs\n  tail -f \"$FLOX_ENV_CACHE/logs/openwebui.log\"\nend\n\n# checks ollama connection (uses ollama-health from ollama-headless)\nfunction ollama_status\n  if command -v ollama-health >/dev/null 2>&1\n    ollama-health\n  else\n    echo -n \"Checking Ollama at $OLLAMA_BASE_URL ... \"\n    if curl -sf \"$OLLAMA_BASE_URL/api/tags\" >/dev/null 2>&1\n      echo \"✓ Connected\"\n      return 0\n    else\n      echo \"✗ Cannot connect\"\n      echo \"Make sure Ollama is running with: flox activate -s\"\n      return 1\n    end\n  end\nend\n\nfunction helpf\n    set README_FILE \"$FLOX_ENV_PROJECT/README.md\"\n    set README_URL \"https://raw.githubusercontent.com/barstoolbluz/floxenvs/main/open-webui/README.md\"\n\n    if test \"$argv[1]\" = \"--help\"\n        echo \"Usage: helpf [OPTIONS]\"\n        echo \"\"\n        echo \"View environment documentation\"\n        echo \"\"\n        echo \"Options:\"\n        echo \"  --force    Force download fresh copy from GitHub\"\n        echo \"  --help     Show this help message\"\n        echo \"\"\n        echo \"The README is cached locally and only downloaded if missing.\"\n        return 0\n    end\n\n    if test \"$argv[1]\" = \"--force\"\n        echo \"Fetching latest README.md from GitHub...\"\n        if curl -fsSL \"$README_URL\" -o \"$README_FILE\"\n            echo \"✓ Downloaded README.md\"\n        else\n            echo \"✗ Failed to download README.md\"\n            return 1\n        end\n    else if not test -f \"$README_FILE\"\n        echo \"README.md not found, downloading...\"\n        if curl -fsSL \"$README_URL\" -o \"$README_FILE\"\n            echo \"✓ Downloaded README.md\"\n        else\n            echo \"✗ Failed to download README.md\"\n            return 1\n        end\n    end\n\n    if test -f \"$README_FILE\"\n        bat --style=auto --paging=always \"$README_FILE\"\n    else\n        echo \"✗ README.md not found at $README_FILE\"\n        return 1\n    end\nend\n"
       },
       "options": {
         "systems": [
@@ -346,7 +613,7 @@
       "include": {
         "environments": [
           {
-            "remote": "barstoolbluz/ollama-headless"
+            "remote": "barstoolbluz/ollama"
           }
         ]
       }
@@ -356,50 +623,37 @@
         "manifest": {
           "version": 1,
           "install": {
-            "ollama": {
-              "pkg-path": "ollama",
-              "systems": [
-                "x86_64-darwin",
-                "aarch64-darwin"
-              ]
-            },
-            "ollama-cuda": {
-              "flake": "github:barstoolbluz/ollama-cuda",
-              "priority": 7,
-              "systems": [
-                "x86_64-linux",
-                "aarch64-linux"
-              ]
+            "ollama-ui": {
+              "pkg-path": "nextjs-ollama-llm-ui"
             }
           },
           "vars": {
-            "OLLAMA_MODELS_DIR": "$FLOX_ENV_CACHE/models"
+            "NEXT_PUBLIC_OLLAMA_URL": "http://localhost:11434"
           },
           "hook": {
-            "on-activate": "# Create required directories\nmkdir -p \"$FLOX_ENV_CACHE/models\"\n\n# === SERVER CONFIGURATION ===\nexport OLLAMA_HOST=\"${OLLAMA_HOST:-127.0.0.1:11434}\"\nexport OLLAMA_MODELS=\"${OLLAMA_MODELS:-$FLOX_ENV_CACHE/models}\"\nexport OLLAMA_ORIGINS=\"${OLLAMA_ORIGINS:-}\"  # Use Ollama defaults\n\n# === PERFORMANCE & MEMORY ===\nexport OLLAMA_CONTEXT_LENGTH=\"${OLLAMA_CONTEXT_LENGTH:-}\"  # Default: 4096\nexport OLLAMA_KEEP_ALIVE=\"${OLLAMA_KEEP_ALIVE:-}\"  # Default: 5m\nexport OLLAMA_MAX_LOADED_MODELS=\"${OLLAMA_MAX_LOADED_MODELS:-}\"  # Default: auto (3 * GPU count)\nexport OLLAMA_NUM_PARALLEL=\"${OLLAMA_NUM_PARALLEL:-}\"  # Default: 1\nexport OLLAMA_MAX_QUEUE=\"${OLLAMA_MAX_QUEUE:-}\"  # Default: 512\nexport OLLAMA_LOAD_TIMEOUT=\"${OLLAMA_LOAD_TIMEOUT:-}\"  # Default: 5m\n\n# === GPU CONFIGURATION ===\nexport OLLAMA_FLASH_ATTENTION=\"${OLLAMA_FLASH_ATTENTION:-}\"  # Experimental\nexport OLLAMA_KV_CACHE_TYPE=\"${OLLAMA_KV_CACHE_TYPE:-}\"  # Default: f16\nexport OLLAMA_GPU_OVERHEAD=\"${OLLAMA_GPU_OVERHEAD:-}\"  # Default: 0\nexport CUDA_VISIBLE_DEVICES=\"${CUDA_VISIBLE_DEVICES:-}\"  # Limit visible GPUs\n\n# === ADVANCED / EXPERIMENTAL ===\nexport OLLAMA_DEBUG=\"${OLLAMA_DEBUG:-0}\"  # 0 = disabled, 1 = enabled\nexport OLLAMA_SCHED_SPREAD=\"${OLLAMA_SCHED_SPREAD:-}\"  # Schedule across all GPUs\nexport OLLAMA_NOPRUNE=\"${OLLAMA_NOPRUNE:-}\"  # Don't prune model blobs\nexport OLLAMA_LLM_LIBRARY=\"${OLLAMA_LLM_LIBRARY:-}\"  # Bypass autodetection\nexport OLLAMA_AUTH=\"${OLLAMA_AUTH:-}\"  # Experimental authentication\n\n# === DISPLAY CONFIGURATION ===\necho \"\"\necho \"✅ Ollama environment ready (headless mode)\"\necho \"\"\necho \"Server:\"\necho \"  Host: ${OLLAMA_HOST}\"\necho \"  Models: ${OLLAMA_MODELS}\"\necho \"\"\necho \"Commands:\"\necho \"  flox activate -s        Start Ollama service\"\necho \"  ollama pull <model>     Download a model\"\necho \"  ollama list             List local models\"\necho \"  ollama-info             Show configuration\"\necho \"  ollama-health           Test API endpoint\"\necho \"\"\necho \"Examples:\"\necho \"  ollama pull llama2\"\necho \"  OLLAMA_HOST=0.0.0.0:11434 flox activate -s\"\necho \"\"\n"
+            "on-activate": "export NEXT_CACHE_DIR=\"$FLOX_ENV_CACHE/next\"\nmkdir -p $NEXT_CACHE_DIR\n"
           },
-          "profile": {
-            "bash": "ollama-info() {\n    echo \"Ollama Headless Environment Configuration\"\n    echo \"\"\n    echo \"Server:\"\n    echo \"  Host: ${OLLAMA_HOST}\"\n    echo \"  Models: ${OLLAMA_MODELS}\"\n    echo \"\"\n    echo \"Performance:\"\n    if [ -n \"$OLLAMA_CONTEXT_LENGTH\" ]; then\n        echo \"  Context Length: ${OLLAMA_CONTEXT_LENGTH}\"\n    else\n        echo \"  Context Length: 4096 (default)\"\n    fi\n    if [ -n \"$OLLAMA_KEEP_ALIVE\" ]; then\n        echo \"  Keep Alive: ${OLLAMA_KEEP_ALIVE}\"\n    else\n        echo \"  Keep Alive: 5m (default)\"\n    fi\n    if [ -n \"$OLLAMA_NUM_PARALLEL\" ]; then\n        echo \"  Num Parallel: ${OLLAMA_NUM_PARALLEL}\"\n    else\n        echo \"  Num Parallel: 1 (default)\"\n    fi\n    if [ -n \"$OLLAMA_MAX_QUEUE\" ]; then\n        echo \"  Max Queue: ${OLLAMA_MAX_QUEUE}\"\n    else\n        echo \"  Max Queue: 512 (default)\"\n    fi\n    if [ -n \"$OLLAMA_MAX_LOADED_MODELS\" ]; then\n        echo \"  Max Loaded Models: ${OLLAMA_MAX_LOADED_MODELS}\"\n    else\n        echo \"  Max Loaded Models: auto (default)\"\n    fi\n    echo \"\"\n    echo \"GPU:\"\n    if [ -n \"$OLLAMA_FLASH_ATTENTION\" ]; then\n        echo \"  Flash Attention: enabled\"\n    else\n        echo \"  Flash Attention: disabled (default)\"\n    fi\n    if [ -n \"$OLLAMA_KV_CACHE_TYPE\" ]; then\n        echo \"  KV Cache Type: ${OLLAMA_KV_CACHE_TYPE}\"\n    else\n        echo \"  KV Cache Type: f16 (default)\"\n    fi\n    if [ -n \"$CUDA_VISIBLE_DEVICES\" ]; then\n        echo \"  CUDA Devices: ${CUDA_VISIBLE_DEVICES}\"\n    else\n        echo \"  CUDA Devices: all (default)\"\n    fi\n    echo \"\"\n    if [ \"$OLLAMA_DEBUG\" = \"1\" ]; then\n        echo \"Debug: enabled\"\n    else\n        echo \"Debug: disabled\"\n    fi\n    echo \"\"\n    echo \"Commands:\"\n    echo \"  ollama pull <model>       Download a model\"\n    echo \"  ollama list               List local models\"\n    echo \"  ollama ps                 List running models\"\n    echo \"  flox services status      Check service status\"\n    echo \"  flox services logs ollama View Ollama logs\"\n    echo \"  ollama-health             Test API endpoint\"\n    echo \"\"\n    echo \"Runtime Override Examples:\"\n    echo \"  OLLAMA_HOST=0.0.0.0:11434 flox activate -s\"\n    echo \"  OLLAMA_NUM_PARALLEL=4 flox activate -s\"\n    echo \"  OLLAMA_DEBUG=1 flox activate -s\"\n}\nexport -f ollama-info\n\nollama-health() {\n    local HOST=\"${OLLAMA_HOST:-127.0.0.1:11434}\"\n    # Remove http:// or https:// prefix if present\n    HOST=\"${HOST#http://}\"\n    HOST=\"${HOST#https://}\"\n\n    if curl -s \"http://${HOST}/\" | grep -q \"Ollama is running\"; then\n        echo \"✅ Ollama API is healthy at http://${HOST}\"\n        return 0\n    else\n        echo \"❌ Ollama API is not responding at http://${HOST}\"\n        echo \"   Try: flox services status\"\n        return 1\n    fi\n}\nexport -f ollama-health\n",
-            "zsh": "ollama-info() {\n    echo \"Ollama Headless Environment Configuration\"\n    echo \"\"\n    echo \"Server:\"\n    echo \"  Host: ${OLLAMA_HOST}\"\n    echo \"  Models: ${OLLAMA_MODELS}\"\n    echo \"\"\n    echo \"Performance:\"\n    if [ -n \"$OLLAMA_CONTEXT_LENGTH\" ]; then\n        echo \"  Context Length: ${OLLAMA_CONTEXT_LENGTH}\"\n    else\n        echo \"  Context Length: 4096 (default)\"\n    fi\n    if [ -n \"$OLLAMA_KEEP_ALIVE\" ]; then\n        echo \"  Keep Alive: ${OLLAMA_KEEP_ALIVE}\"\n    else\n        echo \"  Keep Alive: 5m (default)\"\n    fi\n    if [ -n \"$OLLAMA_NUM_PARALLEL\" ]; then\n        echo \"  Num Parallel: ${OLLAMA_NUM_PARALLEL}\"\n    else\n        echo \"  Num Parallel: 1 (default)\"\n    fi\n    if [ -n \"$OLLAMA_MAX_QUEUE\" ]; then\n        echo \"  Max Queue: ${OLLAMA_MAX_QUEUE}\"\n    else\n        echo \"  Max Queue: 512 (default)\"\n    fi\n    if [ -n \"$OLLAMA_MAX_LOADED_MODELS\" ]; then\n        echo \"  Max Loaded Models: ${OLLAMA_MAX_LOADED_MODELS}\"\n    else\n        echo \"  Max Loaded Models: auto (default)\"\n    fi\n    echo \"\"\n    echo \"GPU:\"\n    if [ -n \"$OLLAMA_FLASH_ATTENTION\" ]; then\n        echo \"  Flash Attention: enabled\"\n    else\n        echo \"  Flash Attention: disabled (default)\"\n    fi\n    if [ -n \"$OLLAMA_KV_CACHE_TYPE\" ]; then\n        echo \"  KV Cache Type: ${OLLAMA_KV_CACHE_TYPE}\"\n    else\n        echo \"  KV Cache Type: f16 (default)\"\n    fi\n    if [ -n \"$CUDA_VISIBLE_DEVICES\" ]; then\n        echo \"  CUDA Devices: ${CUDA_VISIBLE_DEVICES}\"\n    else\n        echo \"  CUDA Devices: all (default)\"\n    fi\n    echo \"\"\n    if [ \"$OLLAMA_DEBUG\" = \"1\" ]; then\n        echo \"Debug: enabled\"\n    else\n        echo \"Debug: disabled\"\n    fi\n    echo \"\"\n    echo \"Commands:\"\n    echo \"  ollama pull <model>       Download a model\"\n    echo \"  ollama list               List local models\"\n    echo \"  ollama ps                 List running models\"\n    echo \"  flox services status      Check service status\"\n    echo \"  flox services logs ollama View Ollama logs\"\n    echo \"  ollama-health             Test API endpoint\"\n    echo \"\"\n    echo \"Runtime Override Examples:\"\n    echo \"  OLLAMA_HOST=0.0.0.0:11434 flox activate -s\"\n    echo \"  OLLAMA_NUM_PARALLEL=4 flox activate -s\"\n    echo \"  OLLAMA_DEBUG=1 flox activate -s\"\n}\n\nollama-health() {\n    local HOST=\"${OLLAMA_HOST:-127.0.0.1:11434}\"\n    # Remove http:// or https:// prefix if present\n    HOST=\"${HOST#http://}\"\n    HOST=\"${HOST#https://}\"\n\n    if curl -s \"http://${HOST}/\" | grep -q \"Ollama is running\"; then\n        echo \"✅ Ollama API is healthy at http://${HOST}\"\n        return 0\n    else\n        echo \"❌ Ollama API is not responding at http://${HOST}\"\n        echo \"   Try: flox services status\"\n        return 1\n    fi\n}\n",
-            "fish": "function ollama-info\n    echo \"Ollama Headless Environment Configuration\"\n    echo \"\"\n    echo \"Server:\"\n    echo \"  Host: $OLLAMA_HOST\"\n    echo \"  Models: $OLLAMA_MODELS\"\n    echo \"\"\n    echo \"Performance:\"\n    if test -n \"$OLLAMA_CONTEXT_LENGTH\"\n        echo \"  Context Length: $OLLAMA_CONTEXT_LENGTH\"\n    else\n        echo \"  Context Length: 4096 (default)\"\n    end\n    if test -n \"$OLLAMA_KEEP_ALIVE\"\n        echo \"  Keep Alive: $OLLAMA_KEEP_ALIVE\"\n    else\n        echo \"  Keep Alive: 5m (default)\"\n    end\n    if test -n \"$OLLAMA_NUM_PARALLEL\"\n        echo \"  Num Parallel: $OLLAMA_NUM_PARALLEL\"\n    else\n        echo \"  Num Parallel: 1 (default)\"\n    end\n    if test -n \"$OLLAMA_MAX_QUEUE\"\n        echo \"  Max Queue: $OLLAMA_MAX_QUEUE\"\n    else\n        echo \"  Max Queue: 512 (default)\"\n    end\n    if test -n \"$OLLAMA_MAX_LOADED_MODELS\"\n        echo \"  Max Loaded Models: $OLLAMA_MAX_LOADED_MODELS\"\n    else\n        echo \"  Max Loaded Models: auto (default)\"\n    end\n    echo \"\"\n    echo \"GPU:\"\n    if test -n \"$OLLAMA_FLASH_ATTENTION\"\n        echo \"  Flash Attention: enabled\"\n    else\n        echo \"  Flash Attention: disabled (default)\"\n    end\n    if test -n \"$OLLAMA_KV_CACHE_TYPE\"\n        echo \"  KV Cache Type: $OLLAMA_KV_CACHE_TYPE\"\n    else\n        echo \"  KV Cache Type: f16 (default)\"\n    end\n    if test -n \"$CUDA_VISIBLE_DEVICES\"\n        echo \"  CUDA Devices: $CUDA_VISIBLE_DEVICES\"\n    else\n        echo \"  CUDA Devices: all (default)\"\n    end\n    echo \"\"\n    if test \"$OLLAMA_DEBUG\" = \"1\"\n        echo \"Debug: enabled\"\n    else\n        echo \"Debug: disabled\"\n    end\n    echo \"\"\n    echo \"Commands:\"\n    echo \"  ollama pull <model>       Download a model\"\n    echo \"  ollama list               List local models\"\n    echo \"  ollama ps                 List running models\"\n    echo \"  flox services status      Check service status\"\n    echo \"  flox services logs ollama View Ollama logs\"\n    echo \"  ollama-health             Test API endpoint\"\n    echo \"\"\n    echo \"Runtime Override Examples:\"\n    echo \"  OLLAMA_HOST=0.0.0.0:11434 flox activate -s\"\n    echo \"  OLLAMA_NUM_PARALLEL=4 flox activate -s\"\n    echo \"  OLLAMA_DEBUG=1 flox activate -s\"\nend\n\nfunction ollama-health\n    set -l HOST (string replace -r '^https?://' '' $OLLAMA_HOST)\n\n    if curl -s \"http://$HOST/\" | grep -q \"Ollama is running\"\n        echo \"✅ Ollama API is healthy at http://$HOST\"\n        return 0\n    else\n        echo \"❌ Ollama API is not responding at http://$HOST\"\n        echo \"   Try: flox services status\"\n        return 1\n    end\nend\n"
-          },
+          "profile": {},
           "options": {
             "systems": [
               "aarch64-darwin",
               "aarch64-linux",
               "x86_64-darwin",
               "x86_64-linux"
-            ]
+            ],
+            "allow": {
+              "licenses": []
+            }
           },
           "services": {
-            "ollama": {
-              "command": "ollama serve"
+            "ollama-ui": {
+              "command": "# wait for ollama to be ready\nuntil ollama list; do sleep 1; done\n\nnextjs-ollama-llm-ui\n"
             }
           }
         },
-        "name": "ollama-headless",
+        "name": "ollama",
         "descriptor": {
-          "remote": "barstoolbluz/ollama-headless"
+          "remote": "barstoolbluz/ollama"
         }
       }
     ],

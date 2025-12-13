@@ -1,11 +1,12 @@
 version = 1
 
 [install]
-ollama-cuda.flake = "github:barstoolbluz/ollama-cuda"
+ollama-cuda.pkg-path = "flox/ollama-cuda"
 ollama-cuda.systems = ["x86_64-linux", "aarch64-linux"]
-ollama-cuda.priority = 7
+ollama-cuda.priority = 1
 ollama.pkg-path = "ollama"
 ollama.systems = ["x86_64-darwin", "aarch64-darwin"]
+ollama.priority = 1
 bat.pkg-path = "bat"
 curl.pkg-path = "curl"
 
