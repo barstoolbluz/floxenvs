@@ -11,17 +11,24 @@ bat.pkg-path = "bat"
 curl.pkg-path = "curl"
 
 [vars]
-# Base configuration paths (invariant)
-OLLAMA_MODELS_DIR = "$FLOX_ENV_CACHE/models"
+# Model storage - defaults to Ollama's standard location
+# Users can override with: OLLAMA_MODELS=/custom/path flox activate
+# Or use local cache with: OLLAMA_MODELS=$FLOX_ENV_CACHE/models flox activate
 
 [hook]
 on-activate = '''
-# Create required directories
-mkdir -p "$FLOX_ENV_CACHE/models"
+# === MODEL STORAGE ===
+# Use Ollama's default location (~/.ollama/models) unless user overrides
+# To use project-local storage: OLLAMA_MODELS=$FLOX_ENV_CACHE/models flox activate
+export OLLAMA_MODELS="${OLLAMA_MODELS:-$HOME/.ollama/models}"
 
-# Fetch README # === SERVER CONFIGURATION ===
+# Create models directory if using custom location
+if [ "$OLLAMA_MODELS" = "$FLOX_ENV_CACHE/models" ]; then
+  mkdir -p "$OLLAMA_MODELS"
+fi
+
+# === SERVER CONFIGURATION ===
 export OLLAMA_HOST="${OLLAMA_HOST:-127.0.0.1:11434}"
-export OLLAMA_MODELS="${OLLAMA_MODELS:-$FLOX_ENV_CACHE/models}"
 export OLLAMA_ORIGINS="${OLLAMA_ORIGINS:-}"  # Use Ollama defaults
 
 # === PERFORMANCE & MEMORY ===
@@ -36,7 +43,18 @@ export OLLAMA_LOAD_TIMEOUT="${OLLAMA_LOAD_TIMEOUT:-}"  # Default: 5m
 export OLLAMA_FLASH_ATTENTION="${OLLAMA_FLASH_ATTENTION:-}"  # Experimental
 export OLLAMA_KV_CACHE_TYPE="${OLLAMA_KV_CACHE_TYPE:-}"  # Default: f16
 export OLLAMA_GPU_OVERHEAD="${OLLAMA_GPU_OVERHEAD:-}"  # Default: 0
-export CUDA_VISIBLE_DEVICES="${CUDA_VISIBLE_DEVICES:-}"  # Limit visible GPUs
+# Only set CUDA_VISIBLE_DEVICES if user explicitly provides it
+if [ -n "${CUDA_VISIBLE_DEVICES+x}" ]; then
+  export CUDA_VISIBLE_DEVICES
+fi
+
+# Detect GPU availability
+export _FLOX_ENV_CUDA_DETECTION=0
+if command -v nvidia-smi >/dev/null 2>&1; then
+  if nvidia-smi -L 2>/dev/null | grep -q "GPU"; then
+    export _FLOX_ENV_CUDA_DETECTION=1
+  fi
+fi
 
 # === ADVANCED / EXPERIMENTAL ===
 export OLLAMA_DEBUG="${OLLAMA_DEBUG:-0}"  # 0 = disabled, 1 = enabled
@@ -51,7 +69,16 @@ echo "✅ Ollama environment ready (headless mode)"
 echo ""
 echo "Server:"
 echo "  Host: ${OLLAMA_HOST}"
-echo "  Models: ${OLLAMA_MODELS}"
+if [ "$OLLAMA_MODELS" = "$HOME/.ollama/models" ]; then
+  echo "  Models: ${OLLAMA_MODELS} (default)"
+else
+  echo "  Models: ${OLLAMA_MODELS} (custom)"
+fi
+if [ "$_FLOX_ENV_CUDA_DETECTION" = "1" ]; then
+  echo "  GPU: ✅ Available (CUDA detected)"
+else
+  echo "  GPU: ❌ Not detected (CPU mode)"
+fi
 echo ""
 echo "Commands:"
 echo "  flox activate -s        Start Ollama service"
@@ -64,6 +91,7 @@ echo ""
 echo "Examples:"
 echo "  ollama pull llama2"
 echo "  OLLAMA_HOST=0.0.0.0:11434 flox activate -s"
+echo "  OLLAMA_MODELS=\$FLOX_ENV_CACHE/models flox activate -s  # Use project-local models"
 echo ""
 
   # Fetch README.md if not present
